@@ -1,9 +1,7 @@
 #!/usr/bin/env python
 
-# This script is adapted from Marin Anderson's script named /opt/astro/utils/bin/gen_model_ms.py on astm.lwa.ovro.caltech.edu
-# History: 2022-07-27 B. Chen, changed the use of casacore to the modular CASA 6 (test on 6.5, 
-#                              but earlier versions should be fine);
-# 		  			           Also restructured it as part of the solar OVRO-LWA calibration package for future updates
+# This module is adapted from Marin Anderson's script named /opt/astro/utils/bin/gen_model_ms.py on astm.lwa.ovro.caltech.edu
+# It also takes functions in the orca repository at https://github.com/ovro-lwa/distributed-pipeline
 
 from casatasks import clearcal, ft, bandpass, applycal, flagdata, tclean
 from casatools import table, measures, componentlist
@@ -100,7 +98,7 @@ def gen_model_cl(visibility, ref_freq=80.0, output_freq=47.0,
             del srcs[s]
         else:
             scale = math.sin(elev) ** 1.6
-            print('scale {0:.1f}'.format(scale))
+            print('scale {0:.2f}'.format(scale))
             srcs[s]['flux'] = flux80_47(float(srcs[s]['flux']), srcs[s]['alpha'],
                                         ref_freq=ref_freq, output_freq=output_freq) * scale
 
@@ -208,7 +206,7 @@ def flag_ants_from_postcal_autocorr(visibility, tavg=False, thresh=4.):
     else:
         return None
 
-def flag_bad_ants(visibility, thresh=6.):
+def flag_bad_ants(visibility, thresh=10.):
 	ants=flag_ants_from_postcal_autocorr(visibility, thresh=thresh)
 	antflagfile = os.path.splitext(os.path.abspath(visibility))[0]+'.badants'
 	if os.path.isfile(antflagfile):
@@ -219,7 +217,7 @@ def flag_bad_ants(visibility, thresh=6.):
 	return
 
 
-def gen_calibration(visibility, modelcl=None, uvrange='<100lambda', bcaltb=None):
+def gen_calibration(visibility, modelcl=None, uvrange='', bcaltb=None):
     """
     This function is for doing initial self-calibrations using strong sources that are above the horizon
     It is recommended to use a dataset observed at night when the Sun is not in the field of view
@@ -230,10 +228,7 @@ def gen_calibration(visibility, modelcl=None, uvrange='<100lambda', bcaltb=None)
         print('Model component list does not exist. Generating one from scratch.')
         modelcl = gen_model_cl(visibility)
 
-    # Need to do some flagging before
-    ### This is left for Surajit to figure out, but do clipzeros first
-    flagdata(visibility, mode='clip', clipzeros=True)
-    # Second, put the component list to the model column
+    # Put the component list to the model column
     clearcal(visibility, addmodel=True)
     ft(visibility, complist=modelcl, usescratch=True)
     # Now do a bandpass calibration using the model component list
@@ -243,17 +238,24 @@ def gen_calibration(visibility, modelcl=None, uvrange='<100lambda', bcaltb=None)
     return bcaltb
 
 
-def apply_calibration(solar_visibility, bcaltb=None, do_solar_imaging=True):
+def apply_calibration(solar_visibility, gaintable=None, doflag=False, do_solar_imaging=True,
+                      imagename='test'):
     # first do some flagging with Surajit's flagging function. Now just clip the zeros
-    flagdata(solar_visibility, mode='clip', clipzeros=True)
-
+    #flagdata(solar_visibility, mode='clip', clipzeros=True)
+    if doflag:
+        flag_bad_ants(solar_visibility)
+    if not gaintable:
+        print('No calibration table is provided. Abort... ')
+    else:
+        if type(gaintable) == str:
+            gaintable=[gaintable]
     # Apply the calibration
-    applycal(solar_visibility, gaintable=[bcaltb], flagbackup=False)
-    modelcl = gen_model_cl(solar_visibility, includesun=False)
+    clearcal(solar_visibility)
+    applycal(solar_visibility, gaintable=gaintable, flagbackup=False)
     sunpos = get_sun_pos(solar_visibility)
     if do_solar_imaging:
-        clearcal(solar_visibility, addmodel=True)
-        ft(solar_visibility, complist=modelcl, usescratch=True)
-        tclean(solar_visibility, imsize=[200], cell=['0.5deg'], phasecenter=sunpos)
+        tclean(solar_visibility, imagename=imagename, imsize=[512], cell=['2arcmin'],
+               weighting='uniform', phasecenter=sunpos, niter=500)
+        print('Solar image made {0:s}.image'.format(imagename))
 
 
