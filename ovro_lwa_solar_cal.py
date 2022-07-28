@@ -7,7 +7,9 @@
 
 from casatools import table, measures, componentlist
 import math
-import sys
+import sys,os
+import numpy as np
+from casatasks import flagdata
 
 tb = table()
 me = measures()
@@ -104,3 +106,100 @@ def gen_model_ms(visibility, ref_freq=80.0, output_freq=47.0,
     cl.rename(outputcl)
     cl.done()
     return outputcl
+
+
+def flag_ants_from_postcal_autocorr(msfile: str, tavg: bool = False, thresh: float = 4):
+    """Generates a text file containing the bad antennas.
+    DOES NOT ACTUALLY APPLY FLAGS. CURRENTLY SHOULD ONLY BE RUN ON SINGLE SPW MSs.
+    
+    Args:
+        msfile
+        tavg: If set to True, will time average before evaluating flags.
+        thresh: Threshold to use for flagging. Default is 4.
+        
+    Returns:
+        Path to the text file with the list of antennas to flag.
+    """
+    tb.open(msfile)
+    tautos = tb.query('ANTENNA1=ANTENNA2')
+    tb.close()
+    # get CORRECTED_DATA
+    try:
+    	autos_corrected = tautos.getcol('CORRECTED_DATA')
+    except RuntimeError:
+    	autos_corrected = tautos.getcol('DATA')
+    autos_flags     = tautos.getcol('FLAG')
+    autos_antnums   = tautos.getcol('ANTENNA1')
+    shape=autos_corrected.shape
+    # autos_corrected.shape = (Nants*Nints, Nchans, Ncorrs)
+    if shape[2]>4:
+    	autos_corrected=np.swapaxes(autos_corrected,0,2)
+    	autos_flags=np.swapaxes(autos_flags,0,2)
+    	print("Shape updated")
+    print (autos_corrected.shape)
+    Nants = np.unique(autos_antnums).shape[0]
+    Nints = int(autos_antnums.shape[0]/Nants)
+    Ncorrs = autos_corrected.shape[-1]
+    # average over frequency, reorder
+    autos_corrected_mask = np.ma.masked_array(autos_corrected, mask=autos_flags, 
+                                           fill_value=np.nan)
+    autos_tseries = np.ma.mean(autos_corrected_mask, axis=1).reshape(Nints, Nants, Ncorrs).transpose(1,0,2)
+    antnums_reorder = autos_antnums.reshape(Nints, Nants).transpose(1,0)
+    # autos_tseries.shape = (Nants, Nints, Ncorrs)
+    # if msfile has Nints>1, use time series; else just take median
+    if autos_tseries.shape[1] == 1:
+        arr_to_evaluate = autos_tseries[:,0,:]
+    elif tavg:
+        arr_to_evaluate = np.ma.mean(autos_tseries,axis=1)
+    else:
+        medant_tseries  = np.ma.median(autos_tseries, axis=0)
+        arr_to_evaluate = np.ma.std(autos_tseries/medant_tseries, axis=1)
+    # separate out core and expansion antennas
+    inds_core = list(range(0,56)) + list(range(64,120)) + list(range(128,184)) + list(range(192,238))
+    inds_exp  = list(range(56,64)) + list(range(120,128)) + list(range(184,192)) + list(range(238,246))
+    medval_core = np.ma.median(arr_to_evaluate[inds_core,:], axis=0)
+    medval_exp = np.ma.median(arr_to_evaluate[inds_exp,:], axis=0)
+    stdval_core = np.ma.std(arr_to_evaluate[inds_core,:], axis=0)
+    stdval_exp = np.ma.std(arr_to_evaluate[inds_exp,:], axis=0)
+    # find 3sigma outliers, exclude, and recalculate stdval
+    newinds_core = np.asarray(inds_core)[np.where( (arr_to_evaluate[inds_core,0] < medval_core[0]+3*stdval_core[0]) | 
+                         (arr_to_evaluate[inds_core,3] < medval_core[3]+3*stdval_core[3]) )]
+    newinds_exp = np.asarray(inds_exp)[np.where( (arr_to_evaluate[inds_exp,0] < medval_exp[0]+3*stdval_exp[0]) | 
+                         (arr_to_evaluate[inds_exp,3] < medval_exp[3]+3*stdval_exp[3]) )]
+    # exclude and recalculate
+    medval_core = np.ma.median(arr_to_evaluate[newinds_core,:], axis=0)
+    medval_exp = np.ma.median(arr_to_evaluate[newinds_exp,:], axis=0)
+    stdval_core = np.ma.std(arr_to_evaluate[newinds_core,:], axis=0)
+    stdval_exp = np.ma.std(arr_to_evaluate[newinds_exp,:], axis=0)
+
+    newflagscore = np.asarray(inds_core)[np.where( (arr_to_evaluate[inds_core,0] > medval_core[0]+thresh*np.ma.min(stdval_core)) | 
+                         (arr_to_evaluate[inds_core,3] > medval_core[3]+thresh*np.ma.min(stdval_core)) )]
+    newflagsexp = np.asarray(inds_exp)[np.where( (arr_to_evaluate[inds_exp,0] > medval_exp[0]+thresh*np.ma.min(stdval_exp)) | 
+                         (arr_to_evaluate[inds_exp,3] > medval_exp[3]+thresh*np.ma.min(stdval_exp)) )]
+    flagsall = np.sort(np.append(newflagscore,newflagsexp))
+    print (flagsall.size)
+    if flagsall.size > 0:
+        antflagfile = os.path.splitext(os.path.abspath(msfile))[0]+'.ants'
+        print (antflagfile)
+        if os.path.exists(antflagfile):
+            existingflags = np.genfromtxt(antflagfile, delimiter=',', dtype=int)
+            flagsall = np.append(flagsall, existingflags)
+            flagsall = np.unique(flagsall)
+        flagsallstr = [str(flag) for flag in flagsall]        	
+        flagsallstr2 = ",".join(flagsallstr)
+        print (flagsallstr2)
+        with open(antflagfile,'w') as f:
+            f.write(flagsallstr2)
+        return antflagfile
+    else:
+        return None
+
+def flag_bad_ants(msfile):
+	ants=flag_ants_from_postcal_autocorr(msfile)
+	antflagfile = os.path.splitext(os.path.abspath(msfile))[0]+'.ants'
+	if os.path.isfile(antflagfile):
+		with open(antflagfile,'r') as f:
+			antenna_list=f.readline()
+			print (antenna_list)
+		flagdata(vis=msfile,mode='manual',antenna=antenna_list)
+	return
