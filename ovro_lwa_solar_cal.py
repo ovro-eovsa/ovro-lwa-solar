@@ -55,7 +55,7 @@ def gen_model_ms(visibility, ref_freq=80.0, output_freq=47.0,
             {'label': 'VirA', 'flux': '2400', 'alpha': -0.86,
              'position': 'J2000 12h30m49.42338s +12d23m28.0439s'}]
     if includesun:
-        srcs.append({'label': 'Sun', 'flux': string(solar_flux), 'alpha': solar_alpha,
+        srcs.append({'label': 'Sun', 'flux': str(solar_flux), 'alpha': solar_alpha,
                      'position': 'SUN'})
 
     tb.open(visibility)
