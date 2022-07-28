@@ -5,11 +5,11 @@
 #                              but earlier versions should be fine);
 # 		  			           Also restructured it as part of the solar OVRO-LWA calibration package for future updates
 
+from casatasks import clearcal, ft, bandpass, applycal, flagdata, tclean
 from casatools import table, measures, componentlist
 import math
 import sys,os
 import numpy as np
-from casatasks import flagdata
 
 tb = table()
 me = measures()
@@ -37,10 +37,23 @@ def conv_deg(dec):
     deg = float(dd) + float(mm) / 60 + float(ss) / 3600
     return '%fdeg' % deg
 
+def get_sun_pos(solar_visibility):
+    tb.open(solar_visibility)
+    t0 = tb.getcell('TIME', 0)
+    tb.close()
+    ovro = me.observatory('OVRO_MMA')
+    time = me.epoch('UTC', '%fs' % t0)
+    me.doframe(ovro)
+    me.doframe(time)
+    d0 = me.direction('SUN')
+    d0_j2000 = me.measure(d0, 'J2000')
+    d0_j2000_str = 'J2000 %frad %frad' % (d0_j2000['m0']['value'], d0_j2000['m1']['value'])
+    return d0_j2000_str
 
-def gen_model_ms(visibility, ref_freq=80.0, output_freq=47.0,
-                 includesun=True, solar_flux=16000, solar_alpha=2.2,
-                 outputcl=None, verbose=True):
+
+def gen_model_cl(visibility, ref_freq=80.0, output_freq=47.0,
+                 includesun=False, solar_flux=16000, solar_alpha=2.2,
+                 modelcl=None, verbose=True, overwrite=True):
     """
     :param visibility: input visibility
     :param ref_freq: reference frequency of the preset flux values of bright sources
@@ -93,8 +106,8 @@ def gen_model_ms(visibility, ref_freq=80.0, output_freq=47.0,
 
     cl.done()
 
-    if not outputcl:
-        outputcl = visibility.replace('.ms', '.cl')
+    if not modelcl:
+        modelcl = visibility.replace('.ms', '.cl')
     for s in srcs:
         cl.addcomponent(flux=s['flux'], dir=s['position'], index=s['alpha'],
                         spectrumtype='spectral index', freq='{0:f}MHz'.format(output_freq), label=s['label'])
@@ -102,10 +115,11 @@ def gen_model_ms(visibility, ref_freq=80.0, output_freq=47.0,
             print(
                 "cl.addcomponent(flux=%s, dir='%s', index=%s, spectrumtype='spectral index', freq='47MHz', label='%s')" % (
                     s['flux'], s['position'], s['alpha'], s['label']))
-
-    cl.rename(outputcl)
+    if os.path.exists(modelcl) and overwrite:
+        os.system('rm -rf ' + modelcl)
+    cl.rename(modelcl)
     cl.done()
-    return outputcl
+    return modelcl
 
 
 def flag_ants_from_postcal_autocorr(msfile: str, tavg: bool = False, thresh: float = 4):
@@ -203,3 +217,43 @@ def flag_bad_ants(msfile):
 			print (antenna_list)
 		flagdata(vis=msfile,mode='manual',antenna=antenna_list)
 	return
+
+
+def gen_calibration(visibility, modelcl=None, uvrange='<100lambda', bcaltb=None):
+    """
+    This function is for doing initial self-calibrations using strong sources that are above the horizon
+    It is recommended to use a dataset observed at night when the Sun is not in the field of view
+    :param visibility: input CASA ms visibility for calibration
+    :param modelcl: input model of strong sources as a component list, produced from gen_model_cl()
+    """
+    if not modelcl or not (os.path.exists(modelcl)):
+        print('Model component list does not exist. Generating one from scratch.')
+        modelcl = gen_model_cl(visibility)
+
+    # Need to do some flagging before
+    ### This is left for Surajit to figure out, but do clipzeros first
+    flagdata(visibility, mode='clip', clipzeros=True)
+    # Second, put the component list to the model column
+    clearcal(visibility, addmodel=True)
+    ft(visibility, complist=modelcl, usescratch=True)
+    # Now do a bandpass calibration using the model component list
+    if not bcaltb:
+        bcaltb = os.path.splitext(visibility)[0] + '.bcal'
+    bandpass(visibility, caltable=bcaltb, uvrange=uvrange, combine='scan,field,obs', fillgaps=1)
+    return bcaltb
+
+
+def apply_calibration(solar_visibility, bcaltb=None, do_solar_imaging=True):
+    # first do some flagging with Surajit's flagging function. Now just clip the zeros
+    flagdata(solar_visibility, mode='clip', clipzeros=True)
+
+    # Apply the calibration
+    applycal(solar_visibility, gaintable=[bcaltb], flagbackup=False)
+    modelcl = gen_model_cl(solar_visibility, includesun=False)
+    sunpos = get_sun_pos(solar_visibility)
+    if do_solar_imaging:
+        clearcal(solar_visibility, addmodel=True)
+        ft(solar_visibility, complist=modelcl, usescratch=True)
+        tclean(solar_visibility, imsize=[200], cell=['0.5deg'], phasecenter=sunpos)
+
+
