@@ -122,19 +122,19 @@ def gen_model_cl(visibility, ref_freq=80.0, output_freq=47.0,
     return modelcl
 
 
-def flag_ants_from_postcal_autocorr(msfile: str, tavg: bool = False, thresh: float = 4):
+def flag_ants_from_postcal_autocorr(visibility, tavg=False, thresh=4.):
     """Generates a text file containing the bad antennas.
     DOES NOT ACTUALLY APPLY FLAGS. CURRENTLY SHOULD ONLY BE RUN ON SINGLE SPW MSs.
     
     Args:
-        msfile
+        visibility: string
         tavg: If set to True, will time average before evaluating flags.
         thresh: Threshold to use for flagging. Default is 4.
         
     Returns:
         Path to the text file with the list of antennas to flag.
     """
-    tb.open(msfile)
+    tb.open(visibility)
     tautos = tb.query('ANTENNA1=ANTENNA2')
     tb.close()
     # get CORRECTED_DATA
@@ -193,7 +193,7 @@ def flag_ants_from_postcal_autocorr(msfile: str, tavg: bool = False, thresh: flo
     flagsall = np.sort(np.append(newflagscore,newflagsexp))
     print (flagsall.size)
     if flagsall.size > 0:
-        antflagfile = os.path.splitext(os.path.abspath(msfile))[0]+'.ants'
+        antflagfile = os.path.splitext(os.path.abspath(visibility))[0]+'.badants'
         print (antflagfile)
         if os.path.exists(antflagfile):
             existingflags = np.genfromtxt(antflagfile, delimiter=',', dtype=int)
@@ -208,14 +208,14 @@ def flag_ants_from_postcal_autocorr(msfile: str, tavg: bool = False, thresh: flo
     else:
         return None
 
-def flag_bad_ants(msfile):
-	ants=flag_ants_from_postcal_autocorr(msfile)
-	antflagfile = os.path.splitext(os.path.abspath(msfile))[0]+'.ants'
+def flag_bad_ants(visibility, thresh=6.):
+	ants=flag_ants_from_postcal_autocorr(visibility, thresh=thresh)
+	antflagfile = os.path.splitext(os.path.abspath(visibility))[0]+'.badants'
 	if os.path.isfile(antflagfile):
 		with open(antflagfile,'r') as f:
 			antenna_list=f.readline()
 			print (antenna_list)
-		flagdata(vis=msfile,mode='manual',antenna=antenna_list)
+		flagdata(vis=visibility,mode='manual',antenna=antenna_list)
 	return
 
 
