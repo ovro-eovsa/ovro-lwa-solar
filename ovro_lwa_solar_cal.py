@@ -195,8 +195,11 @@ def flag_ants_from_postcal_autocorr(msfile: str, tavg: bool = False, thresh: flo
     else:
         return None
 
-def flag_bad(msfile,flagfile=None):
-	ants=flag_ants_from_postcal_autocorr(msfile)
+def flag_bad(msfile,flagfile=None,thresh=None):
+	if thresh==None:
+		ants=flag_ants_from_postcal_autocorr(msfile)
+	else:
+		ants=flag_ants_from_postcal_autocorr(msfile,thresh=thresh)
 	antflagfile = os.path.splitext(os.path.abspath(msfile))[0]+'.ants'
 	if flagfile==None:
 		flagfile=os.path.splitext(os.path.abspath(msfile))[0]+'.flagfile'
