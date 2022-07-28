@@ -10,6 +10,7 @@ import math
 import sys,os
 import numpy as np
 from casatasks import flagdata
+import glob
 
 tb = table()
 me = measures()
@@ -194,12 +195,29 @@ def flag_ants_from_postcal_autocorr(msfile: str, tavg: bool = False, thresh: flo
     else:
         return None
 
-def flag_bad_ants(msfile):
+def flag_bad_ants(msfile,flagfile=None):
 	ants=flag_ants_from_postcal_autocorr(msfile)
 	antflagfile = os.path.splitext(os.path.abspath(msfile))[0]+'.ants'
+	if flagfile==None:
+		flagfile=os.path.splitext(os.path.abspath(msfile))[0]+'.flagfile'
 	if os.path.isfile(antflagfile):
 		with open(antflagfile,'r') as f:
 			antenna_list=f.readline()
-			print (antenna_list)
-		flagdata(vis=msfile,mode='manual',antenna=antenna_list)
+		with open(flagfile,'w') as f:
+			f.write("mode=\'manual\' antenna=\'"+antenna_list+"\'")
+			f.write("\n")
+	files=glob.glob("defaults/*")
+	for file1 in files:
+		with open(file1,"r") as f:
+			lines=f.readlines()
+		str1=''
+		for i in lines:
+			str1+=i[:-1].replace('&','&&')+";"
+		str1=str1[:-1]
+		with open(flagfile,'a+') as f:
+			f.write("mode=\'manual\' antenna=\'"+str1+"\'")
+			f.write("\n")
+	flagdata(vis=msfile,mode='list',inpfile=flagfile)
 	return
+
+
