@@ -3,11 +3,16 @@
 # This module is adapted from Marin Anderson's script named /opt/astro/utils/bin/gen_model_ms.py on astm.lwa.ovro.caltech.edu
 # It also takes functions in the orca repository at https://github.com/ovro-lwa/distributed-pipeline
 
-from casatasks import clearcal, ft, bandpass, applycal, flagdata, tclean
+from casatasks import clearcal, ft, bandpass, applycal, flagdata, tclean, uvsub
 from casatools import table, measures, componentlist
 import math
 import sys,os
 import numpy as np
+from astropy.coordinates import SkyCoord
+import astropy.units as u
+from astropy.wcs import WCS
+from astropy.io import fits
+
 
 tb = table()
 me = measures()
@@ -35,7 +40,7 @@ def conv_deg(dec):
     deg = float(dd) + float(mm) / 60 + float(ss) / 3600
     return '%fdeg' % deg
 
-def get_sun_pos(solar_visibility):
+def get_sun_pos(solar_visibility,str_output=True):
     tb.open(solar_visibility)
     t0 = tb.getcell('TIME', 0)
     tb.close()
@@ -45,8 +50,10 @@ def get_sun_pos(solar_visibility):
     me.doframe(time)
     d0 = me.direction('SUN')
     d0_j2000 = me.measure(d0, 'J2000')
-    d0_j2000_str = 'J2000 %frad %frad' % (d0_j2000['m0']['value'], d0_j2000['m1']['value'])
-    return d0_j2000_str
+    if str_output==True:
+        d0_j2000_str = 'J2000 %frad %frad' % (d0_j2000['m0']['value'], d0_j2000['m1']['value'])
+        return d0_j2000_str
+    return d0_j2000
 
 
 def gen_model_cl(visibility, ref_freq=80.0, output_freq=47.0,
@@ -258,4 +265,68 @@ def apply_calibration(solar_visibility, gaintable=None, doflag=False, do_solar_i
                weighting='uniform', phasecenter=sunpos, niter=500)
         print('Solar image made {0:s}.image'.format(imagename))
 
+def make_fullsky_image(msfile,imagename="full_sky",imsize=4096,cell='2arcmin',minuv=10): ### minuv: minimum uv in lambda
+    os.system("wsclean -no-update-model-required -no-dirty -weight uniform"+\
+            " -name "+imagename+" -size "+str(imsize)+" "+str(imsize)+" -scale "+cell+\
+            " -minuv-l "+str(minuv)+" -niter 1000 "+msfile)
+            
+def get_solar_loc_pix(msfile,image="full_sky"):
+    m=get_sun_pos(msfile,str_output=False)
+    ra=m['m0']['value']
+    dec=m['m1']['value']
+    coord=SkyCoord(ra*u.rad,dec*u.rad,frame='icrs')
+    head=fits.getheader(image+"-model.fits")
+    w=WCS(head)
+    from astropy.wcs.utils import skycoord_to_pixel
+    pix=skycoord_to_pixel(coord,w)
+    x=int(pix[0])
+    y=int(pix[1])
+    return x,y
 
+def remove_sun_from_model(msfile,image="full_sky",area=100):
+    x,y=get_solar_loc_pix(msfile,image)
+    head=fits.getheader(image+"-model.fits")
+    data=fits.getdata(image+"-model.fits")
+    data[0,0,y-area//2:y+area//2,x-area//2:x+area//2]=0.0000
+    fits.writeto(image+"_sun_only-model.fits",data,header=head,overwrite=True)
+
+def predict_model(msfile,outms,image="full_sky_sun_only"):
+    os.system("cp -r "+msfile+" "+outms)
+    os.system("wsclean -predict -name "+image+" "+outms)
+
+def remove_all_sources(msfile,imagename='full_sky',imsize=4096,cell='2arcmin',minuv=10):
+    make_fullsky_image(msfile=msfile,imagename=imagename,imsize=imsize,cell=cell,minuv=minuv)
+    remove_sun_from_model(msfile,image=imagename)
+    outms=msfile[:-3]+"_sun_only.ms"
+    predict_model(msfile,outms=outms,image=imagename+"_sun_only")
+    #uvsub(outms)
+    tb.open(outms,nomodify=False)
+    model=tb.getcol("MODEL_DATA")
+    corrected_data=tb.getcol("CORRECTED_DATA")
+    tb.putcol("CORRECTED_DATA",corrected_data-model)
+    tb.flush()
+    tb.close()
+    return outms
+    
+def make_solar_image(msfile,imagename='sun_only',imsize=512,cell='2arcmin',minuv=10):
+	sunpos = get_sun_pos(msfile)
+	tclean(msfile, imagename=imagename, imsize=imsize, cell=cell,
+              weighting='uniform', phasecenter=sunpos, niter=1000,\
+               usemask='auto-multithresh')
+               
+def correct_ms_bug(msfile):
+    tb.open(msfile+"/SPECTRAL_WINDOW",nomodify=False)
+    meas_freq_ref=tb.getcol('MEAS_FREQ_REF')
+    if meas_freq_ref[0]==0:
+        meas_freq_ref[0]=1
+    tb.putcol('MEAS_FREQ_REF',meas_freq_ref)
+    tb.flush()
+    tb.close()
+    
+def pipeline(solar_ms,calib_ms=None, bcal=None):
+    if bcal==None:
+        bcal=gen_calibration(calib_ms,uvrange='>10lambda')
+    correct_ms_bug(solar_ms)
+    apply_calibration(solar_ms, gaintable=bcal, doflag=True, do_solar_imaging=False)
+    outms=remove_all_sources(solar_ms)
+    make_solar_image(outms)
