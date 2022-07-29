@@ -109,7 +109,7 @@ def gen_model_ms(visibility, ref_freq=80.0, output_freq=47.0,
     return outputcl
 
 
-def flag_ants_from_postcal_autocorr(msfile: str, tavg: bool = False, thresh: float = 4):
+def flag_ants_from_postcal_autocorr(msfile: str, tavg: bool = False, thresh: float = 8):
     """Generates a text file containing the bad antennas.
     DOES NOT ACTUALLY APPLY FLAGS. CURRENTLY SHOULD ONLY BE RUN ON SINGLE SPW MSs.
     
@@ -209,7 +209,7 @@ def flag_bad(msfile,flagfile=None,thresh=None):
 		with open(flagfile,'w') as f:
 			f.write("mode=\'manual\' antenna=\'"+antenna_list+"\'")
 			f.write("\n")
-	files=glob.glob("defaults/*")
+	files=glob.glob("/home/surajit/ovro-lwa/solar/defaults/*")
 	for file1 in files:
 		with open(file1,"r") as f:
 			lines=f.readlines()
@@ -223,4 +223,109 @@ def flag_bad(msfile,flagfile=None,thresh=None):
 	flagdata(vis=msfile,mode='list',inpfile=flagfile)
 	return
 
+def gen_calibration(visibility, modelcl=None, uvrange='', bcaltb=None):
+    """
+    This function is for doing initial self-calibrations using strong sources that are above the horizon
+    It is recommended to use a dataset observed at night when the Sun is not in the field of view
+    :param visibility: input CASA ms visibility for calibration
+    :param modelcl: input model of strong sources as a component list, produced from gen_model_cl()
+    """
+    if not modelcl or not (os.path.exists(modelcl)):
+        print('Model component list does not exist. Generating one from scratch.')
+        modelcl = gen_model_cl(visibility)
 
+    # Put the component list to the model column
+    clearcal(visibility, addmodel=True)
+    ft(visibility, complist=modelcl, usescratch=True)
+    # Now do a bandpass calibration using the model component list
+    if not bcaltb:
+        bcaltb = os.path.splitext(visibility)[0] + '.bcal'
+    bandpass(visibility, caltable=bcaltb, uvrange=uvrange, combine='scan,field,obs', fillgaps=1)
+    return bcaltb
+
+
+def apply_calibration(solar_visibility, gaintable=None, doflag=False, do_solar_imaging=True,
+                      imagename='test'):
+    # first do some flagging with Surajit's flagging function. Now just clip the zeros
+    #flagdata(solar_visibility, mode='clip', clipzeros=True)
+    if doflag:
+        flag_bad_ants(solar_visibility)
+    if not gaintable:
+        print('No calibration table is provided. Abort... ')
+    else:
+        if type(gaintable) == str:
+            gaintable=[gaintable]
+    # Apply the calibration
+    clearcal(solar_visibility)
+    applycal(solar_visibility, gaintable=gaintable, flagbackup=False)
+    sunpos = get_sun_pos(solar_visibility)
+    if do_solar_imaging:
+        tclean(solar_visibility, imagename=imagename, imsize=[512], cell=['2arcmin'],
+               weighting='uniform', phasecenter=sunpos, niter=500)
+        print('Solar image made {0:s}.image'.format(imagename))
+
+def make_fullsky_image(msfile,imagename="full_sky",imsize=4096,cell='2arcmin',minuv=10): ### minuv: minimum uv in lambda
+    os.system("wsclean -no-update-model-required -no-dirty -weight uniform"+\
+            " -name "+imagename+" -size "+str(imsize)+" "+str(imsize)+" -scale "+cell+\
+            " -minuv-l "+str(minuv)+" -niter 1000 "+msfile)
+            
+def get_solar_loc_pix(msfile,image="full_sky"):
+    m=get_sun_pos(msfile,str_output=False)
+    ra=m['m0']['value']
+    dec=m['m1']['value']
+    coord=SkyCoord(ra*u.rad,dec*u.rad,frame='icrs')
+    head=fits.getheader(image+"-model.fits")
+    w=WCS(head)
+    from astropy.wcs.utils import skycoord_to_pixel
+    pix=skycoord_to_pixel(coord,w)
+    x=int(pix[0])
+    y=int(pix[1])
+    return x,y
+
+def remove_sun_from_model(msfile,image="full_sky",area=100):
+    x,y=get_solar_loc_pix(msfile,image)
+    head=fits.getheader(image+"-model.fits")
+    data=fits.getdata(image+"-model.fits")
+    data[0,0,y-area//2:y+area//2,x-area//2:x+area//2]=0.0000
+    fits.writeto(image+"_sun_only-model.fits",data,header=head,overwrite=True)
+
+def predict_model(msfile,outms,image="full_sky_sun_only"):
+    os.system("cp -r "+msfile+" "+outms)
+    os.system("wsclean -predict -name "+image+" "+outms)
+
+def remove_all_sources(msfile,imagename='full_sky',imsize=4096,cell='2arcmin',minuv=10):
+    make_fullsky_image(msfile=msfile,imagename=imagename,imsize=imsize,cell=cell,minuv=minuv)
+    remove_sun_from_model(msfile,image=imagename)
+    outms=msfile[:-3]+"_sun_only.ms"
+    predict_model(msfile,outms=outms,image=imagename+"_sun_only")
+    #uvsub(outms)
+    tb.open(outms,nomodify=False)
+    model=tb.getcol("MODEL_DATA")
+    corrected_data=tb.getcol("CORRECTED_DATA")
+    tb.putcol("CORRECTED_DATA",corrected_data-model)
+    tb.flush()
+    tb.close()
+    return outms
+    
+def make_solar_image(msfile,imagename='sun_only',imsize=512,cell='2arcmin',minuv=10):
+	sunpos = get_sun_pos(msfile)
+	tclean(msfile, imagename=imagename, imsize=imsize, cell=cell,
+              weighting='uniform', phasecenter=sunpos, niter=1000,\
+               usemask='auto-multithresh')
+               
+def correct_ms_bug(msfile):
+    tb.open(msfile+"/SPECTRAL_WINDOW",nomodify=False)
+    meas_freq_ref=tb.getcol('MEAS_FREQ_REF')
+    if meas_freq_ref[0]==0:
+        meas_freq_ref[0]=1
+    tb.putcol('MEAS_FREQ_REF',meas_freq_ref)
+    tb.flush()
+    tb.close()
+    
+def pipeline(solar_ms,calib_ms=None, bcal=None):
+    if bcal==None:
+        bcal=gen_calibration(calib_ms,uvrange='')
+    correct_ms_bug(solar_ms)
+    apply_calibration(solar_ms, gaintable=bcal, doflag=True, do_solar_imaging=False)
+    outms=remove_all_sources(solar_ms)
+    make_solar_image(outms)
