@@ -2,6 +2,7 @@
 
 # This module is adapted from Marin Anderson's script named /opt/astro/utils/bin/gen_model_ms.py on astm.lwa.ovro.caltech.edu
 # It also takes functions in the orca repository at https://github.com/ovro-lwa/distributed-pipeline
+# It requires a modular installation of CASA 6: https://casadocs.readthedocs.io/en/stable/notebooks/introduction.html#Modular-Packages
 
 from casatasks import clearcal, ft, bandpass, applycal, flagdata, tclean, uvsub
 from casatools import table, measures, componentlist
@@ -127,7 +128,7 @@ def gen_model_cl(msfile, ref_freq=80.0, output_freq=47.0,
     return modelcl
 
 
-def flag_ants_from_postcal_autocorr(msfile, tavg=False, thresh=4.):
+def flag_ants_from_postcal_autocorr(msfile, tavg=False, thresh=10., antflagfile=None, doappend=False):
     """Generates a text file containing the bad antennas.
     DOES NOT ACTUALLY APPLY FLAGS. CURRENTLY SHOULD ONLY BE RUN ON SINGLE SPW MSs.
     
@@ -135,9 +136,10 @@ def flag_ants_from_postcal_autocorr(msfile, tavg=False, thresh=4.):
         msfile: string
         tavg: If set to True, will time average before evaluating flags.
         thresh: Threshold to use for flagging. Default is 4.
+        antflagfile: Output file that contains the flagged antennas. If not defined, use msfile.replace('.ms', 'antflags') 
         
     Returns:
-        Path to the text file with the list of antennas to flag.
+        Path to the text file with the list of antennas to flag (antflagfile).
     """
     tb.open(msfile)
     tautos = tb.query('ANTENNA1=ANTENNA2')
@@ -199,11 +201,12 @@ def flag_ants_from_postcal_autocorr(msfile, tavg=False, thresh=4.):
         np.where((arr_to_evaluate[inds_exp, 0] > medval_exp[0] + thresh * np.ma.min(stdval_exp)) |
                  (arr_to_evaluate[inds_exp, 3] > medval_exp[3] + thresh * np.ma.min(stdval_exp)))]
     flagsall = np.sort(np.append(newflagscore, newflagsexp))
-    print(flagsall.size)
+    print('{0:d} bad antennas found out of {1:d} antennas'.format(flagsall.size, Nants))
     if flagsall.size > 0:
-        antflagfile = os.path.splitext(os.path.abspath(msfile))[0] + '.badants'
-        print(antflagfile)
-        if os.path.exists(antflagfile):
+        if antflagfile is None:
+            antflagfile = os.path.splitext(os.path.abspath(msfile))[0] + '.badants'
+        print('Writing flags to '+antflagfile)
+        if os.path.exists(antflagfile) and doappend:
             existingflags = np.genfromtxt(antflagfile, delimiter=',', dtype=int)
             flagsall = np.append(flagsall, existingflags)
             flagsall = np.unique(flagsall)
@@ -212,19 +215,28 @@ def flag_ants_from_postcal_autocorr(msfile, tavg=False, thresh=4.):
         print(flagsallstr2)
         with open(antflagfile, 'w') as f:
             f.write(flagsallstr2)
-        return antflagfile
+        return 1 
     else:
-        return None
+        return 0 
 
 
-def flag_bad_ants(msfile, thresh=10.):
-    ants = flag_ants_from_postcal_autocorr(msfile, thresh=thresh)
-    antflagfile = os.path.splitext(os.path.abspath(msfile))[0] + '.badants'
+def flag_bad_ants(msfile, thresh=10., antflagfile=None):
+    """
+    Read the text file that contains flags for bad antennas, and apply the flags
+    :param msfile: input CASA ms visibility for calibration
+    :param thresh: Threshold to use for flagging. Default is 10.
+    """
+    if antflagfile is None:
+        antflagfile = os.path.splitext(os.path.abspath(msfile))[0] + '.badants'
+        res = flag_ants_from_postcal_autocorr(msfile, thresh=thresh, antflagfile=antflagfile)
     if os.path.isfile(antflagfile):
         with open(antflagfile, 'r') as f:
             antenna_list = f.readline()
+            print('Applying flags for these antennas')
             print(antenna_list)
         flagdata(vis=msfile, mode='manual', antenna=antenna_list)
+    else:
+        print("No flag is found. Do nothing")
     return
 
 
@@ -261,10 +273,10 @@ def apply_calibration(msfile, gaintable=None, doflag=False, do_solar_imaging=Tru
             gaintable = [gaintable]
     # Apply the calibration
     clearcal(msfile)
-    applycal(msfile, gaintable=gaintable, flagbackup=False)
+    applycal(msfile, gaintable=gaintable, flagbackup=True, applymode='calflag')
     sunpos = get_sun_pos(msfile)
     if do_solar_imaging:
-        tclean(msfile, imagename=imagename, imsize=[512], cell=['2arcmin'],
+        tclean(msfile, imagename=imagename, imsize=[512], cell=['1arcmin'],
                weighting='uniform', phasecenter=sunpos, niter=500)
         print('Solar image made {0:s}.image'.format(imagename))
 
@@ -318,7 +330,7 @@ def remove_all_sources(msfile, imagename='full_sky', imsize=4096, cell='2arcmin'
     return outms
 
 
-def make_solar_image(msfile, imagename='sun_only', imsize=512, cell='2arcmin'):
+def make_solar_image(msfile, imagename='sun_only', imsize=512, cell='1arcmin'):
     sunpos = get_sun_pos(msfile)
     tclean(msfile, imagename=imagename, imsize=imsize, cell=cell,
            weighting='uniform', phasecenter=sunpos, niter=1000,
@@ -339,7 +351,7 @@ def correct_ms_bug(msfile):
     tb.close()
 
 
-def pipeline(solar_ms, calib_ms=None, bcal=None):
+def pipeline(solar_ms, calib_ms=None, bcal=None, imagename='sun_only', imsize=512, cell='1arcmin'):
     """
     Pipeline to calibrate and imaging a solar visibility
     :param solar_ms: input solar measurement set
@@ -354,4 +366,4 @@ def pipeline(solar_ms, calib_ms=None, bcal=None):
     correct_ms_bug(solar_ms)
     apply_calibration(solar_ms, gaintable=bcal, doflag=True, do_solar_imaging=False)
     outms = remove_all_sources(solar_ms)
-    make_solar_image(outms)
+    make_solar_image(outms, imagename=imagename, imsize=imsize, cell=cell)
