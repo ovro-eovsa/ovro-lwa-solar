@@ -1,13 +1,18 @@
-#!/usr/bin/env python
+"""
+Pipeline for calibrating and imaging solar data.
+It was initially adapted from Marin Anderson's script named /opt/astro/utils/bin/gen_model_ms.py
+    on astm.lwa.ovro.caltech.edu in August 2022
+Certain functions are adapted from the orca repository at https://github.com/ovro-lwa/distributed-pipeline
 
-# This module is adapted from Marin Anderson's script named /opt/astro/utils/bin/gen_model_ms.py on astm.lwa.ovro.caltech.edu
-# It also takes functions in the orca repository at https://github.com/ovro-lwa/distributed-pipeline
-# It requires a modular installation of CASA 6: https://casadocs.readthedocs.io/en/stable/notebooks/introduction.html#Modular-Packages
+Requirements:
+- A modular installation of CASA 6: https://casadocs.readthedocs.io/en/stable/notebooks/introduction.html#Modular-Packages
+- A working version of wsclean for imaging (i.e., "wsclean" defined in the search path)
+"""
 
 from casatasks import clearcal, ft, bandpass, applycal, flagdata, tclean, flagmanager, uvsub
 from casatools import table, measures, componentlist, msmetadata
 import math
-import sys, os
+import sys,os
 import numpy as np
 from astropy.coordinates import SkyCoord
 import astropy.units as u
@@ -21,8 +26,14 @@ cl = componentlist()
 
 
 def flux80_47(flux_hi, sp, ref_freq=80., output_freq=47.):
-    # given a flux at 80 MHz and a sp_index,
-    # return the flux at 47 MHz.
+    """
+    Given a flux at 80 MHz and a sp_index, return the flux at 47 MHz.
+    :param flux_hi: flux at the reference frequency
+    :param sp: spectral index
+    :param ref_freq: reference frequency in MHz
+    :param output_freq: output frequency in MHz
+    :return: flux caliculated at the output frequency
+    """
     return flux_hi * 10 ** (sp * math.log(output_freq / ref_freq, 10))
 
 
@@ -43,6 +54,13 @@ def conv_deg(dec):
 
 
 def get_sun_pos(msfile, str_output=True):
+    """
+    Return J2000 RA and DEC coordinates of the solar disk center
+    :param msfile: input CASA measurement set
+    :param str_output: if True, return coordinate in string form acceptable by CASA tclean
+        if False, return a dictionary in CASA measures format: https://casa.nrao.edu/docs/casaref/measures.measure.html
+    :return: solar disk center coordinate in string or dictionary format
+    """
     tb.open(msfile)
     t0 = tb.getcell('TIME', 0)
     tb.close()
@@ -59,6 +77,11 @@ def get_sun_pos(msfile, str_output=True):
 
 
 def get_msinfo(msfile):
+    """
+    Return some basic information of an OVRO-LWA measurement set
+    :param msfile: path to CASA measurement set
+    :return: number of antennas, number of spectral windows, number of channels
+    """
     msmd = msmetadata()
     msmd.open(msfile)
     nant = msmd.nantennas()  # number of antennas
@@ -69,6 +92,11 @@ def get_msinfo(msfile):
 
 
 def get_antids(msfile):
+    """
+    Read antenna ids from a measurement set and separate them to inner and expansion ones
+    :param msfile: path to CASA measurement set
+    :return: antenna ids for core antennas and expansion antennas
+    """
     tb.open(msfile + '/ANTENNA')
     ms_ant_names = tb.getcol('NAME')
     tb.close()
@@ -92,6 +120,7 @@ def gen_model_cl(msfile, ref_freq=80.0, output_freq=47.0,
                  includesun=False, solar_flux=16000, solar_alpha=2.2,
                  modelcl=None, verbose=True, overwrite=True):
     """
+    Generate source models for bright sources as CASA clean components
     :param msfile: input visibility
     :param ref_freq: reference frequency of the preset flux values of bright sources
     :param output_freq: output frequency to be written into the CASA component list
@@ -482,12 +511,27 @@ def apply_calibration(msfile, gaintable=None, doflag=False, antflagfile=None, do
 
 def make_fullsky_image(msfile, imagename="allsky", imsize=4096, cell='2arcmin',
                        minuv=10):  ### minuv: minimum uv in lambda
+    """
+    Make all sky image with wsclean
+    :param msfile: path to CASA measurement set
+    :param imagename: output image name
+    :param imsize: size of the image in pixels
+    :param cell: pixel scale
+    :param minuv: minimum uv to consider for imaging (in # of wavelengths)
+    :return: produces wsclean images (fits), PSF, etc.
+    """
     os.system("wsclean -no-update-model-required -weight uniform" +
               " -name " + imagename + " -size " + str(imsize) + " " + str(imsize) + " -scale " + cell +
               " -minuv-l " + str(minuv) + " -niter 1000 " + msfile)
 
 
 def get_solar_loc_pix(msfile, image="allsky"):
+    """
+    Get the x, y pixel location of the Sun from an all-sky image
+    :param msfile: path to CASA measurement set
+    :param image: all sky image made from the measurement set
+    :return: pixel value in X and Y for solar disk center
+    """
     from astropy.wcs.utils import skycoord_to_pixel
     m = get_sun_pos(msfile, str_output=False)
     ra = m['m0']['value']
@@ -560,8 +604,19 @@ def get_nonsolar_sources_loc_pix(msfile, image="allsky", verbose=False):
 
 def gen_nonsolar_source_model(msfile, imagename="allsky", outimage=None, sol_area=200., src_area=20.,
                               remove_strong_sources_only=True, verbose=True):
-    # take the full sky image, cut the Sun away from the image
-    # return another fits file without the Sun in the full sky image
+    """
+    Take the full sky image, remove non-solar sources from the image
+    :param msfile: path to CASA measurement set
+    :param imagename: input all sky image
+    :param outimage: output all sky image without other sources
+    :param sol_area: size around the Sun in arcmin to be left alone
+    :param src_area: size around the source to be taken away
+    :param remove_strong_sources_only: If True, remove only known strong sources.
+        If False, remove everything other than Sun.
+    :param verbose: Toggle to print out more information
+    :return: FITS image with non-solar sources removed
+    """
+
     solx, soly = get_solar_loc_pix(msfile, imagename)
     srcs = get_nonsolar_sources_loc_pix(msfile, imagename)
     head = fits.getheader(imagename + "-model.fits")
@@ -602,12 +657,29 @@ def gen_nonsolar_source_model(msfile, imagename="allsky", outimage=None, sol_are
 
 
 def predict_model(msfile, outms, image="_no_sun"):
+    """
+    Predict a model measurement set from an image. In the pipeline, it is
+    used for transforming a model all sky image without the Sun to the output ms, and write it into the model column
+    :param msfile: input CASA measurement set
+    :param outms: output CASA measurement set
+    :param image: input all sky image with non-solar sources, generated by gen_nonsolar_source_model()
+    :return: N/A, but with an output CASA measurement set written into the same area as in the input ms
+    """
     os.system("cp -r " + msfile + " " + outms)
     clearcal(outms, addmodel=True)
     os.system("wsclean -predict -name " + image + " " + outms)
 
 
 def remove_nonsolar_sources(msfile, imagename='allsky', imsize=4096, cell='2arcmin', minuv=10):
+    """
+    Wrapping for removing the nonsolar sources from the solar measurement set
+    :param msfile: input CASA measurement set
+    :param imagename: name of the all sky image
+    :param imsize: size of the image in pixels
+    :param cell: pixel scale
+    :param minuv: minimum uv to consider for imaging (in # of wavelengths)
+    :return: a CASA measurement set with non-solar sources removed. Default name is "*_sun_only.ms"
+    """
     make_fullsky_image(msfile=msfile, imagename=imagename, imsize=imsize, cell=cell, minuv=minuv)
     image_nosun = gen_nonsolar_source_model(msfile, imagename=imagename)
     outms = msfile[:-3] + "_sun_only.ms"
@@ -626,6 +698,17 @@ def remove_nonsolar_sources(msfile, imagename='allsky', imsize=4096, cell='2arcm
 
 def make_solar_image(msfile, imagename='sun_only',
                      imsize=512, cell='1arcmin', niter=500, uvrange='', psfcutoff=0.5):
+    """
+    Simple wrapper of CASA's tclean to make a solar image center at the solar disk center
+    :param msfile: input CASA measurement set
+    :param imagename: output image name
+    :param imsize: size of the image in pixels
+    :param cell: pixel scale
+    :param niter: number of iterations
+    :param uvrange: uvrange following tclean's syntax
+    :param psfcutoff: cutoff level to fit the PSF
+    :return: resulting CASA image
+    """
     sunpos = get_sun_pos(msfile)
     tclean(msfile, imagename=imagename, uvrange=uvrange, imsize=imsize, cell=cell,
            weighting='uniform', phasecenter=sunpos, niter=niter, psfcutoff=psfcutoff)
@@ -633,7 +716,8 @@ def make_solar_image(msfile, imagename='sun_only',
 
 def correct_ms_bug(msfile):
     """
-    Temporary fix for the visibility files produced by the current pipeline
+    Temporary fix for the visibility files produced by the current pipeline.
+    Update: initially found in August 2022. Not needed as of April 2023.
     :param msfile: input CASA measurement set
     """
     tb.open(msfile + "/SPECTRAL_WINDOW", nomodify=False)
