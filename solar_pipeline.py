@@ -115,6 +115,114 @@ def get_antids(msfile):
     msmd.close()
     return np.array(core_ant_ids), np.array(exp_ant_ids)
 
+def write_source_file(file_handle,source_name,primary_beam,source_num):  #### works only if logarithimicSI is false
+    
+    try:
+        calfilepath='/home/surajit/ovro-lwa-solar/defaults/'
+        f1=open(calfilepath+source_name+".txt","r")
+        j=0
+        
+        while True:
+            line=f1.readline()
+            if not line:
+                break
+            if source_num==0 and j==0:
+                file_handle.write(line)
+            elif j!=0:
+                try:
+                    splitted=line.split(',')
+                    I_flux=float(splitted[4])
+                 
+                    beam_corrected_I_flux=I_flux*primary_beam
+                    splitted[4]=str(beam_corrected_I_flux)
+                    
+                    for k,phrase in enumerate(splitted[5:]):
+                        if k==0:
+                            splitted[5+k]='['+str(float(phrase[1:])*primary_beam)
+                        else:
+                            if phrase[-1]==']':
+                                splitted[5+k]=str(float(phrase[:-1])*primary_beam)+']'
+                                break
+                            else:
+                                splitted[5+k]=str(float(phrase)*primary_beam)
+                    line1=','.join(splitted)
+                    if splitted[5+k+1]=='false':
+                        file_handle.write(line1)
+                    else:
+                        raise RuntimeError("Function now works only if logarithmicSI is false")
+                except IndexError:
+                    pass
+                
+            j+=1
+    finally:
+        f1.close()
+    
+def gen_model_ms(visibility, ref_freq=80.0, output_freq=47.0,
+                 includesun=True, solar_flux=16000, solar_alpha=2.2,
+                 outputcl=None, verbose=True,filename='calibrator_source_list.txt'):
+    """
+    :param visibility: input visibility
+    :param ref_freq: reference frequency of the preset flux values of bright sources
+    :param output_freq: output frequency to be written into the CASA component list
+    :param includesun: if True, add a precribed solar flux to the source list
+    :return:
+    """
+    
+    srcs = [{'label': 'CasA', 'flux': '16530', 'alpha': -0.72,
+             'position': 'J2000 23h23m24s +58d48m54s'},
+            {'label': 'CygA', 'flux': '16300', 'alpha': -0.58,
+             'position': 'J2000 19h59m28.35663s +40d44m02.0970s'},
+            {'label': 'TauA', 'flux': '1770', 'alpha': -0.27,
+             'position': 'J2000 05h34m31.94s +22d00m52.2s'},
+            {'label': 'VirA', 'flux': '2400', 'alpha': -0.86,
+             'position': 'J2000 12h30m49.42338s +12d23m28.0439s'}]
+    
+    
+    
+    if includesun:
+        srcs.append({'label': 'Sun', 'flux': str(solar_flux), 'alpha': solar_alpha,
+                     'position': 'SUN'})
+
+    tb.open(visibility)
+    t0 = tb.getcell('TIME', 0)
+    tb.close()
+    # me.set_data_path('/opt/astro/casa-data')
+    ovro = me.observatory('OVRO_MMA')
+    time = me.epoch('UTC', '%fs' % t0)
+    me.doframe(ovro)
+    me.doframe(time)
+
+    msmd.open(visibility)
+    chan_freqs = msmd.chanfreqs(0)  
+    msmd.done()
+    avg_freq=0.5*(chan_freqs[0]+chan_freqs[-1])*1e-6
+    
+    f1=open(filename,'w')
+    num_source=0
+    for s in range(len(srcs) - 1, -1, -1):
+        coord = srcs[s]['position'].split()
+        d0 = None
+        if len(coord) == 1:
+            d0 = me.direction(coord[0])
+            d0_j2000 = me.measure(d0, 'J2000')
+            srcs[s]['position'] = 'J2000 %frad %frad' % (d0_j2000['m0']['value'], d0_j2000['m1']['value'])
+        elif len(coord) == 3:
+            coord[2] = conv_deg(coord[2])
+            d0 = me.direction(coord[0], coord[1], coord[2])
+        else:
+            raise Exception("Unknown direction")
+        d = me.measure(d0, 'AZEL')
+        elev = d['m1']['value']
+        if elev < 0:
+            del srcs[s]
+        else:
+            scale = math.sin(elev) ** 1.6
+            print (srcs[s]['label'])
+            print('scale {0:.2f}'.format(scale))
+            write_source_file(f1,srcs[s]['label'],scale,num_source)
+            num_source+=1   
+    
+    return 
 
 def gen_model_cl(msfile, ref_freq=80.0, output_freq=47.0,
                  includesun=False, solar_flux=16000, solar_alpha=2.2,
