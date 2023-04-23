@@ -4,8 +4,8 @@
 # It also takes functions in the orca repository at https://github.com/ovro-lwa/distributed-pipeline
 # It requires a modular installation of CASA 6: https://casadocs.readthedocs.io/en/stable/notebooks/introduction.html#Modular-Packages
 
-from casatasks import clearcal, ft, bandpass, applycal, flagdata, tclean, uvsub
-from casatools import table, measures, componentlist
+from casatasks import clearcal, ft, bandpass, applycal, flagdata, tclean, flagmanager, uvsub
+from casatools import table, measures, componentlist, msmetadata
 import math
 import sys, os
 import numpy as np
@@ -13,6 +13,7 @@ from astropy.coordinates import SkyCoord
 import astropy.units as u
 from astropy.wcs import WCS
 from astropy.io import fits
+import matplotlib.pyplot as plt
 
 tb = table()
 me = measures()
@@ -55,6 +56,36 @@ def get_sun_pos(msfile, str_output=True):
         d0_j2000_str = 'J2000 %frad %frad' % (d0_j2000['m0']['value'], d0_j2000['m1']['value'])
         return d0_j2000_str
     return d0_j2000
+
+
+def get_msinfo(msfile):
+    msmd = msmetadata()
+    msmd.open(msfile)
+    nant = msmd.nantennas()  # number of antennas
+    nspw = msmd.nspw()  # number of spectral windows
+    nchan = msmd.nchan(0)  # number of channels of the first spw
+    msmd.close()
+    return nant, nspw, nchan
+
+
+def get_antids(msfile):
+    tb.open(msfile + '/ANTENNA')
+    ms_ant_names = tb.getcol('NAME')
+    tb.close()
+    msmd = msmetadata()
+    msmd.open(msfile)
+    core_ant_name_list = ['LWA{0:03d}'.format(i + 1) for i in range(0, 256)]
+    exp_ant_name_list = ['LWA{0:03d}'.format(i + 1) for i in range(256, 366)]
+    core_ant_ids = []
+    exp_ant_ids = []
+    for ms_ant_name in ms_ant_names:
+        if ms_ant_name in core_ant_name_list:
+            core_ant_ids.append(msmd.antennaids(ms_ant_name)[0])
+        if ms_ant_name in exp_ant_name_list:
+            exp_ant_ids.append(msmd.antennaids(ms_ant_name)[0])
+
+    msmd.close()
+    return np.array(core_ant_ids), np.array(exp_ant_ids)
 
 
 def gen_model_cl(msfile, ref_freq=80.0, output_freq=47.0,
@@ -106,7 +137,7 @@ def gen_model_cl(msfile, ref_freq=80.0, output_freq=47.0,
             del srcs[s]
         else:
             scale = math.sin(elev) ** 1.6
-            print('scale {0:.2f}'.format(scale))
+            print('scale {0:.3f}'.format(scale))
             srcs[s]['flux'] = flux80_47(float(srcs[s]['flux']), srcs[s]['alpha'],
                                         ref_freq=ref_freq, output_freq=output_freq) * scale
 
@@ -128,42 +159,49 @@ def gen_model_cl(msfile, ref_freq=80.0, output_freq=47.0,
     return modelcl
 
 
-def flag_ants_from_postcal_autocorr(msfile, tavg=False, thresh=10., antflagfile=None, doappend=False):
+def gen_ant_flags_from_autocorr(msfile, antflagfile=None, datacolumn='DATA', tavg=False,
+                                thresh_core=1.0, thresh_exp=1.0, flag_exp_with_core_stat=True,
+                                doappend=False, debug=False, doplot=False):
     """Generates a text file containing the bad antennas.
     DOES NOT ACTUALLY APPLY FLAGS. CURRENTLY SHOULD ONLY BE RUN ON SINGLE SPW MSs.
+
+    Adapted from the flag_ants_from_postcal_autocorr() module in
+    https://github.com/ovro-lwa/distributed-pipeline/blob/main/orca/flagging/flag_bad_ants.py
     
     Args:
-        msfile: string
-        tavg: If set to True, will time average before evaluating flags.
-        thresh: Threshold to use for flagging. Default is 4.
-        antflagfile: Output file that contains the flagged antennas. If not defined, use msfile.replace('.ms', 'antflags') 
-        
+        :param msfile: string
+        :param datacolumn: specify which data column to use. Default to "DATA".
+            Could be "CORRECTED_DATA" if the dataset is calibrated
+        :param tavg: If set to True, will time average before evaluating flags.
+        :param thresh: Threshold to use for flagging. Default is 4.
+        :param antflagfile: Output file that contains the flagged antennas. If not defined, use msfile.replace('.ms', 'antflags')
+
     Returns:
         Path to the text file with the list of antennas to flag (antflagfile).
     """
     tb.open(msfile)
     tautos = tb.query('ANTENNA1=ANTENNA2')
     tb.close()
-    # get CORRECTED_DATA
-    try:
-        autos_corrected = tautos.getcol('CORRECTED_DATA')
-    except RuntimeError:
-        autos_corrected = tautos.getcol('DATA')
+    msmd = msmetadata()
+    msmd.open(msfile)
+    # get data, either DATA or CORRECTED_DATA
+    autos = tautos.getcol(datacolumn)
     autos_flags = tautos.getcol('FLAG')
     autos_antnums = tautos.getcol('ANTENNA1')
-    shape = autos_corrected.shape
+    shape = autos.shape
     # autos_corrected.shape = (Nants*Nints, Nchans, Ncorrs)
     if shape[2] > 4:
-        autos_corrected = np.swapaxes(autos_corrected, 0, 2)
+        autos = np.swapaxes(autos, 0, 2)
         autos_flags = np.swapaxes(autos_flags, 0, 2)
         print("Shape updated")
-    print(autos_corrected.shape)
+    print(autos.shape)
     Nants = np.unique(autos_antnums).shape[0]
     Nints = int(autos_antnums.shape[0] / Nants)
-    Ncorrs = autos_corrected.shape[-1]
+    Ncorrs = autos.shape[-1]
     # average over frequency, reorder
-    autos_corrected_mask = np.ma.masked_array(autos_corrected, mask=autos_flags,
+    autos_corrected_mask = np.ma.masked_array(autos, mask=autos_flags,
                                               fill_value=np.nan)
+    # take average in channel
     autos_tseries = np.ma.mean(autos_corrected_mask, axis=1).reshape(Nints, Nants, Ncorrs).transpose(1, 0, 2)
     antnums_reorder = autos_antnums.reshape(Nints, Nants).transpose(1, 0)
     # autos_tseries.shape = (Nants, Nints, Ncorrs)
@@ -175,60 +213,221 @@ def flag_ants_from_postcal_autocorr(msfile, tavg=False, thresh=10., antflagfile=
     else:
         medant_tseries = np.ma.median(autos_tseries, axis=0)
         arr_to_evaluate = np.ma.std(autos_tseries / medant_tseries, axis=1)
-    # separate out core and expansion antennas
-    inds_core = list(range(0, 56)) + list(range(64, 120)) + list(range(128, 184)) + list(range(192, 238))
-    inds_exp = list(range(56, 64)) + list(range(120, 128)) + list(range(184, 192)) + list(range(238, 246))
-    medval_core = np.ma.median(arr_to_evaluate[inds_core, :], axis=0)
-    medval_exp = np.ma.median(arr_to_evaluate[inds_exp, :], axis=0)
-    stdval_core = np.ma.std(arr_to_evaluate[inds_core, :], axis=0)
-    stdval_exp = np.ma.std(arr_to_evaluate[inds_exp, :], axis=0)
-    # find 3sigma outliers, exclude, and recalculate stdval
-    newinds_core = np.asarray(inds_core)[
-        np.where((arr_to_evaluate[inds_core, 0] < medval_core[0] + 3 * stdval_core[0]) |
-                 (arr_to_evaluate[inds_core, 3] < medval_core[3] + 3 * stdval_core[3]))]
-    newinds_exp = np.asarray(inds_exp)[np.where((arr_to_evaluate[inds_exp, 0] < medval_exp[0] + 3 * stdval_exp[0]) |
-                                                (arr_to_evaluate[inds_exp, 3] < medval_exp[3] + 3 * stdval_exp[3]))]
-    # exclude and recalculate
-    medval_core = np.ma.median(arr_to_evaluate[newinds_core, :], axis=0)
-    medval_exp = np.ma.median(arr_to_evaluate[newinds_exp, :], axis=0)
-    stdval_core = np.ma.std(arr_to_evaluate[newinds_core, :], axis=0)
-    stdval_exp = np.ma.std(arr_to_evaluate[newinds_exp, :], axis=0)
 
-    newflagscore = np.asarray(inds_core)[
-        np.where((arr_to_evaluate[inds_core, 0] > medval_core[0] + thresh * np.ma.min(stdval_core)) |
-                 (arr_to_evaluate[inds_core, 3] > medval_core[3] + thresh * np.ma.min(stdval_core)))]
-    newflagsexp = np.asarray(inds_exp)[
-        np.where((arr_to_evaluate[inds_exp, 0] > medval_exp[0] + thresh * np.ma.min(stdval_exp)) |
-                 (arr_to_evaluate[inds_exp, 3] > medval_exp[3] + thresh * np.ma.min(stdval_exp)))]
-    flagsall = np.sort(np.append(newflagscore, newflagsexp))
+    autos_ampdb = 10. * np.log10(np.abs(arr_to_evaluate / 1.e2))
+    print('shape of arr_to_evaluate', arr_to_evaluate.shape)
+    # separate out core and expansion antennas
+    # inds_core = list(range(0, 56)) + list(range(64, 120)) + list(range(128, 184)) + list(range(192, 238))
+    # inds_exp = list(range(56, 64)) + list(range(120, 128)) + list(range(184, 192)) + list(range(238, 246))
+    inds_core, inds_exp = get_antids(msfile)
+    medval_core = np.ma.median(autos_ampdb[inds_core, :], axis=0)
+    medval_exp = np.ma.median(autos_ampdb[inds_exp, :], axis=0)
+    stdval_core = np.ma.std(autos_ampdb[inds_core, :], axis=0)
+    stdval_exp = np.ma.std(autos_ampdb[inds_exp, :], axis=0)
+    if flag_exp_with_core_stat:
+        print('!! Use core antenna statistics to flag outer antennas !!')
+        medval_exp = medval_core
+        stdval_exp = stdval_core
+    if debug:
+        print('=====Before filtering out those beyond 1 sigma=====')
+        print('Median of core antennas', medval_core[0], medval_core[3])
+        print('Standard deviation of core antennas', stdval_core[0], stdval_core[3])
+        print('Median of outer antennas', medval_exp[0], medval_exp[3])
+        print('Standard deviation of outer antennas', stdval_exp[0], stdval_exp[3])
+    # find 1 sigma outliers, exclude, and recalculate stdval
+    newinds_core = np.asarray(inds_core)[
+        np.where(((autos_ampdb[inds_core, 0] < medval_core[0] + 1 * stdval_core[0]) &
+                  (autos_ampdb[inds_core, 0] > medval_core[0] - 1 * stdval_core[0])) |
+                 ((autos_ampdb[inds_core, 3] < medval_core[3] + 1 * stdval_core[3]) &
+                  (autos_ampdb[inds_core, 3] > medval_core[3] - 1 * stdval_core[3])))]
+    newinds_exp = np.asarray(inds_exp)[
+        np.where(((autos_ampdb[inds_exp, 0] < medval_exp[0] + 2 * stdval_exp[0]) &
+                  (autos_ampdb[inds_exp, 0] > medval_exp[0] - 2 * stdval_exp[0])) |
+                 ((autos_ampdb[inds_exp, 3] < medval_exp[3] + 2 * stdval_exp[3]) &
+                  (autos_ampdb[inds_exp, 3] > medval_exp[3] - 2 * stdval_exp[3])))]
+    # exclude and recalculate
+    medval_core = np.ma.median(autos_ampdb[newinds_core, :], axis=0)
+    medval_exp = np.ma.median(autos_ampdb[newinds_exp, :], axis=0)
+    stdval_core = np.ma.std(autos_ampdb[newinds_core, :], axis=0)
+    stdval_exp = np.ma.std(autos_ampdb[newinds_exp, :], axis=0)
+    if debug:
+        print('=====After filtering out those beyond 1 sigma=====')
+        print('Median of core antennas', medval_core[0], medval_core[3])
+        print('Standard deviation of core antennas', stdval_core[0], stdval_core[3])
+        print('Median of outer antennas', medval_exp[0], medval_exp[3])
+        print('Standard deviation of outer antennas', stdval_exp[0], stdval_exp[3])
+
+    flagscore = np.asarray(inds_core)[
+        np.where((autos_ampdb[inds_core, 0] > medval_core[0] + thresh_core * stdval_core[0]) |
+                 (autos_ampdb[inds_core, 0] < medval_core[0] - thresh_core * stdval_core[0]) |
+                 (autos_ampdb[inds_core, 3] > medval_core[3] + thresh_core * stdval_core[3]) |
+                 (autos_ampdb[inds_core, 3] < medval_core[3] - thresh_core * stdval_core[3]))]
+    flagsexp = np.asarray(inds_exp)[
+        np.where((autos_ampdb[inds_exp, 0] > medval_exp[0] + thresh_exp * stdval_exp[0]) |
+                 (autos_ampdb[inds_exp, 0] < medval_exp[0] - thresh_exp * stdval_exp[0]) |
+                 (autos_ampdb[inds_exp, 3] > medval_exp[3] + thresh_exp * stdval_exp[3]) |
+                 (autos_ampdb[inds_exp, 3] < medval_exp[3] - thresh_exp * stdval_exp[3]))]
+    flagsall = np.sort(np.append(flagscore, flagsexp))
     print('{0:d} bad antennas found out of {1:d} antennas'.format(flagsall.size, Nants))
     if flagsall.size > 0:
         if antflagfile is None:
             antflagfile = os.path.splitext(os.path.abspath(msfile))[0] + '.badants'
-        print('Writing flags to '+antflagfile)
+        print('Writing flags to ' + antflagfile)
         if os.path.exists(antflagfile) and doappend:
             existingflags = np.genfromtxt(antflagfile, delimiter=',', dtype=int)
             flagsall = np.append(flagsall, existingflags)
             flagsall = np.unique(flagsall)
         flagsallstr = [str(flag) for flag in flagsall]
+        flag_core_ids = ",".join([str(flag) for flag in np.sort(flagscore)])
+        flag_core_names = msmd.antennanames(flagscore)
+        flag_core_vals = autos_ampdb[flagscore]
+        flag_exp_ids = ",".join([str(flag) for flag in np.sort(flagsexp)])
+        flag_exp_names = msmd.antennanames(flagsexp)
+        flag_exp_vals = autos_ampdb[flagsexp]
         flagsallstr2 = ",".join(flagsallstr)
-        print(flagsallstr2)
+        print('flagged core antenna ids: ', flag_core_ids)
+        print('flagged core antenna names: ', flag_core_names)
+        print('flagged outer antenna ids: ', flag_exp_ids)
+        print('flagged outer antenna names: ', flag_exp_names)
+        msmd.close()
         with open(antflagfile, 'w') as f:
             f.write(flagsallstr2)
-        return 1 
+        if doplot:
+            fig = plt.figure(figsize=(12, 5))
+            for i, n in enumerate([0, 3]):
+                ax = fig.add_subplot(1, 2, i + 1)
+                if n == 0:
+                    ax.set_title('Auto-correlation in XX')
+                    upper_bound = thresh_core + np.max(stdval_core)
+                if n == 3:
+                    ax.set_title('Auto-correlation in YY')
+                    thresh = thresh_exp
+                ax.plot(inds_core, autos_ampdb[inds_core, n], 'ro', fillstyle='none', label='Inner')
+                ax.plot(flagscore, autos_ampdb[flagscore, n], 'ro', fillstyle='full', label='Flagged Inner')
+                ax.plot(inds_exp, autos_ampdb[inds_exp, n], 'bo', fillstyle='none', label='Outer')
+                ax.plot(flagsexp, autos_ampdb[flagsexp, n], 'bo', fillstyle='full', label='Flagged Outer')
+                ax.plot([0, Nants], [medval_core[n], medval_core[n]], 'r-')
+                ax.plot([0, Nants], [medval_core[n] + thresh_core + stdval_core[n],
+                                     medval_core[n] + thresh_core + stdval_core[n]], 'r--')
+                ax.plot([0, Nants], [medval_core[n] - thresh_core * stdval_core[n],
+                                     medval_core[n] - thresh_core * stdval_core[n]], 'r--')
+                ax.plot([0, Nants], [medval_exp[n], medval_exp[n]], 'b-')
+                ax.plot([0, Nants], [medval_exp[n] + thresh_exp * stdval_exp[n],
+                                     medval_exp[n] + thresh_exp * stdval_exp[n]], 'b--')
+                ax.plot([0, Nants], [medval_exp[n] - thresh_exp * stdval_exp[n],
+                                     medval_exp[n] - thresh_exp * stdval_exp[n]], 'b--')
+                ax.set_xlabel('Antenna ID')
+                ax.set_ylabel('dB (avg over channels)')
+                ax.set_ylim([-30, 10])
+
+                ax.legend()
+            fig.tight_layout()
+            plt.show()
+
+        if debug:
+            return antflagfile, medval_core, stdval_core, flag_core_ids, flag_core_names, flag_core_vals, \
+                   medval_exp, stdval_exp, flag_exp_ids, flag_exp_names, flag_exp_vals
+        else:
+            return antflagfile
     else:
-        return 0 
+        if debug:
+            return 0, medval_core, stdval_core, medval_exp, stdval_exp
+        else:
+            return 0
 
 
-def flag_bad_ants(msfile, thresh=10., antflagfile=None):
+def gen_ant_flags_tst(msfile: str, debug: bool = False) -> str:
+    """Generates a text file containing the bad antennas.
+    DOES NOT ACTUALLY APPLY FLAGS.
+
+    Adapted from the flag_bad_ants() module in
+    https://github.com/ovro-lwa/distributed-pipeline/blob/main/orca/flagging/flag_bad_ants.py
+
+    Comment BC (April 7, 2023): Does not seem to work well with lots of antennas out
+    Args:
+        msfile: msfile to generate
+    Returns:
+        Path to the text file with list of antennas to flag.
+    """
+    nant, nspw, nchan = get_msinfo(msfile)
+    tb.open(msfile)
+    tautos = tb.query('ANTENNA1=ANTENNA2')
+
+    # iterate over antenna, 1-->256
+    datacolxx = np.zeros((nchan * nspw, nant))
+    datacolyy = np.copy(datacolxx)
+    for i in range(nspw):
+        datacolxx[i * nchan:(i + 1) * nchan] = tb.getcol("DATA", nant * i, nant)[0]
+        datacolyy[i * nchan:(i + 1) * nchan] = tb.getcol("DATA", nant * i, nant)[3]
+
+    datacolxxamp = np.sqrt(np.real(datacolxx) ** 2. + np.imag(datacolxx) ** 2.)
+    datacolyyamp = np.sqrt(np.real(datacolyy) ** 2. + np.imag(datacolyy) ** 2.)
+
+    datacolxxampdb = 10 * np.log10(datacolxxamp / 1.e2)
+    datacolyyampdb = 10 * np.log10(datacolyyamp / 1.e2)
+
+    # median value for every antenna
+    medamp_perantx = np.median(datacolxxampdb, axis=1)
+    medamp_peranty = np.median(datacolyyampdb, axis=1)
+
+    # get flags based on deviation from median amp
+    xthresh_pos = np.median(medamp_perantx) + np.std(medamp_perantx)
+    xthresh_neg = np.median(medamp_perantx) - 2 * np.std(medamp_perantx)
+    ythresh_pos = np.median(medamp_peranty) + np.std(medamp_peranty)
+    ythresh_neg = np.median(medamp_peranty) - 2 * np.std(medamp_peranty)
+    flags = np.where((medamp_perantx > xthresh_pos) | (medamp_perantx < xthresh_neg) | \
+                     (medamp_peranty > ythresh_pos) | (medamp_peranty < ythresh_neg) | \
+                     np.isnan(medamp_perantx) | np.isnan(medamp_peranty))
+
+    # use unflagged antennas to generate median spectrum
+    flagmask = np.zeros((nchan * nspw, nant))
+    flagmask[:, flags[0]] = 1
+    datacolxxampdb_mask = np.ma.masked_array(datacolxxampdb, mask=flagmask, fill_value=np.nan)
+    datacolyyampdb_mask = np.ma.masked_array(datacolyyampdb, mask=flagmask, fill_value=np.nan)
+
+    medamp_allantsx = np.median(datacolxxampdb_mask, axis=1)
+    medamp_allantsy = np.median(datacolyyampdb_mask, axis=1)
+
+    stdarrayx = np.array([np.std(antarr / medamp_allantsx) for antarr in datacolxxampdb_mask.transpose()])
+    stdarrayy = np.array([np.std(antarr / medamp_allantsy) for antarr in datacolyyampdb_mask.transpose()])
+
+    # this threshold was manually selected...should be changed to something better at some point
+    if nant > 256:
+        thresh = 1
+    else:
+        thresh = 0.02
+    flags2 = np.where((stdarrayx > thresh) | (stdarrayy > thresh))
+
+    flagsall = np.sort(np.append(flags, flags2))
+    flagsallstr = [str(flag) for flag in flagsall]
+    flagsallstr2 = ",".join(flagsallstr)
+
+    antflagfile = os.path.dirname(os.path.abspath(msfile)) + '/flag_bad_ants.ants'
+    with open(antflagfile, 'w') as f:
+        f.write(flagsallstr2)
+
+    tb.close()
+    if debug:
+        return medamp_perantx, medamp_peranty, stdarrayx, stdarrayy
+    else:
+        return antflagfile
+
+
+def flag_bad_ants(msfile, antflagfile=None, datacolumn='DATA', thresh_core=1.0, thresh_exp=1.0, clearflags=True):
     """
     Read the text file that contains flags for bad antennas, and apply the flags
     :param msfile: input CASA ms visibility for calibration
     :param thresh: Threshold to use for flagging. Default is 10.
     """
+    if clearflags:
+        flaglist = flagmanager(msfile, mode='list')
+        # check if previous flags exist. If so, restore to original state
+        if len(flaglist) > 1:
+            flagmanager(msfile, mode='restore', versionname=flaglist[0]['name'])
     if antflagfile is None:
         antflagfile = os.path.splitext(os.path.abspath(msfile))[0] + '.badants'
-        res = flag_ants_from_postcal_autocorr(msfile, thresh=thresh, antflagfile=antflagfile)
+        res = gen_ant_flags_from_autocorr(msfile, antflagfile=antflagfile, datacolumn=datacolumn,
+                                          thresh_core=thresh_core, thresh_exp=thresh_exp)
     if os.path.isfile(antflagfile):
         with open(antflagfile, 'r') as f:
             antenna_list = f.readline()
@@ -237,7 +436,7 @@ def flag_bad_ants(msfile, thresh=10., antflagfile=None):
         flagdata(vis=msfile, mode='manual', antenna=antenna_list)
     else:
         print("No flag is found. Do nothing")
-    return
+    return antflagfile
 
 
 def gen_calibration(msfile, modelcl=None, uvrange='', bcaltb=None):
@@ -262,10 +461,10 @@ def gen_calibration(msfile, modelcl=None, uvrange='', bcaltb=None):
     return bcaltb
 
 
-def apply_calibration(msfile, gaintable=None, doflag=False, do_solar_imaging=True,
+def apply_calibration(msfile, gaintable=None, doflag=False, antflagfile=None, do_solar_imaging=True,
                       imagename='test'):
     if doflag:
-        flag_bad_ants(msfile)
+        flag_bad_ants(msfile, antflagfile=antflagfile)
     if not gaintable:
         print('No calibration table is provided. Abort... ')
     else:
@@ -281,60 +480,155 @@ def apply_calibration(msfile, gaintable=None, doflag=False, do_solar_imaging=Tru
         print('Solar image made {0:s}.image'.format(imagename))
 
 
-def make_fullsky_image(msfile, imagename="full_sky", imsize=4096, cell='2arcmin',
+def make_fullsky_image(msfile, imagename="allsky", imsize=4096, cell='2arcmin',
                        minuv=10):  ### minuv: minimum uv in lambda
-    os.system("wsclean -no-update-model-required -weight uniform" + \
-              " -name " + imagename + " -size " + str(imsize) + " " + str(imsize) + " -scale " + cell + \
+    os.system("wsclean -no-update-model-required -weight uniform" +
+              " -name " + imagename + " -size " + str(imsize) + " " + str(imsize) + " -scale " + cell +
               " -minuv-l " + str(minuv) + " -niter 1000 " + msfile)
 
 
-def get_solar_loc_pix(msfile, image="full_sky"):
+def get_solar_loc_pix(msfile, image="allsky"):
+    from astropy.wcs.utils import skycoord_to_pixel
     m = get_sun_pos(msfile, str_output=False)
     ra = m['m0']['value']
     dec = m['m1']['value']
     coord = SkyCoord(ra * u.rad, dec * u.rad, frame='icrs')
     head = fits.getheader(image + "-model.fits")
     w = WCS(head)
-    from astropy.wcs.utils import skycoord_to_pixel
     pix = skycoord_to_pixel(coord, w)
     x = int(pix[0])
     y = int(pix[1])
     return x, y
 
 
-def remove_sun_from_model(msfile, image="full_sky", area=100):
-    x, y = get_solar_loc_pix(msfile, image)
-    head = fits.getheader(image + "-model.fits")
-    data = fits.getdata(image + "-model.fits")
-    data[0, 0, y - area // 2:y + area // 2, x - area // 2:x + area // 2] = 0.0000
-    fits.writeto(image + "_sun_only-model.fits", data, header=head, overwrite=True)
+def get_nonsolar_sources_loc_pix(msfile, image="allsky", verbose=False):
+    """
+    Converting the RA & DEC coordinates of nonsolar sources to image coordinates in X and Y
+    :param image: input CASA image
+    :return: an updated directionary of strong sources with 'xpix' and 'ypix' added
+    """
+    from astropy.wcs.utils import skycoord_to_pixel
+    srcs = [{'label': 'CasA', 'position': 'J2000 23h23m24s +58d48m54s'},
+            {'label': 'CygA', 'position': 'J2000 19h59m28.35663s +40d44m02.0970s'},
+            {'label': 'TauA', 'position': 'J2000 05h34m31.94s +22d00m52.2s'},
+            {'label': 'VirA', 'position': 'J2000 12h30m49.42338s +12d23m28.0439s'}]
+
+    tb.open(msfile)
+    t0 = tb.getcell('TIME', 0)
+    tb.close()
+    # me.set_data_path('/opt/astro/casa-data')
+    ovro = me.observatory('OVRO_MMA')
+    time = me.epoch('UTC', '%fs' % t0)
+    me.doframe(ovro)
+    me.doframe(time)
+
+    for i in range(len(srcs) - 1, -1, -1):
+        src = srcs[i]
+        coord = src['position'].split()
+        d0 = None
+        if len(coord) == 1:
+            d0 = me.direction(coord[0])
+            d0_j2000 = me.measure(d0, 'J2000')
+            src['position'] = 'J2000 %frad %frad' % (d0_j2000['m0']['value'], d0_j2000['m1']['value'])
+        elif len(coord) == 3:
+            coord[2] = conv_deg(coord[2])
+            d0 = me.direction(coord[0], coord[1], coord[2])
+            d0_j2000 = me.measure(d0, 'J2000')
+        else:
+            raise Exception("Unknown direction")
+        d = me.measure(d0, 'AZEL')
+        elev = d['m1']['value']
+        if elev > 0:
+            ra = d0_j2000['m0']['value']
+            dec = d0_j2000['m1']['value']
+            coord = SkyCoord(ra * u.rad, dec * u.rad, frame='icrs')
+            head = fits.getheader(image + "-model.fits")
+            w = WCS(head)
+            pix = skycoord_to_pixel(coord, w)
+            x = int(pix[0])
+            y = int(pix[1])
+            srcs[i]['xpix'] = x
+            srcs[i]['ypix'] = y
+            if verbose:
+                print('Found source {0:s} at pix x {1:d}, y {2:d}'.format(srcs[i]['label'], x, y))
+        else:
+            if verbose:
+                print('Source {0:s} has a <0 elevation'.format(srcs[i]['label']))
+            del srcs[i]
+    return srcs
 
 
-def predict_model(msfile, outms, image="full_sky_sun_only"):
+def gen_nonsolar_source_model(msfile, imagename="allsky", outimage=None, sol_area=200., src_area=20.,
+                              remove_strong_sources_only=True, verbose=True):
+    # take the full sky image, cut the Sun away from the image
+    # return another fits file without the Sun in the full sky image
+    solx, soly = get_solar_loc_pix(msfile, imagename)
+    srcs = get_nonsolar_sources_loc_pix(msfile, imagename)
+    head = fits.getheader(imagename + "-model.fits")
+    if head['cunit1'] == 'deg':
+        dx = np.abs(head['cdelt1'] * 60.)
+    else:
+        print(head['cunit1'] + ' not recognized as "deg". Model could be wrong.')
+    if head['cunit2'] == 'deg':
+        dy = np.abs(head['cdelt2'] * 60.)
+    else:
+        print(head['cunit2'] + ' not recognized as "deg". Model could be wrong.')
+    data = fits.getdata(imagename + "-model.fits")
+    if remove_strong_sources_only:
+        new_data = np.zeros_like(data)
+        src_area_xpix = src_area / dx
+        src_area_ypix = src_area / dy
+        for s in srcs:
+            src_x = s['xpix']
+            src_y = s['ypix']
+            bbox = [[src_y - src_area_ypix // 2, src_y + src_area_ypix // 2],
+                    [src_x - src_area_xpix // 2, src_x + src_area_xpix // 2]]
+            slicey, slicex = slice(int(bbox[0][0]), int(bbox[0][1])+1), slice(int(bbox[1][0]), int(bbox[1][1])+1)
+            new_data[0, 0, slicey, slicex] = data[0, 0, slicey, slicex]
+            if verbose:
+                print('Adding source {0:s} to model at x {1:d}, y {2:d} '
+                      'with flux {3:.1f} Jy'.format(s['label'], src_x, src_y, np.max(data[0, 0, slicey, slicex])))
+    else:
+        new_data = np.copy(data)
+        sol_area_xpix = int(sol_area / dx)
+        sol_area_ypix = int(sol_area / dy)
+        new_data[0, 0, soly - sol_area_ypix // 2:soly + sol_area_ypix // 2 + 1,
+                 solx - sol_area_xpix // 2:solx + sol_area_xpix // 2 + 1] = 0.0000
+
+    if not outimage:
+        outimage = imagename + "_no_sun"
+    fits.writeto(outimage + '-model.fits', new_data, header=head, overwrite=True)
+    return outimage
+
+
+def predict_model(msfile, outms, image="_no_sun"):
     os.system("cp -r " + msfile + " " + outms)
+    clearcal(outms, addmodel=True)
     os.system("wsclean -predict -name " + image + " " + outms)
 
 
-def remove_all_sources(msfile, imagename='full_sky', imsize=4096, cell='2arcmin', minuv=10):
+def remove_nonsolar_sources(msfile, imagename='allsky', imsize=4096, cell='2arcmin', minuv=10):
     make_fullsky_image(msfile=msfile, imagename=imagename, imsize=imsize, cell=cell, minuv=minuv)
-    remove_sun_from_model(msfile, image=imagename)
+    image_nosun = gen_nonsolar_source_model(msfile, imagename=imagename)
     outms = msfile[:-3] + "_sun_only.ms"
-    predict_model(msfile, outms=outms, image=imagename + "_sun_only")
+    predict_model(msfile, outms=outms, image=image_nosun)
     # uvsub(outms)
+    tb.open(msfile)
+    corrected_data = tb.getcol("CORRECTED_DATA")
+    tb.close()
     tb.open(outms, nomodify=False)
     model = tb.getcol("MODEL_DATA")
-    corrected_data = tb.getcol("CORRECTED_DATA")
     tb.putcol("CORRECTED_DATA", corrected_data - model)
     tb.flush()
     tb.close()
     return outms
 
 
-def make_solar_image(msfile, imagename='sun_only', imsize=512, cell='1arcmin'):
+def make_solar_image(msfile, imagename='sun_only',
+                     imsize=512, cell='1arcmin', niter=500, uvrange='', psfcutoff=0.5):
     sunpos = get_sun_pos(msfile)
-    tclean(msfile, imagename=imagename, imsize=imsize, cell=cell,
-           weighting='uniform', phasecenter=sunpos, niter=1000,
-           usemask='auto-multithresh')
+    tclean(msfile, imagename=imagename, uvrange=uvrange, imsize=imsize, cell=cell,
+           weighting='uniform', phasecenter=sunpos, niter=niter, psfcutoff=psfcutoff)
 
 
 def correct_ms_bug(msfile):
@@ -360,10 +654,11 @@ def pipeline(solar_ms, calib_ms=None, bcal=None, imagename='sun_only', imsize=51
     """
     if not bcal:
         if os.path.exists(calib_ms):
+            flag_bad_ants(calib_ms)
             bcal = gen_calibration(calib_ms)
         else:
             print('Neither calib_ms nor bcal exists. Need to provide calibrations to continue. Abort..')
-    correct_ms_bug(solar_ms)
+    #correct_ms_bug(solar_ms)
     apply_calibration(solar_ms, gaintable=bcal, doflag=True, do_solar_imaging=False)
-    outms = remove_all_sources(solar_ms)
+    outms = remove_nonsolar_sources(solar_ms)
     make_solar_image(outms, imagename=imagename, imsize=imsize, cell=cell)
