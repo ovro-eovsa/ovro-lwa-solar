@@ -1,2 +1,6 @@
 # ovro-lwa-solar
-Calibration, imaging, and analysis of solar data taken by the Owens Valley Long Wavelength Array (OVRO-LWA)
+Calibration and imaging pipeline for the Sun based on taken by the Owens Valley Long Wavelength Array (OVRO-LWA)
+Dependencies:
+- Modular CASA 6
+- Astropy, matplotlib, numpy
+- wsclean
