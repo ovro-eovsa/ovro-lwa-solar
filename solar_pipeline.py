@@ -146,6 +146,7 @@ def write_source_file(file_handle,source_name,primary_beam,source_num):  #### wo
                             else:
                                 splitted[5+k]=str(float(phrase)*primary_beam)
                     line1=','.join(splitted)
+                    line1=line1[:-1]+" "+str(primary_beam)+"\n"
                     if splitted[5+k+1]=='false':
                         file_handle.write(line1)
                     else:
@@ -927,28 +928,27 @@ def pipeline(solar_ms, calib_ms=None, bcal=None, selfcal=False, imagename='sun_o
     :param calib_ms: (optional) input measurement set for generating the calibrations, usually is one observed at night
     :param bcal: (optional) bandpass calibration table. If not provided, use calib_ms to generate one.
     """
-   # if not bcal:
-    #    if os.path.exists(calib_ms):
-     #       flag_bad_ants(calib_ms)
-      #      bcal = gen_calibration(calib_ms)
-       # else:
-        #    print('Neither calib_ms nor bcal exists. Need to provide calibrations to continue. Abort..')
+    if not bcal:
+        if os.path.exists(calib_ms):
+            flag_bad_ants(calib_ms)
+            bcal = gen_calibration(calib_ms)
+        else:
+            print('Neither calib_ms nor bcal exists. Need to provide calibrations to continue. Abort..')
     #correct_ms_bug(solar_ms)
-    #apply_calibration(solar_ms, gaintable=bcal, doantflag=True, doflag=True,do_solar_imaging=False)
-    #split(vis=solar_ms,outputvis=solar_ms[:-3]+"_calibrated.ms")
+    apply_calibration(solar_ms, gaintable=bcal, doantflag=True, doflag=True,do_solar_imaging=False)
+    split(vis=solar_ms,outputvis=solar_ms[:-3]+"_calibrated.ms")
     solar_ms=solar_ms[:-3]+"_calibrated.ms"
     if selfcal==True:
-      #do_selfcal(solar_ms)
-      #split(vis=solar_ms,outputvis=solar_ms[:-3]+"_selfcalibrated.ms")
-      #solar_ms=solar_ms[:-3]+"_selfcalibrated.ms"
-      #outms = remove_nonsolar_sources(solar_ms)
-      #do_selfcal(outms,num_apcal=1,applymode='calonly')
-      outms='20230309_191023_73MHz_calibrated_selfcalibrated_sun_only.ms'
+      do_selfcal(solar_ms)
+      split(vis=solar_ms,outputvis=solar_ms[:-3]+"_selfcalibrated.ms")
+      solar_ms=solar_ms[:-3]+"_selfcalibrated.ms"
+      outms = remove_nonsolar_sources(solar_ms)
+      do_selfcal(outms,num_apcal=1,applymode='calonly')
       split(vis=outms,outputvis=outms[:-3]+"_sun_selfcalibrated.ms")
       outms=outms[:-3]+"_sun_selfcalibrated.ms"
       outms =remove_nonsolar_sources(outms,imagename='for_weak_source_subtraction',remove_strong_sources_only=False)
-    #else:
-     #   outms = remove_nonsolar_sources(solar_ms)
-    #change_phasecenter(outms)
-    #run_wsclean(out_ms,imagename=imagename,autmask_thresh=5,uvrange='0',predict=False)
+    else:
+       outms = remove_nonsolar_sources(solar_ms)
+    change_phasecenter(outms)
+    run_wsclean(outms,imagename=imagename,autmask_thresh=5,uvrange='0',predict=False)
     #make_solar_image(outms, imagename=imagename, imsize=imsize, cell=cell)
