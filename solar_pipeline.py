@@ -9,10 +9,10 @@ Requirements:
 - A working version of wsclean for imaging (i.e., "wsclean" defined in the search path)
 """
 
-from casatasks import clearcal, ft, bandpass, applycal, flagdata, tclean, flagmanager, uvsub
+from casatasks import clearcal, ft, bandpass, applycal, flagdata, tclean, flagmanager, uvsub,gaincal,split
 from casatools import table, measures, componentlist, msmetadata
 import math
-import sys,os
+import sys,os,time
 import numpy as np
 from astropy.coordinates import SkyCoord
 import astropy.units as u
@@ -23,7 +23,7 @@ import matplotlib.pyplot as plt
 tb = table()
 me = measures()
 cl = componentlist()
-
+msmd=msmetadata()
 
 def flux80_47(flux_hi, sp, ref_freq=80., output_freq=47.):
     """
@@ -157,14 +157,9 @@ def write_source_file(file_handle,source_name,primary_beam,source_num):  #### wo
     finally:
         f1.close()
     
-def gen_model_ms(visibility, ref_freq=80.0, output_freq=47.0,
-                 includesun=True, solar_flux=16000, solar_alpha=2.2,
-                 outputcl=None, verbose=True,filename='calibrator_source_list.txt'):
+def gen_model_file(visibility,filename='calibrator_source_list.txt'):
     """
     :param visibility: input visibility
-    :param ref_freq: reference frequency of the preset flux values of bright sources
-    :param output_freq: output frequency to be written into the CASA component list
-    :param includesun: if True, add a precribed solar flux to the source list
     :return:
     """
     
@@ -179,9 +174,7 @@ def gen_model_ms(visibility, ref_freq=80.0, output_freq=47.0,
     
     
     
-    if includesun:
-        srcs.append({'label': 'Sun', 'flux': str(solar_flux), 'alpha': solar_alpha,
-                     'position': 'SUN'})
+    
 
     tb.open(visibility)
     t0 = tb.getcell('TIME', 0)
@@ -222,19 +215,12 @@ def gen_model_ms(visibility, ref_freq=80.0, output_freq=47.0,
             write_source_file(f1,srcs[s]['label'],scale,num_source)
             num_source+=1   
     
-    return 
+    return
 
-def gen_model_cl(msfile, ref_freq=80.0, output_freq=47.0,
+def point_source_model(msfile, ref_freq=80.0, output_freq=47.0,
                  includesun=False, solar_flux=16000, solar_alpha=2.2,
                  modelcl=None, verbose=True, overwrite=True):
-    """
-    Generate source models for bright sources as CASA clean components
-    :param msfile: input visibility
-    :param ref_freq: reference frequency of the preset flux values of bright sources
-    :param output_freq: output frequency to be written into the CASA component list
-    :param includesun: if True, add a precribed solar flux to the source list
-    :return:
-    """
+
     srcs = [{'label': 'CasA', 'flux': '16530', 'alpha': -0.72,
              'position': 'J2000 23h23m24s +58d48m54s'},
             {'label': 'CygA', 'flux': '16300', 'alpha': -0.58,
@@ -293,7 +279,47 @@ def gen_model_cl(msfile, ref_freq=80.0, output_freq=47.0,
         os.system('rm -rf ' + modelcl)
     cl.rename(modelcl)
     cl.done()
-    return modelcl
+    return modelcl,True
+                 
+
+def gen_model_cl(msfile, ref_freq=80.0, output_freq=47.0,
+                 includesun=False, solar_flux=16000, solar_alpha=2.2,
+                 modelcl=None, verbose=True, overwrite=True):
+    """
+    Generate source models for bright sources as CASA clean components
+    :param msfile: input visibility
+    :param ref_freq: reference frequency of the preset flux values of bright sources
+    :param output_freq: output frequency to be written into the CASA component list
+    :param includesun: if True, add a precribed solar flux to the source list
+    :return:
+    """
+    
+    if includesun==False:
+        modelcl,ft_needed=point_source_model(msfile)
+        return modelcl,ft_needed
+    try:
+        filename='calibrator_source_list.txt'
+        gen_model_file(msfile,filename)
+        imagename="dummy"
+        os.system("wsclean -no-dirty -no-update-model-required -size 4096 4096 "+\
+                    "-scale 2arcmin -name "+imagename+" "+msfile)
+        ##### making the residual a blank image
+        hdu=fits.open(imagename+"-residual.fits",mode="update")
+        hdu[0].data*=0.0
+        hdu.flush()
+        hdu.close()
+        ###### 
+        os.system("wsclean -no-dirty -no-update-model-required -restore-list "+\
+                    imagename+"-residual.fits "+filename+" calibrator-model.fits "+msfile)
+        if os.path.isfile("calibrator-model.fits")==False:
+            raise RuntimeError("WSClean version 3.3 or above. Proceeding with point source model")
+        os.system("wsclean -predict -name calibrator-model.fits "+msfile)
+        modelcl,ft_needed=point_source_model(msfile)
+        return None,False
+    except:
+        modelcl,ft_needed=point_source_model(msfile)
+        return modelcl,ft_needed   
+    
 
 
 def gen_ant_flags_from_autocorr(msfile, antflagfile=None, datacolumn='DATA', tavg=False,
@@ -325,6 +351,7 @@ def gen_ant_flags_from_autocorr(msfile, antflagfile=None, datacolumn='DATA', tav
     autos = tautos.getcol(datacolumn)
     autos_flags = tautos.getcol('FLAG')
     autos_antnums = tautos.getcol('ANTENNA1')
+    
     shape = autos.shape
     # autos_corrected.shape = (Nants*Nints, Nchans, Ncorrs)
     if shape[2] > 4:
@@ -586,22 +613,28 @@ def gen_calibration(msfile, modelcl=None, uvrange='', bcaltb=None):
     """
     if not modelcl or not (os.path.exists(modelcl)):
         print('Model component list does not exist. Generating one from scratch.')
-        modelcl = gen_model_cl(msfile)
-
-    # Put the component list to the model column
-    clearcal(msfile, addmodel=True)
-    ft(msfile, complist=modelcl, usescratch=True)
+        modelcl,ft_needed = gen_model_cl(msfile)
+    else:
+        ft_needed=True
+        
+    if ft_needed==True:
+        # Put the component list to the model column
+        clearcal(msfile, addmodel=True)
+        ft(msfile, complist=modelcl, usescratch=True)
     # Now do a bandpass calibration using the model component list
     if not bcaltb:
         bcaltb = os.path.splitext(msfile)[0] + '.bcal'
     bandpass(msfile, caltable=bcaltb, uvrange=uvrange, combine='scan,field,obs', fillgaps=1)
+    applycal(vis=msfile,gaintable=bcaltb)
+    flagdata(vis=msfile,mode='rflag',datacolumn='corrected')
+    bandpass(msfile, caltable=bcaltb, uvrange=uvrange, combine='scan,field,obs', fillgaps=1)
     return bcaltb
 
 
-def apply_calibration(msfile, gaintable=None, doflag=False, antflagfile=None, do_solar_imaging=True,
+def apply_calibration(msfile, gaintable=None, doantflag=False,doflag=False, antflagfile=None, do_solar_imaging=True,
                       imagename='test'):
-    if doflag:
-        flag_bad_ants(msfile, antflagfile=antflagfile)
+    if doantflag:
+        flag_bad_ants(msfile, antflagfile=antflagfile)   
     if not gaintable:
         print('No calibration table is provided. Abort... ')
     else:
@@ -610,6 +643,8 @@ def apply_calibration(msfile, gaintable=None, doflag=False, antflagfile=None, do
     # Apply the calibration
     clearcal(msfile)
     applycal(msfile, gaintable=gaintable, flagbackup=True, applymode='calflag')
+    if doflag==True:
+        flagdata(vis=msfile,mode='rflag',datacolumn='corrected')
     sunpos = get_sun_pos(msfile)
     if do_solar_imaging:
         tclean(msfile, imagename=imagename, imsize=[512], cell=['1arcmin'],
@@ -778,7 +813,7 @@ def predict_model(msfile, outms, image="_no_sun"):
     os.system("wsclean -predict -name " + image + " " + outms)
 
 
-def remove_nonsolar_sources(msfile, imagename='allsky', imsize=4096, cell='2arcmin', minuv=10):
+def remove_nonsolar_sources(msfile, imagename='allsky', imsize=4096, cell='2arcmin', minuv=0,remove_strong_sources_only=True):
     """
     Wrapping for removing the nonsolar sources from the solar measurement set
     :param msfile: input CASA measurement set
@@ -788,19 +823,13 @@ def remove_nonsolar_sources(msfile, imagename='allsky', imsize=4096, cell='2arcm
     :param minuv: minimum uv to consider for imaging (in # of wavelengths)
     :return: a CASA measurement set with non-solar sources removed. Default name is "*_sun_only.ms"
     """
-    make_fullsky_image(msfile=msfile, imagename=imagename, imsize=imsize, cell=cell, minuv=minuv)
-    image_nosun = gen_nonsolar_source_model(msfile, imagename=imagename)
+    run_wsclean(msfile=msfile, imagename=imagename, imsize=imsize, cell=cell, uvrange=minuv,predict=False)
+    image_nosun = gen_nonsolar_source_model(msfile, imagename=imagename,remove_strong_sources_only=remove_strong_sources_only)
     outms = msfile[:-3] + "_sun_only.ms"
-    predict_model(msfile, outms=outms, image=image_nosun)
-    # uvsub(outms)
-    tb.open(msfile)
-    corrected_data = tb.getcol("CORRECTED_DATA")
-    tb.close()
-    tb.open(outms, nomodify=False)
-    model = tb.getcol("MODEL_DATA")
-    tb.putcol("CORRECTED_DATA", corrected_data - model)
-    tb.flush()
-    tb.close()
+    predict_model(msfile, outms="temp.ms", image=image_nosun)
+    uvsub("temp.ms")
+    split(vis="temp.ms",outputvis=outms,datacolumn='corrected')
+    os.system("rm -rf temp.ms")
     return outms
 
 
@@ -836,21 +865,90 @@ def correct_ms_bug(msfile):
     tb.flush()
     tb.close()
 
+def do_selfcal(msfile,num_apcal=5,applymode='calflag'):
+    num_phase_cal=3
+    for i in range(num_phase_cal):
+        imagename=msfile[:-3]+"_self"+str(i)
+        print ("Calling WSCLEAN")
+        run_wsclean(msfile,imagename=imagename)
+        print("WSCLEAN ran")
+        gaincal(vis=msfile,caltable=imagename+".gcal",uvrange=">10lambda",\
+                calmode='p',solmode='L1R',rmsthresh=[10,8,6])
+        applycal(vis=msfile,gaintable=imagename+".gcal",calwt=[False],applymode=applymode)
+     
+    final_phase_caltable=imagename+".gcal" 
+    for i in range(num_phase_cal,num_phase_cal+num_apcal):
+        imagename=msfile[:-3]+"_self"+str(i)
+        run_wsclean(msfile,imagename=imagename)
+        caltable=imagename+"_ap_over_p.gcal"
+        gaincal(vis=msfile,caltable=caltable,uvrange=">10lambda",\
+                calmode='ap',solnorm=True,normtype='median',solmode='L1R',\
+                rmsthresh=[10,8,6],gaintable=final_phase_caltable)
+        applycal(vis=msfile,gaintable=[caltable,final_phase_caltable],calwt=[False,False],applymode=applymode)
+        if i==num_phase_cal:
+            flagdata(vis=msfile,mode='rflag',datacolumn='corrected')
+    
+def run_wsclean(msfile,imagename,automask_thresh=8,imsize=4096, cell='2arcmin',uvrange='10',predict=True): ### uvrange is in lambda units
+    os.system("wsclean -no-dirty -no-update-model-required -no-negative -size "+str(imsize)+" "+\
+            str(imsize)+" -scale "+cell+" -weight uniform -minuv-l "+str(uvrange)+" -auto-mask "+str(automask_thresh)+\
+            " -niter 100000 -name "+imagename+" -mgain 0.7 "+msfile)
+    if predict:
+        os.system("wsclean -predict -name "+imagename+" "+msfile)
 
-def pipeline(solar_ms, calib_ms=None, bcal=None, imagename='sun_only', imsize=512, cell='1arcmin'):
+def change_phasecenter(msfile):
+    m = get_sun_pos(msfile, str_output=False)
+    ra = m['m0']['value']### ra in radians
+    dec = m['m1']['value'] ### dec in radians
+    ra=ra*180/(np.pi*15) ### ra in hours
+    dec=dec*180/np.pi  ### dec in deg
+    temp=int(ra/60)
+    ra1=str(temp)+"h"
+    ra=ra-temp*60
+    temp=int(ra/60)
+    ra1=ra1+str(temp)+"m"
+    ra=ra-temp*60
+    ra1=ra1+str(temp)+"m"+str(ra)+"s"
+    
+    
+    temp=int(dec/60)
+    dec1=str(temp)+"d"
+    dec=dec-temp*60
+    temp=int(dec/60)
+    dec1=dec1+str(temp)+"m"
+    dec=dec-temp*60
+    dec1=dec1+str(temp)+"m"+str(dec)+"s"
+    
+    os.system("chgcentre "+msfile+" "+ra1+" "+dec1)
+    
+def pipeline(solar_ms, calib_ms=None, bcal=None, selfcal=False, imagename='sun_only', imsize=512, cell='1arcmin'):
     """
     Pipeline to calibrate and imaging a solar visibility
     :param solar_ms: input solar measurement set
     :param calib_ms: (optional) input measurement set for generating the calibrations, usually is one observed at night
     :param bcal: (optional) bandpass calibration table. If not provided, use calib_ms to generate one.
     """
-    if not bcal:
-        if os.path.exists(calib_ms):
-            flag_bad_ants(calib_ms)
-            bcal = gen_calibration(calib_ms)
-        else:
-            print('Neither calib_ms nor bcal exists. Need to provide calibrations to continue. Abort..')
+   # if not bcal:
+    #    if os.path.exists(calib_ms):
+     #       flag_bad_ants(calib_ms)
+      #      bcal = gen_calibration(calib_ms)
+       # else:
+        #    print('Neither calib_ms nor bcal exists. Need to provide calibrations to continue. Abort..')
     #correct_ms_bug(solar_ms)
-    apply_calibration(solar_ms, gaintable=bcal, doflag=True, do_solar_imaging=False)
-    outms = remove_nonsolar_sources(solar_ms)
-    make_solar_image(outms, imagename=imagename, imsize=imsize, cell=cell)
+    #apply_calibration(solar_ms, gaintable=bcal, doantflag=True, doflag=True,do_solar_imaging=False)
+    #split(vis=solar_ms,outputvis=solar_ms[:-3]+"_calibrated.ms")
+    solar_ms=solar_ms[:-3]+"_calibrated.ms"
+    if selfcal==True:
+      #do_selfcal(solar_ms)
+      #split(vis=solar_ms,outputvis=solar_ms[:-3]+"_selfcalibrated.ms")
+      #solar_ms=solar_ms[:-3]+"_selfcalibrated.ms"
+      #outms = remove_nonsolar_sources(solar_ms)
+      #do_selfcal(outms,num_apcal=1,applymode='calonly')
+      outms='20230309_191023_73MHz_calibrated_selfcalibrated_sun_only.ms'
+      split(vis=outms,outputvis=outms[:-3]+"_sun_selfcalibrated.ms")
+      outms=outms[:-3]+"_sun_selfcalibrated.ms"
+      outms =remove_nonsolar_sources(outms,imagename='for_weak_source_subtraction',remove_strong_sources_only=False)
+    #else:
+     #   outms = remove_nonsolar_sources(solar_ms)
+    #change_phasecenter(outms)
+    #run_wsclean(out_ms,imagename=imagename,autmask_thresh=5,uvrange='0',predict=False)
+    #make_solar_image(outms, imagename=imagename, imsize=imsize, cell=cell)
