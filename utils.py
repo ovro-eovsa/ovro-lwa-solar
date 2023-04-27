@@ -1,7 +1,8 @@
 import os,sys
 from astropy.time import Time
-
-
+from astropy.io import fits
+from casatools import image
+import numpy as np
 def list_msfiles(filepath='20230318/'):
     """
     Find measurement sets across all lwacalim nodes under a file path.
@@ -21,3 +22,60 @@ def list_msfiles(filepath='20230318/'):
                 freqstr = n[16:21]
                 msfiles.append({'path': pathstr, 'name': n, 'time': timestr, 'freq': freqstr})
     return msfiles
+
+def get_image_data(imagename):
+     if os.path.isfile(imagename):
+        data=np.squeeze(fits.getdata(imagename))       
+     elif os.path.isdir(imagename):
+        ia=image()
+        ia.open(imagename)
+        data=ia.getchunk()
+        ia.close()
+        data=np.squeeze(data)
+     else:
+        raise RuntimeError("Image does not exist")
+     return data
+    
+def get_image_maxmin(imagename,local=True):
+    data=get_image_data(imagename)
+    maxval=np.nanmax(data)
+    if local==True:
+        maxpos=np.where(abs(data-maxval)<1e-5)
+        max1=data[maxpos][0]
+        min1=np.nanmin(data[maxpos[0][0]-100:maxpos[0][0]+100,\
+                maxpos[1][0]-100:maxpos[1][0]+100])
+    
+        return max1,min1
+    else:
+        minval=np.nanmin(data)
+    return maxval,minval
+        
+def check_image_quality(imagename,max1,min1,reorder=True):
+        if max1[0]==0:
+            max1[0],min1[0]=get_image_maxmin(imagename)
+            print (max1,min1)
+        else:
+            if reorder==True and max1[1]>0.001:
+                max1[0],min1[0]=max1[1],min1[1]
+            max1[1],min1[1]=get_image_maxmin(imagename)
+            
+            DR1=max1[0]/abs(min1[0])
+            DR2=max1[1]/abs(min1[1])
+            print (DR1,DR2)
+            if (DR1-DR2)/DR2>0.2:
+                ### if max decreases by more than 20 percent 
+                    ## absolute value of minimum increases by more than 20 percent
+                if min1[1]<0:
+                    return False
+        return True
+         
+     
+def restore_flag(msfile):
+    from casatasks import flagmanager
+    flag_tables=flagmanager(msfile)
+    keys=flag_tables.keys()
+    last_flagtable=flag_tables[len(keys)-2]['name']  #### last key is MS. 
+    flagmanager(vis=msfile,mode='restore',versionname=last_flagtable)
+    flagmanager(vis=msfile,mode='delete',versionname=last_flagtable)           
+    return
+              
