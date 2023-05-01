@@ -81,7 +81,7 @@ def restore_flag(msfile):
     flagmanager(vis=msfile,mode='delete',versionname=last_flagtable)           
     return
     
-def read_gaintable(caltable):
+def get_flagged_solution_num(caltable):
     tb.open(caltable)
     flag=tb.getcol('FLAG')
     tb.close()
