@@ -3,6 +3,8 @@ from astropy.time import Time
 from astropy.io import fits
 from casatools import image
 import numpy as np
+import logging
+
 def list_msfiles(filepath='20230318/'):
     """
     Find measurement sets across all lwacalim nodes under a file path.
@@ -78,4 +80,16 @@ def restore_flag(msfile):
     flagmanager(vis=msfile,mode='restore',versionname=last_flagtable)
     flagmanager(vis=msfile,mode='delete',versionname=last_flagtable)           
     return
-              
+    
+def read_gaintable(caltable):
+    tb.open(caltable)
+    flag=tb.getcol('FLAG')
+    tb.close()
+    shape=flag.shape
+    for i in range(shape[1]):
+        num_solutions_flagged=np.where(flag[:,i,:]==True)
+        if shape[1]==1:
+            logging.debug(str(num_solutions_flagged)" flagged out of "+str(shape[0]*shape[2])
+        else:
+            logging.debug(str(num_solutions_flagged)" flagged out of "+str(shape[0]*shape[2]+" in channel "+str(i))
+    return         
