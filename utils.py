@@ -3,6 +3,9 @@ from astropy.time import Time
 from astropy.io import fits
 from casatools import image
 import numpy as np
+from astropy.time import Time
+import glob
+
 def list_msfiles(filepath='20230318/'):
     """
     Find measurement sets across all lwacalim nodes under a file path.
@@ -78,4 +81,27 @@ def restore_flag(msfile):
     flagmanager(vis=msfile,mode='restore',versionname=last_flagtable)
     flagmanager(vis=msfile,mode='delete',versionname=last_flagtable)           
     return
-              
+
+def get_time_from_name(msname):
+    pieces=msname.split('_')
+    ymd=pieces[0]
+    hms=pieces[1]
+    mstime=Time(ymd[0:2]+"-"+ymd[2:4]+"-"+ymd[4:]+\
+                'T'+hms[0:2]+":"+hms[2:4]+":"+hms[4:],\
+                scale='utc',format='isot')
+    return mstime
+    
+def get_selfcal_time_to_apply(msname):
+    mstime=get_time_from_name(msname)
+    caltables=glob.glob("caltables/*.gcal")
+    times=np.unique(np.array(['_'.join(i.split('_')[0:2]) for i in caltables]))
+    
+    sep=np.zeros(times)
+    for n,t1 in enumerate(times):
+        caltime=get_time_from_name(t1)
+        sep[n]=abs((caltime-mstime).seconds*86400)
+        
+    time_to_apply=times(np.argsort(sep)[0])
+    return time_to_apply
+        
+                 

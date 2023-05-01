@@ -11,7 +11,7 @@ Requirements:
 
 from casatasks import clearcal, ft, bandpass, applycal, flagdata, tclean, flagmanager, uvsub,gaincal,split,imstat
 from casatools import table, measures, componentlist, msmetadata
-import math
+import math,glob
 import sys,os,time
 import numpy as np
 from astropy.coordinates import SkyCoord
@@ -20,6 +20,7 @@ from astropy.wcs import WCS
 from astropy.io import fits
 import matplotlib.pyplot as plt
 import utils
+
 
 tb = table()
 me = measures()
@@ -318,7 +319,7 @@ def gen_model_cl(msfile, ref_freq=80.0, output_freq=47.0,
         if os.path.isfile("calibrator-model.fits")==False:
             raise RuntimeError("WSClean version 3.3 or above. Proceeding with point source model")
         max1,min1=utils.get_image_maxmin("calibrator-model.fits",local=False)
-        if min1<0:
+        if min1<0 and max1/max(abs(min1),0.000001)<10000:
             raise RuntimeError("Negative in model. Going for point source model")
         if predict==True:
             os.system("wsclean -predict -name calibrator "+msfile)
@@ -916,8 +917,10 @@ def do_selfcal(msfile,num_apcal=5,applymode='calflag'):
                 caltable=imagename+".gcal"
                 if os.path.isdir(caltable):
                     applycal(vis=msfile,gaintable=caltable,calwt=[False],applymode=applymode)
+                    os.system("cp -r "+caltable+" caltables/")
                 else:
-                    clearcal(msfile)   
+                    clearcal(msfile)
+                   
                 return good
             
         gaincal(vis=msfile,caltable=imagename+".gcal",uvrange=">10lambda",\
@@ -943,8 +946,11 @@ def do_selfcal(msfile,num_apcal=5,applymode='calflag'):
                 caltable=imagename+"_ap_over_p.gcal"
                 if os.path.isdir(caltable):
                     applycal(vis=msfile,gaintable=[caltable,final_phase_caltable],calwt=[False,False],applymode=applymode)
+                    os.system("cp -r "+caltable+" caltables/")
+                    os.system("cp -r "+final_phase_caltable+" caltables/")
                 else:
                     applycal(vis=msfile,gaintable=[final_phase_caltable],calwt=[False],applymode=applymode)
+                    os.system("cp -r "+final_phase_caltable+" caltables/")
                 return good
         caltable=imagename+"_ap_over_p.gcal"
         gaincal(vis=msfile,caltable=caltable,uvrange=">10lambda",\
@@ -954,6 +960,8 @@ def do_selfcal(msfile,num_apcal=5,applymode='calflag'):
         if i==num_phase_cal:
             flagdata(vis=msfile,mode='rflag',datacolumn='corrected')
     flagdata(vis=msfile,mode='rflag',datacolumn='residual')
+    os.system("cp -r "+caltable+" caltables/")
+    os.system("cp -r "+final_phase_caltable+" caltables/")
     return True
     
 def run_wsclean(msfile,imagename,automask_thresh=8,imsize=4096, cell='2arcmin',uvrange='10',predict=True): ### uvrange is in lambda units
@@ -1086,18 +1094,20 @@ def correct_primary_beam(msfile,imagename):
     hdu.close()
     return
     
-def pipeline(solar_ms, calib_ms=None, bcal=None, selfcal=False, imagename='sun_only', imsize=512, cell='1arcmin'):
+def pipeline(solar_ms, calib_ms=None, bcal=None, selfcal=False, imagename='sun_only', imsize=512, cell='1arcmin',caltable_fold='caltables'):
     """
     Pipeline to calibrate and imaging a solar visibility
     :param solar_ms: input solar measurement set
     :param calib_ms: (optional) input measurement set for generating the calibrations, usually is one observed at night
     :param bcal: (optional) bandpass calibration table. If not provided, use calib_ms to generate one.
     """
-    
+    if os.path.isdir(caltable_fold)==False:
+    	os.mkdir(caltable_fold)
+    	
     if not bcal:
         if os.path.exists(calib_ms):
-            #flag_bad_ants(calib_ms)
-            flagdata(vis=calib_ms,mode='clip',clipzeros=True)
+            flag_bad_ants(calib_ms)
+            #flagdata(vis=calib_ms,mode='clip',clipzeros=True)
             bcal = gen_calibration(calib_ms)
         else:
             print('Neither calib_ms nor bcal exists. Need to provide calibrations to continue. Abort..')
@@ -1125,4 +1135,26 @@ def pipeline(solar_ms, calib_ms=None, bcal=None, selfcal=False, imagename='sun_o
     run_wsclean(outms,imagename=imagename,automask_thresh=5,uvrange='0',predict=False,imsize=1024,cell='1arcmin')
     correct_primary_beam(outms,imagename+"-image.fits")
     #make_solar_image(outms, imagename=imagename, imsize=imsize, cell=cell)
-    
+
+
+def apply_solutions_and_image(msname,bcal,imagename):
+    apply_calibration(msname, gaintable=bcal, doantflag=True, doflag=True,do_solar_imaging=False)
+    selfcal_time=get_selfcal_time_to_apply(msname)
+    caltables=glob.glob("caltables/"+selfcal_time+"*.gcal") 
+    dd_cal=glob.glob("caltables/"+selfcal_time+"*sun_only*.gcal")
+    di_cal=[caltb for i in caltables if i not in dd_cal]
+    applycal(msname,gaintable=di_cal,calwt=[False]*len(di_cal))
+    flagdata(vis=msname,mode='rflag',datacolumn='corrected')
+    correct_flux_scaling(msname,min_beam_val=0.1)
+    solar_ms=msname[:-3]+"_selfcalibrated.ms"
+    outms = remove_nonsolar_sources(solar_ms)
+    solar_ms=outms
+    num_dd_cal=len(dd_cal)
+    if num_dd_cal!=0:
+        applycal(solar_ms,gaintable=dd_cal,calwt=[False]*len(dd_cal),applymode='calonly')
+        flagdata(vis=solar_ms,mode='rflag',datacolumn='corrected')
+    outms=outms[:-3]+"_sun_selfcalibrated.ms"
+    outms =remove_nonsolar_sources(outms,imagename='for_weak_source_subtraction',remove_strong_sources_only=False)
+    change_phasecenter(outms)
+    run_wsclean(outms,imagename=imagename,automask_thresh=5,uvrange='0',predict=False,imsize=1024,cell='1arcmin')
+    correct_primary_beam(outms,imagename+"-image.fits")
