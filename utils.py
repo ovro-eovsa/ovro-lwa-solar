@@ -86,7 +86,7 @@ def get_time_from_name(msname):
     pieces=msname.split('_')
     ymd=pieces[0]
     hms=pieces[1]
-    mstime=Time(ymd[0:2]+"-"+ymd[2:4]+"-"+ymd[4:]+\
+    mstime=Time(ymd[0:4]+"-"+ymd[4:6]+"-"+ymd[6:]+\
                 'T'+hms[0:2]+":"+hms[2:4]+":"+hms[4:],\
                 scale='utc',format='isot')
     return mstime
@@ -94,14 +94,14 @@ def get_time_from_name(msname):
 def get_selfcal_time_to_apply(msname):
     mstime=get_time_from_name(msname)
     caltables=glob.glob("caltables/*.gcal")
-    times=np.unique(np.array(['_'.join(i.split('_')[0:2]) for i in caltables]))
+    times=np.unique(np.array(['_'.join(i.split('/')[1].split('_')[0:2]) for i in caltables]))
     
-    sep=np.zeros(times)
+    sep=np.zeros(len(times))
     for n,t1 in enumerate(times):
         caltime=get_time_from_name(t1)
-        sep[n]=abs((caltime-mstime).seconds*86400)
+        sep[n]=abs((caltime-mstime).value*86400)
         
-    time_to_apply=times(np.argsort(sep)[0])
+    time_to_apply=times[np.argsort(sep)[0]]
     return time_to_apply
         
                  

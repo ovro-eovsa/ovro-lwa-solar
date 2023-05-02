@@ -9,7 +9,7 @@ Requirements:
 - A working version of wsclean for imaging (i.e., "wsclean" defined in the search path)
 """
 
-from casatasks import clearcal, ft, bandpass, applycal, flagdata, tclean, flagmanager, uvsub,gaincal,split,imstat
+from casatasks import clearcal, ft, bandpass, applycal, flagdata, tclean, flagmanager, uvsub,gaincal,split,imstat,gencal
 from casatools import table, measures, componentlist, msmetadata
 import math,glob
 import sys,os,time
@@ -319,7 +319,7 @@ def gen_model_cl(msfile, ref_freq=80.0, output_freq=47.0,
         if os.path.isfile("calibrator-model.fits")==False:
             raise RuntimeError("WSClean version 3.3 or above. Proceeding with point source model")
         max1,min1=utils.get_image_maxmin("calibrator-model.fits",local=False)
-        if min1<0 and max1/max(abs(min1),0.000001)<10000:
+        if min1<0:
             raise RuntimeError("Negative in model. Going for point source model")
         if predict==True:
             os.system("wsclean -predict -name calibrator "+msfile)
@@ -1020,15 +1020,21 @@ def get_point_flux(modelcl,src):
             return np.real(flux[0,i])
     return -1
             
-def correct_flux_scaling(msfile,src_area=100,min_beam_val=0.1): 
+def correct_flux_scaling(msfile,src_area=100,min_beam_val=0.1,caltable_suffix='fluxscale'): 
     import glob
-    
     images=glob.glob(msfile[:-3]+"_self*-image.fits")
     num_image=len(images)
+    
     final_image=msfile[:-3]+"_self"+str(num_image-1)+"-image.fits"
+    
+    
+    
     os.system("rm -rf calibrator-model.fits")
+    
     modelcl,ft_needed = gen_model_cl(msfile,predict=False,min_beam_val=min_beam_val)
     srcs = get_nonsolar_sources_loc_pix(msfile, final_image,min_beam_val=min_beam_val)
+    
+
     head = fits.getheader(final_image)
     
     if head['cunit1'] == 'deg':
@@ -1076,6 +1082,9 @@ def correct_flux_scaling(msfile,src_area=100,min_beam_val=0.1):
         print (scaling_factor)
         print (mean_factor)
         
+        caltable=msfile[:-3]+"."+caltable_suffix
+        gencal(vis=msfile,caltable=caltable,caltype='amp',parameter=np.sqrt(1./mean_factor))
+
         tb.open(msfile,nomodify=False)
         data=tb.getcol('CORRECTED_DATA')
         data=data*mean_factor
@@ -1120,7 +1129,8 @@ def pipeline(solar_ms, calib_ms=None, bcal=None, selfcal=False, imagename='sun_o
     
     if selfcal==True:
       success=do_selfcal(solar_ms)
-      correct_flux_scaling(solar_ms,min_beam_val=0.1)
+      correct_flux_scaling(solar_ms,min_beam_val=0.1,caltable_suffix='fluxscale')
+      os.system("cp -r "+solar_ms[:-3]+"*.fluxscale "+caltable_fold+"/")
       split(vis=solar_ms,outputvis=solar_ms[:-3]+"_selfcalibrated.ms")
       solar_ms=solar_ms[:-3]+"_selfcalibrated.ms"
       outms = remove_nonsolar_sources(solar_ms)
@@ -1139,13 +1149,17 @@ def pipeline(solar_ms, calib_ms=None, bcal=None, selfcal=False, imagename='sun_o
 
 def apply_solutions_and_image(msname,bcal,imagename):
     apply_calibration(msname, gaintable=bcal, doantflag=True, doflag=True,do_solar_imaging=False)
-    selfcal_time=get_selfcal_time_to_apply(msname)
+    split(vis=msname,outputvis=msname[:-3]+"_calibrated.ms")
+    msname=msname[:-3]+"_calibrated.ms"
+    selfcal_time=utils.get_selfcal_time_to_apply(msname)
     caltables=glob.glob("caltables/"+selfcal_time+"*.gcal") 
     dd_cal=glob.glob("caltables/"+selfcal_time+"*sun_only*.gcal")
-    di_cal=[caltb for i in caltables if i not in dd_cal]
+    di_cal=[i for i in caltables if i not in dd_cal]
+    fluxscale_cal=glob.glob("caltables/"+selfcal_time+"*.fluxscale")
+    di_cal.append(fluxscale_cal[0])
     applycal(msname,gaintable=di_cal,calwt=[False]*len(di_cal))
     flagdata(vis=msname,mode='rflag',datacolumn='corrected')
-    correct_flux_scaling(msname,min_beam_val=0.1)
+    split(vis=msname,outputvis=msname[:-3]+"_selfcalibrated.ms")
     solar_ms=msname[:-3]+"_selfcalibrated.ms"
     outms = remove_nonsolar_sources(solar_ms)
     solar_ms=outms
@@ -1153,7 +1167,8 @@ def apply_solutions_and_image(msname,bcal,imagename):
     if num_dd_cal!=0:
         applycal(solar_ms,gaintable=dd_cal,calwt=[False]*len(dd_cal),applymode='calonly')
         flagdata(vis=solar_ms,mode='rflag',datacolumn='corrected')
-    outms=outms[:-3]+"_sun_selfcalibrated.ms"
+    split(vis=solar_ms,outputvis=solar_ms[:-3]+"_sun_selfcalibrated.ms")
+    outms=solar_ms[:-3]+"_sun_selfcalibrated.ms"
     outms =remove_nonsolar_sources(outms,imagename='for_weak_source_subtraction',remove_strong_sources_only=False)
     change_phasecenter(outms)
     run_wsclean(outms,imagename=imagename,automask_thresh=5,uvrange='0',predict=False,imsize=1024,cell='1arcmin')
