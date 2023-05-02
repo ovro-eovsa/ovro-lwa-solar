@@ -166,14 +166,7 @@ def gen_model_file(visibility,filename='calibrator_source_list.txt',min_beam_val
     :return:
     """
     
-    srcs = [{'label': 'CasA', 'flux': '16530', 'alpha': -0.72,
-             'position': 'J2000 23h23m24s +58d48m54s'},
-            {'label': 'CygA', 'flux': '16300', 'alpha': -0.58,
-             'position': 'J2000 19h59m28.35663s +40d44m02.0970s'},
-            {'label': 'TauA', 'flux': '1770', 'alpha': -0.27,
-             'position': 'J2000 05h34m31.94s +22d00m52.2s'},
-            {'label': 'VirA', 'flux': '2400', 'alpha': -0.86,
-             'position': 'J2000 12h30m49.42338s +12d23m28.0439s'}]
+    srcs=utils.get_strong_source_list()
     
     
     print ("generating model file")
@@ -299,15 +292,20 @@ def gen_model_cl(msfile, ref_freq=80.0, output_freq=47.0,
     """
      
     if includesun==True:
+        logging.info("User wants to add solar model")
+        logging.info("Proceeding to use point source model generation scheme.")
         modelcl,ft_needed=point_source_model(msfile,min_beam_val=min_beam_val)
         return modelcl,ft_needed
     try:
         filename='calibrator_source_list.txt'
+        logging.info("Generating component list using Gasperin et al. (2020)")
         gen_model_file(msfile,filename,min_beam_val=min_beam_val)
         imagename="dummy"
+        logging.debug("Generating a dummy image")
         os.system("wsclean -no-dirty -no-update-model-required -size 4096 4096 "+\
                     "-scale 2arcmin -niter 10 -name "+imagename+" "+msfile)
         ##### making the residual a blank image
+        logging.debug("Setting all values of dummy image to 0.")
         hdu=fits.open(imagename+"-residual.fits",mode="update")
         hdu[0].data*=0.0
         hdu.flush()
@@ -315,9 +313,11 @@ def gen_model_cl(msfile, ref_freq=80.0, output_freq=47.0,
         ###### 
         os.system("wsclean -no-dirty -no-update-model-required -restore-list "+\
                     imagename+"-residual.fits "+filename+" calibrator-model.fits "+msfile)
-    
+        
         if os.path.isfile("calibrator-model.fits")==False:
+            logging.warning("Calibrator model not generated. Proceeding with point source model")
             raise RuntimeError("WSClean version 3.3 or above. Proceeding with point source model")
+        logging.info("Model file generated using the clean component list")
         max1,min1=utils.get_image_maxmin("calibrator-model.fits",local=False)
         if min1<0 and (max1/max(abs(min1),0.000001))<10000:  ### some small negative is tolerable
             raise RuntimeError("Negative in model. Going for point source model")
@@ -600,6 +600,7 @@ def flag_bad_ants(msfile, antflagfile=None, datacolumn='DATA', thresh_core=1.0, 
     if antflagfile is None:
         logging.debug('Antenna flag file not supplied.')
         antflagfile = os.path.splitext(os.path.abspath(msfile))[0] + '.badants'
+        logging.info('Generating antenna flags from auto-correlation')
         res = gen_ant_flags_from_autocorr(msfile, antflagfile=antflagfile, datacolumn=datacolumn,
                                           thresh_core=thresh_core, thresh_exp=thresh_exp)
     if os.path.isfile(antflagfile):
@@ -607,8 +608,10 @@ def flag_bad_ants(msfile, antflagfile=None, datacolumn='DATA', thresh_core=1.0, 
             antenna_list = f.readline()
             print('Applying flags for these antennas')
             print(antenna_list)
+            logging.info('Flagging antennas '+antenna_list)
         flagdata(vis=msfile, mode='manual', antenna=antenna_list)
     else:
+        logging.info("No flag is found. Do nothing")
         print("No flag is found. Do nothing")
     return antflagfile
 
@@ -623,6 +626,7 @@ def gen_calibration(msfile, modelcl=None, uvrange='', bcaltb=None):
     """
     if not modelcl or not (os.path.exists(modelcl)):
         print('Model component list does not exist. Generating one from scratch.')
+        logging.info('Model component list does not exist. Generating one from scratch.')
         modelcl,ft_needed = gen_model_cl(msfile)
     else:
         ft_needed=True
@@ -634,9 +638,13 @@ def gen_calibration(msfile, modelcl=None, uvrange='', bcaltb=None):
     # Now do a bandpass calibration using the model component list
     if not bcaltb:
         bcaltb = os.path.splitext(msfile)[0] + '.bcal'
+    logging.info("Generating bandpass solution")
     bandpass(msfile, caltable=bcaltb, uvrange=uvrange, combine='scan,field,obs', fillgaps=0)
+    logging.debug("Applying the bandpass solutions")
     applycal(vis=msfile,gaintable=bcaltb)
+    logging.debug("Doing a rflag run on corrected data")
     flagdata(vis=msfile,mode='rflag',datacolumn='corrected')
+    logging.debug("Finding updated and final bandpass table")
     bandpass(msfile, caltable=bcaltb, uvrange=uvrange, combine='scan,field,obs', fillgaps=0)
     return bcaltb
 
@@ -644,8 +652,10 @@ def gen_calibration(msfile, modelcl=None, uvrange='', bcaltb=None):
 def apply_calibration(msfile, gaintable=None, doantflag=False,doflag=False, antflagfile=None, do_solar_imaging=True,
                       imagename='test'):
     if doantflag:
+        logging.info("Flagging using auro-correlation")
         flag_bad_ants(msfile, antflagfile=antflagfile)   
     if not gaintable:
+        logging.error("No bandpass table found. Proceed with extreme caution")
         print('No calibration table is provided. Abort... ')
     else:
         if type(gaintable) == str:
@@ -654,6 +664,7 @@ def apply_calibration(msfile, gaintable=None, doantflag=False,doflag=False, antf
     clearcal(msfile)
     applycal(msfile, gaintable=gaintable, flagbackup=True, applymode='calflag')
     if doflag==True:
+        logging.debug("Running rflag on corrected data")
         flagdata(vis=msfile,mode='rflag',datacolumn='corrected')
     sunpos = get_sun_pos(msfile)
     if do_solar_imaging:
@@ -690,11 +701,13 @@ def get_solar_loc_pix(msfile, image="allsky"):
     ra = m['m0']['value']
     dec = m['m1']['value']
     coord = SkyCoord(ra * u.rad, dec * u.rad, frame='icrs')
+    logging.info('RA, Dec of Sun is radians:'+str(ra)+","+str(dec))
     head = fits.getheader(image + "-model.fits")
     w = WCS(head)
     pix = skycoord_to_pixel(coord, w)
     x = int(pix[0])
     y = int(pix[1])
+    logging.info('RA, Dec of Sun is '+str(ra)+"pix,"+str(dec)+",pix in imagename "+image)
     return x, y
 
 
@@ -705,11 +718,7 @@ def get_nonsolar_sources_loc_pix(msfile, image="allsky", verbose=False,min_beam_
     :return: an updated directionary of strong sources with 'xpix' and 'ypix' added
     """
     from astropy.wcs.utils import skycoord_to_pixel
-    srcs = [{'label': 'CasA', 'position': 'J2000 23h23m24s +58d48m54s','flux': '16530', 'alpha': -0.72},
-            {'label': 'CygA', 'position': 'J2000 19h59m28.35663s +40d44m02.0970s','flux': '16300', 'alpha': -0.58},
-            {'label': 'TauA', 'position': 'J2000 05h34m31.94s +22d00m52.2s', 'flux': '1770', 'alpha': -0.27},
-            {'label': 'VirA', 'position': 'J2000 12h30m49.42338s +12d23m28.0439s', 'flux': '2400', 'alpha': -0.86}]
-
+    srcs=utils.get_strong_source_list()
     tb.open(msfile)
     t0 = tb.getcell('TIME', 0)
     tb.close()
@@ -750,9 +759,11 @@ def get_nonsolar_sources_loc_pix(msfile, image="allsky", verbose=False,min_beam_
             y = int(pix[1])
             srcs[i]['xpix'] = x
             srcs[i]['ypix'] = y
+            logging.debug('Found source {0:s} at pix x {1:d}, y {2:d}'.format(srcs[i]['label'], x, y))
             if verbose:
                 print('Found source {0:s} at pix x {1:d}, y {2:d}'.format(srcs[i]['label'], x, y))
         else:
+            logging.debug('Source {0:s} has a <0 elevation or very low gain'.format(srcs[i]['label']))
             if verbose:
                 print('Source {0:s} has a <0 elevation or very low gain'.format(srcs[i]['label']))
             del srcs[i]
@@ -958,9 +969,12 @@ def do_selfcal(msfile,num_apcal=5,applymode='calflag',num_phase_cal=3,,logging_l
         gaincal(vis=msfile,caltable=caltable,uvrange=">10lambda",\
                 calmode='ap',solnorm=True,normtype='median',solmode='L1R',\
                 rmsthresh=[10,8,6],gaintable=final_phase_caltable)
+        if logging_level=='debug' or logging_level=='DEBUG':
+            get_flagged_solution_num(imagename+".gcal")
         applycal(vis=msfile,gaintable=[caltable,final_phase_caltable],calwt=[False,False],applymode=applymode)
         if i==num_phase_cal:
             flagdata(vis=msfile,mode='rflag',datacolumn='corrected')
+    logging.debug('Flagging on the residual')
     flagdata(vis=msfile,mode='rflag',datacolumn='residual')
     return True
     

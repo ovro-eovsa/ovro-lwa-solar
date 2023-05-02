@@ -93,3 +93,10 @@ def get_flagged_solution_num(caltable):
         else:
             logging.debug(str(num_solutions_flagged)" flagged out of "+str(shape[0]*shape[2]+" in channel "+str(i))
     return         
+    
+def get_strong_source_list():
+    srcs = [{'label': 'CasA', 'position': 'J2000 23h23m24s +58d48m54s','flux': '16530', 'alpha': -0.72},
+            {'label': 'CygA', 'position': 'J2000 19h59m28.35663s +40d44m02.0970s','flux': '16300', 'alpha': -0.58},
+            {'label': 'TauA', 'position': 'J2000 05h34m31.94s +22d00m52.2s', 'flux': '1770', 'alpha': -0.27},
+            {'label': 'VirA', 'position': 'J2000 12h30m49.42338s +12d23m28.0439s', 'flux': '2400', 'alpha': -0.86}]
+    return srcs
