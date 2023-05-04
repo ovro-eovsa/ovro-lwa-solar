@@ -1,9 +1,9 @@
 import os,sys
 from astropy.time import Time
 from astropy.io import fits
-from casatools import image
+from casatools import image,table
 import numpy as np
-import logging
+import logging,glob
 
 def list_msfiles(filepath='20230318/'):
     """
@@ -82,6 +82,7 @@ def restore_flag(msfile):
     return
     
 def get_flagged_solution_num(caltable):
+    tb=table()
     tb.open(caltable)
     flag=tb.getcol('FLAG')
     tb.close()
@@ -89,9 +90,9 @@ def get_flagged_solution_num(caltable):
     for i in range(shape[1]):
         num_solutions_flagged=np.where(flag[:,i,:]==True)
         if shape[1]==1:
-            logging.debug(str(num_solutions_flagged)" flagged out of "+str(shape[0]*shape[2])
+            logging.debug(str(len(num_solutions_flagged[0]))+" flagged out of "+str(shape[0]*shape[2]))
         else:
-            logging.debug(str(num_solutions_flagged)" flagged out of "+str(shape[0]*shape[2]+" in channel "+str(i))
+            logging.debug(str(len(num_solutions_flagged[0]))+" flagged out of "+str(shape[0]*shape[2])+" in channel "+str(i))
     return         
     
 def get_strong_source_list():
@@ -100,3 +101,25 @@ def get_strong_source_list():
             {'label': 'TauA', 'position': 'J2000 05h34m31.94s +22d00m52.2s', 'flux': '1770', 'alpha': -0.27},
             {'label': 'VirA', 'position': 'J2000 12h30m49.42338s +12d23m28.0439s', 'flux': '2400', 'alpha': -0.86}]
     return srcs
+    
+def get_time_from_name(msname):
+    pieces=msname.split('_')
+    ymd=pieces[0]
+    hms=pieces[1]
+    mstime=Time(ymd[0:4]+"-"+ymd[4:6]+"-"+ymd[6:]+\
+                'T'+hms[0:2]+":"+hms[2:4]+":"+hms[4:],\
+                scale='utc',format='isot')
+    return mstime
+    
+def get_selfcal_time_to_apply(msname):
+    mstime=get_time_from_name(msname)
+    caltables=glob.glob("caltables/*.gcal")
+    times=np.unique(np.array(['_'.join(i.split('/')[1].split('_')[0:2]) for i in caltables]))
+    
+    sep=np.zeros(len(times))
+    for n,t1 in enumerate(times):
+        caltime=get_time_from_name(t1)
+        sep[n]=abs((caltime-mstime).value*86400)
+        
+    time_to_apply=times[np.argsort(sep)[0]]
+    return time_to_apply    
