@@ -334,7 +334,7 @@ def gen_model_cl(msfile, ref_freq=80.0, output_freq=47.0,
 
 def gen_ant_flags_from_autocorr(msfile, antflagfile=None, datacolumn='DATA', tavg=False,
                                 thresh_core=1.0, thresh_exp=1.0, flag_exp_with_core_stat=True,
-                                doappend=False, debug=False, doplot=False):
+                                flag_either_pol=True,doappend=False, debug=False, doplot=False):
     """Generates a text file containing the bad antennas.
     DOES NOT ACTUALLY APPLY FLAGS. CURRENTLY SHOULD ONLY BE RUN ON SINGLE SPW MSs.
 
@@ -432,16 +432,28 @@ def gen_ant_flags_from_autocorr(msfile, antflagfile=None, datacolumn='DATA', tav
         print('Median of outer antennas', medval_exp[0], medval_exp[3])
         print('Standard deviation of outer antennas', stdval_exp[0], stdval_exp[3])
 
-    flagscore = np.asarray(inds_core)[
-        np.where(((autos_ampdb[inds_core, 0] > medval_core[0] + thresh_core * stdval_core[0]) |
-                 (autos_ampdb[inds_core, 0] < medval_core[0] - thresh_core * stdval_core[0])) & 
-                 ((autos_ampdb[inds_core, 3] > medval_core[3] + thresh_core * stdval_core[3]) |
-                 (autos_ampdb[inds_core, 3] < medval_core[3] - thresh_core * stdval_core[3])))]
-    flagsexp = np.asarray(inds_exp)[
-        np.where(((autos_ampdb[inds_exp, 0] > medval_exp[0] + thresh_exp * stdval_exp[0]) |
-                 (autos_ampdb[inds_exp, 0] < medval_exp[0] - thresh_exp * stdval_exp[0])) & 
-                 ((autos_ampdb[inds_exp, 3] > medval_exp[3] + thresh_exp * stdval_exp[3]) |
-                 (autos_ampdb[inds_exp, 3] < medval_exp[3] - thresh_exp * stdval_exp[3])))]
+    if flag_either_pol:
+        flagscore = np.asarray(inds_core)[
+            np.where((autos_ampdb[inds_core, 0] > medval_core[0] + thresh_core * stdval_core[0]) |
+                     (autos_ampdb[inds_core, 0] < medval_core[0] - thresh_core * stdval_core[0]) |
+                     (autos_ampdb[inds_core, 3] > medval_core[3] + thresh_core * stdval_core[3]) |
+                     (autos_ampdb[inds_core, 3] < medval_core[3] - thresh_core * stdval_core[3]))]
+        flagsexp = np.asarray(inds_exp)[
+            np.where((autos_ampdb[inds_exp, 0] > medval_exp[0] + thresh_exp * stdval_exp[0]) |
+                     (autos_ampdb[inds_exp, 0] < medval_exp[0] - thresh_exp * stdval_exp[0]) |
+                     (autos_ampdb[inds_exp, 3] > medval_exp[3] + thresh_exp * stdval_exp[3]) |
+                     (autos_ampdb[inds_exp, 3] < medval_exp[3] - thresh_exp * stdval_exp[3]))]
+    else:
+        flagscore = np.asarray(inds_core)[
+            np.where(((autos_ampdb[inds_core, 0] > medval_core[0] + thresh_core * stdval_core[0]) |
+                     (autos_ampdb[inds_core, 0] < medval_core[0] - thresh_core * stdval_core[0])) &
+                     ((autos_ampdb[inds_core, 3] > medval_core[3] + thresh_core * stdval_core[3]) |
+                     (autos_ampdb[inds_core, 3] < medval_core[3] - thresh_core * stdval_core[3])))]
+        flagsexp = np.asarray(inds_exp)[
+            np.where(((autos_ampdb[inds_exp, 0] > medval_exp[0] + thresh_exp * stdval_exp[0]) |
+                     (autos_ampdb[inds_exp, 0] < medval_exp[0] - thresh_exp * stdval_exp[0])) &
+                     ((autos_ampdb[inds_exp, 3] > medval_exp[3] + thresh_exp * stdval_exp[3]) |
+                     (autos_ampdb[inds_exp, 3] < medval_exp[3] - thresh_exp * stdval_exp[3])))]
     flagsall = np.sort(np.append(flagscore, flagsexp))
     print('{0:d} bad antennas found out of {1:d} antennas'.format(flagsall.size, Nants))
     if flagsall.size > 0:
