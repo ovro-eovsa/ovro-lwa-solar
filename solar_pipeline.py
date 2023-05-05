@@ -334,7 +334,8 @@ def gen_model_cl(msfile, ref_freq=80.0, output_freq=47.0,
 
 def gen_ant_flags_from_autocorr(msfile, antflagfile=None, datacolumn='DATA', tavg=False,
                                 thresh_core=1.0, thresh_exp=1.0, flag_exp_with_core_stat=True,
-                                flag_either_pol=True,doappend=False, debug=False, doplot=False):
+                                flag_either_pol=False, doappend=False, debug=False, doplot=False):
+
     """Generates a text file containing the bad antennas.
     DOES NOT ACTUALLY APPLY FLAGS. CURRENTLY SHOULD ONLY BE RUN ON SINGLE SPW MSs.
 
@@ -346,7 +347,11 @@ def gen_ant_flags_from_autocorr(msfile, antflagfile=None, datacolumn='DATA', tav
         :param datacolumn: specify which data column to use. Default to "DATA".
             Could be "CORRECTED_DATA" if the dataset is calibrated
         :param tavg: If set to True, will time average before evaluating flags.
-        :param thresh: Threshold to use for flagging. Default is 4.
+        :param thresh_core: Threshold to use for flagging for core antennas. Default is 1.
+        :param thresh_exp: Threshold to use for flagging for expansion antennas. Default is 1.
+        :param flag_exp_with_core_stat: If True, use statistics of core antennas to determine flags for outer antennas
+        :param flag_either_pol: If True, the antenna will be flagged if either polarization is bad (OR scheme).
+                              If False, the antenna will be flagged only if both polarizations are bad (AND scheme).
         :param antflagfile: Output file that contains the flagged antennas. If not defined, use msfile.replace('.ms', 'antflags')
 
     Returns:
@@ -454,6 +459,7 @@ def gen_ant_flags_from_autocorr(msfile, antflagfile=None, datacolumn='DATA', tav
                      (autos_ampdb[inds_exp, 0] < medval_exp[0] - thresh_exp * stdval_exp[0])) &
                      ((autos_ampdb[inds_exp, 3] > medval_exp[3] + thresh_exp * stdval_exp[3]) |
                      (autos_ampdb[inds_exp, 3] < medval_exp[3] - thresh_exp * stdval_exp[3])))]
+
     flagsall = np.sort(np.append(flagscore, flagsexp))
     print('{0:d} bad antennas found out of {1:d} antennas'.format(flagsall.size, Nants))
     if flagsall.size > 0:
