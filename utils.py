@@ -95,9 +95,8 @@ def get_timestr_from_name(msname):
     pieces=msname.split('_')
     return '_'.join(pieces[0:2])
     
-def get_selfcal_time_to_apply(msname):
+def get_selfcal_time_to_apply(msname,caltables):
     mstime=get_time_from_name(msname)
-    caltables=glob.glob("caltables/*.gcal")
     times=np.unique(np.array(['_'.join(i.split('/')[1].split('_')[0:2]) for i in caltables]))
    
     if len(times)>0:
@@ -110,20 +109,36 @@ def get_selfcal_time_to_apply(msname):
         return time_to_apply    
     return 'none'
     
-def get_keyword(caltable,keyword):
+def get_keyword(caltable,keyword,return_status=False):
     tb=table()
-    tb.open(caltable)
-    val=tb.getkeyword(keyword)
-    tb.close()
-    return val
+    success=False
+    try:
+        tb.open(caltable)
+        val=tb.getkeyword(keyword)
+        success=True
+    except:
+        pass
+    finally:
+        tb.close()
+    if return_status==False:
+        return val
+    return val,success
 
-def put_keyword(caltable,keyword,val):
+def put_keyword(caltable,keyword,val,return_status=False):
     tb=table()
-    tb.open(caltable,nomodify=False)
-    tb.putkeyword(keyword,val)
-    tb.flush()
-    tb.close()
-    return
+    success=False
+    try:
+        tb.open(caltable,nomodify=False)
+        tb.putkeyword(keyword,val)
+        tb.flush()
+        success=True
+    except:
+        pass
+    finally:
+        tb.close()
+    if return_status==False:
+        return
+    return success
     
 def convert_to_heliocentric_coords(msname,imagename,reftime=''):
     import datetime as dt

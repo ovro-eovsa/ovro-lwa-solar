@@ -2,6 +2,7 @@ import os
 from astropy.time import Time
 import datetime as dt
 from casatasks import concat
+import logging
         
 def list_msfiles(file_path):
     """
@@ -83,15 +84,21 @@ def file_downloader(file_list,path,freq):
             filepath=path+"/"+filename
             cmd_str="scp -r {0:s} ./".format(filepath)
             os.system(cmd_str)
+            logging.info('Downloading {0:s}'.format(filename))
         vis.append(filename)
-    concat(vis=vis,concatvis='temp_'+filename+'.ms')
     
-    temp_filename=get_filename_from_time(file_list[num_files-1],freq)
-    integrated_file=get_filename_from_time(file_list[0],freq)
-    
-    os.system("mv  "+'temp_'+temp_filename+'.ms '+ integrated_file)
-    
-    return integrated_file
+    if len(vis)>1:
+        concat(vis=vis,concatvis='temp_'+filename+'.ms')
+        logging.debug('Concatted all the files together to '+\
+                    'achieve the required time integration')
+        temp_filename=get_filename_from_time(file_list[num_files-1],freq)
+        integrated_file=get_filename_from_time(file_list[0],freq)
+        
+        os.system("mv  "+'temp_'+temp_filename+'.ms '+ integrated_file)
+        logging.debug("Created concatted file {0:s}".format(integrated_file))
+        return integrated_file
+    else:
+        return vis[0]
           
 class File_Handler:
     def __init__(self,time_duration,freqstr,file_path,start=None,end=None, \

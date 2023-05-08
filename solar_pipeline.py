@@ -872,9 +872,11 @@ def remove_nonsolar_sources(msfile, imagename='allsky', imsize=4096, cell='2arcm
     :param minuv: minimum uv to consider for imaging (in # of wavelengths)
     :return: a CASA measurement set with non-solar sources removed. Default name is "*_sun_only.ms"
     """
+    outms = msfile[:-3] + "_sun_only.ms"
+    if os.path.isdir(outms):
+        return outms
     run_wsclean(msfile=msfile, imagename=imagename, imsize=imsize, cell=cell, uvrange=minuv,predict=False,automask_thresh=5)
     image_nosun = gen_nonsolar_source_model(msfile, imagename=imagename,remove_strong_sources_only=remove_strong_sources_only)
-    outms = msfile[:-3] + "_sun_only.ms"
     predict_model(msfile, outms="temp.ms", image=image_nosun)
     uvsub("temp.ms")
     split(vis="temp.ms",outputvis=outms,datacolumn='corrected')
@@ -1026,7 +1028,7 @@ def run_wsclean(msfile,imagename,automask_thresh=8,imsize=4096, cell='2arcmin',u
     logging.debug("Running WSCLEAN")
     os.system("wsclean -no-dirty -no-update-model-required -no-negative -size "+str(imsize)+" "+\
             str(imsize)+" -scale "+cell+" -weight uniform -minuv-l "+str(uvrange)+" -auto-mask "+str(automask_thresh)+\
-            " -niter 100000 -name "+imagename+" -mgain 0.7 "+msfile)
+            " -niter 100000 -name "+imagename+" -mgain 0.7 -beam-fitting-size 2 "+msfile)
     if predict:
         logging.debug("Predicting model visibilities from "+imagename+" in "+msfile)
         os.system("wsclean -predict -name "+imagename+" "+msfile)
@@ -1090,9 +1092,9 @@ def correct_flux_scaling(msfile,src_area=100,min_beam_val=0.1,caltable_suffix='f
     import glob
     
     mstime_str=utils.get_timestr_from_name(msfile)
-    di_selfcal_str=utils.get_keyword(msfile,'di_selfcal_time')
+    di_selfcal_str,success=utils.get_keyword(msfile,'di_selfcal_time',return_status=True)
     
-    if di_selfcal_str==mstime_str:
+    if di_selfcal_str==mstime_str and success:
         images=glob.glob(msfile[:-3]+"_self*-image.fits")
         num_image=len(images)
         final_image=msfile[:-3]+"_self"+str(num_image-1)+"-image.fits"
@@ -1159,10 +1161,16 @@ def correct_flux_scaling(msfile,src_area=100,min_beam_val=0.1,caltable_suffix='f
             gencal(vis=msfile,caltable=caltable,caltype='amp',parameter=np.sqrt(1./mean_factor))
         
             os.system("cp -r "+caltable+" caltables/")
-    else:
+    elif success==True:
         caltable=glob.glob("caltables/"+di_selfcal_str+"*.fluxscale")[0]
-        
-        
+        logging.info("Applying {0:s} for doing fluxscaling".format(caltable))
+    else:
+        caltable=msfile[:-3]+"."+caltable_suffix
+        gencal(vis=msfile,caltable=caltable,caltype='amp',parameter=1)
+        logging.warning("Could not find appropriate flux scaling factor. No correction will be done.")
+    
+    DI_val=utils.get_keyword(msfile,'di_selfcal_time')
+
     logging.debug('Correcting the DATA with the scaling factor')
     temp_file='temp_'+msfile
     
@@ -1174,6 +1182,7 @@ def correct_flux_scaling(msfile,src_area=100,min_beam_val=0.1,caltable_suffix='f
     
     split(vis=temp_file,outputvis=msfile)
     os.system("rm -rf "+temp_file+"*")
+    utils.put_keyword(msfile,'di_selfcal_time',DI_val)
     return                                                                                                
         
 def correct_primary_beam(msfile,imagename):
@@ -1193,6 +1202,9 @@ def correct_primary_beam(msfile,imagename):
     return
     
 def do_bandpass_correction(solar_ms,calib_ms=None,bcal=None,caltable_fold='caltables',logging_level='info'):
+    solar_ms1=solar_ms[:-3]+"_calibrated.ms"
+    if os.path.isdir(solar_ms1):
+        return solar_ms1
     if not bcal or os.path.isdir(bcal)==False:
         logging.debug('Bandpass table not supplied or is not present on disc. Creating one'+\
                     ' from the supplied MS')
@@ -1213,11 +1225,24 @@ def do_bandpass_correction(solar_ms,calib_ms=None,bcal=None,caltable_fold='calta
     logging.info('Splitted the input solar MS into a file named '+solar_ms[:-3]+"_calibrated.ms")
     solar_ms=solar_ms[:-3]+"_calibrated.ms"
     return solar_ms
+
+
+def do_fresh_selfcal(solar_ms,logging_level='info'):
+    logging.info('Starting to do direction independent Stokes I selfcal')
+    success=do_selfcal(solar_ms,logging_level=logging_level)
+    if success==False:
+        logging.info('Starting fresh selfcal as DR decreased significantly')
+        clearcal(solar_ms)
+        success=do_selfcal(solar_ms,logging_level=logging_level)
+    return
     
-def DI_selfcal(solar_ms,solint_full_selfcal=4, solint_partial_selfcal=1,logging_level='info'):
+def DI_selfcal(solar_ms,solint_full_selfcal=14400, solint_partial_selfcal=3600,logging_level='info'):
 #### solint_full_selfcal = Full selfcal will be done in this interval with 3 phase cals and 5 ap cals
 #### solint_partial_selfcal= We will do only 2 phase cals and 1 apcal in this interval
-
+    
+    solar_ms1=solar_ms[:-3]+"_selfcalibrated.ms"
+    if os.path.isdir(solar_ms1)==True:
+        return solar_ms1
     
     sep=100000000
     prior_selfcal=False
@@ -1226,54 +1251,65 @@ def DI_selfcal(solar_ms,solint_full_selfcal=4, solint_partial_selfcal=1,logging_
     mstime=utils.get_time_from_name(solar_ms)
     mstime_str=utils.get_timestr_from_name(solar_ms)
     
-    selfcal_time=utils.get_selfcal_time_to_apply(solar_ms)
-    if selfcal_time!='none':
-    	caltables=glob.glob("caltables/"+selfcal_time+"*.gcal")
-    
+    caltables=glob.glob("caltables/*.gcal")
     if len(caltables)!=0:
         prior_selfcal=True
+    
         
     if prior_selfcal==True: 
+        dd_cal=glob.glob("caltables/*sun_only*.gcal")
+        di_cal=[cal for cal in caltables if cal not in dd_cal]
+        print (di_cal)
+        selfcal_time=utils.get_selfcal_time_to_apply(solar_ms,di_cal)
+        print (selfcal_time)
+
+        caltables=glob.glob("caltables/"+selfcal_time+"*.gcal")
         dd_cal=glob.glob("caltables/"+selfcal_time+"*sun_only*.gcal")
         di_cal=[cal for cal in caltables if cal not in dd_cal]
         
-        di_selfcal_time_str=utils.get_keyword(di_cal[0],'di_selfcal_time')
-        
-        di_selfcal_time=utils.get_time_from_name(di_selfcal_time_str)
-        
-        sep=abs((di_selfcal_time-mstime).value*24)  ### in hours
-    
-    
-        applycal(solar_ms,gaintable=di_cal,calwt=[False]*len(di_cal))
-        flagdata(vis=solar_ms,mode='rflag',datacolumn='corrected')
-    
-        if sep<solint_partial_selfcal:
-            logging.info('No direction independent Stokes I selfcal after applying '+di_selfcal_time_str)
-            utils.put_keyword(solar_ms,'di_selfcal_time',di_selfcal_time_str)
+        if len(di_cal)!=0:
+            di_selfcal_time_str,success=utils.get_keyword(di_cal[0],'di_selfcal_time',return_status=True)
+            print (di_selfcal_time_str,success)
+            if success==True:
+                di_selfcal_time=utils.get_time_from_name(di_selfcal_time_str)
+                
+                sep=abs((di_selfcal_time-mstime).value*86400)  ### in seconds
             
-        elif sep>solint_partial_selfcal and sep<solint_full_selfcal:
-            utils.put_keyword(solar_ms,'di_selfcal_time',mstime_str)
-            logging.info('Starting to do direction independent Stokes I selfcal after applying '+di_selfcal_time_str)
             
-            success=do_selfcal(solar_ms,logging_level=logging_level,num_apcal=1,num_phase_cal=0)
-            datacolumn='corrected'
+                applycal(solar_ms,gaintable=di_cal,calwt=[False]*len(di_cal))
+                flagdata(vis=solar_ms,mode='rflag',datacolumn='corrected')
             
+                if sep<solint_partial_selfcal:
+                    logging.info('No direction independent Stokes I selfcal after applying '+di_selfcal_time_str)
+                    success=utils.put_keyword(solar_ms,'di_selfcal_time',di_selfcal_time_str,return_status=True)
+                    
+                    
+                elif sep>solint_partial_selfcal and sep<solint_full_selfcal:
+                    success=utils.put_keyword(solar_ms,'di_selfcal_time',mstime_str,return_status=True)
+                    logging.info('Starting to do direction independent Stokes I selfcal after applying '+di_selfcal_time_str)
+                    success=do_selfcal(solar_ms,logging_level=logging_level,num_apcal=1,num_phase_cal=0)
+                    datacolumn='corrected'
+                    
+                else:
+                    success=utils.put_keyword(solar_ms,'di_selfcal_time',mstime_str,return_status=True)
+                    logging.info('Starting to do direction independent Stokes I selfcal after applying '+di_selfcal_time_str)
+                    success=do_selfcal(solar_ms,logging_level=logging_level,num_apcal=5,num_phase_cal=0)
+                    datacolumn='corrected' 
+                    if success==False:
+                        clearcal(solar_ms)
+                        success=do_selfcal(solar_ms,logging_level=logging_level)
+            else:
+                success=utils.put_keyword(solar_ms,'di_selfcal_time',mstime_str,return_status=True)
+                logging.info('Starting to do direction independent Stokes I selfcal as I failed to retrieve the keyword for DI selfcal')
+                do_fresh_selfcal(solar_ms,logging_level=logging_level)
         else:
-            utils.put_keyword(solar_ms,'di_selfcal_time',mstime_str)
-            logging.info('Starting to do direction independent Stokes I selfcal after applying '+di_selfcal_time_str)
-            success=do_selfcal(solar_ms,logging_level=logging_level,num_apcal=5,num_phase_cal=0)
-            datacolumn='corrected' 
-            if success==False:
-                clearcal(solar_ms)
-                success=do_selfcal(solar_ms,logging_level=logging_level)
+            success=utils.put_keyword(solar_ms,'di_selfcal_time',mstime_str,return_status=True)
+            logging.info('Starting to do direction independent Stokes I selfcal as mysteriously I did not find a suitable caltable')
+            do_fresh_selfcal(solar_ms,logging_level=logging_level)
     else:  
-        utils.put_keyword(solar_ms,'di_selfcal_time',mstime_str)
+        success=utils.put_keyword(solar_ms,'di_selfcal_time',mstime_str,return_status=True)
         logging.info('Starting to do direction independent Stokes I selfcal')
-        success=do_selfcal(solar_ms,logging_level=logging_level)
-        if success==False:
-            logging.info('Starting fresh selfcal as DR decreased significantly')
-            clearcal(solar_ms)
-            success=do_selfcal(solar_ms,logging_level=logging_level)
+        do_fresh_selfcal(solar_ms,logging_level=logging_level)
         
     logging.info('Doing a flux scaling using background strong sources')
     correct_flux_scaling(solar_ms,min_beam_val=0.1)
@@ -1284,11 +1320,15 @@ def DI_selfcal(solar_ms,solint_full_selfcal=4, solint_partial_selfcal=1,logging_
     solar_ms=solar_ms[:-3]+"_selfcalibrated.ms" 
     return solar_ms
     
-def DD_selfcal(solar_ms,solint_full_selfcal=0.5, solint_partial_selfcal=0.17,logging_level='info'):
+def DD_selfcal(solar_ms,solint_full_selfcal=1800, solint_partial_selfcal=600,logging_level='info'):
 #### solint_full_selfcal = Full selfcal will be done in this interval with 1 phase cals and 1 ap cals
-#### solint_partial_selfcal= We will do only 1 phase cals
+#### solint_partial_selfcal= We will do only 1 apcal
 
-    selfcal_time=utils.get_selfcal_time_to_apply(solar_ms)
+    solar_ms1=solar_ms[:-3]+"_sun_selfcalibrated.ms"
+    if os.path.isdir(solar_ms1):
+        return solar_ms1
+    
+    selfcal_time=utils.get_selfcal_time_to_apply(solar_ms,glob.glob("caltables/*.gcal"))
     mstime=utils.get_time_from_name(solar_ms)
     mstime_str=utils.get_timestr_from_name(solar_ms)
     
@@ -1302,38 +1342,43 @@ def DD_selfcal(solar_ms,solint_full_selfcal=0.5, solint_partial_selfcal=0.17,log
         prior_selfcal=True
         
     if prior_selfcal==True: 
-        dd_selfcal_time_str=utils.get_keyword(caltables[0],'dd_selfcal_time')
+        dd_selfcal_time_str,success=utils.get_keyword(caltables[0],'dd_selfcal_time',return_status=True)
         
-        dd_selfcal_time=utils.get_time_from_name(dd_selfcal_time_str)
+        if success==True:
+            dd_selfcal_time=utils.get_time_from_name(dd_selfcal_time_str)
+            
+            sep=abs((dd_selfcal_time-mstime).value*86400)  ### in seconds
         
-        sep=abs((dd_selfcal_time-mstime).value*60)  ### in minutes
-    
-    
-        applycal(solar_ms,gaintable=caltables,calwt=[False]*len(caltables),applymode='calonly')
-        flagdata(vis=solar_ms,mode='rflag',datacolumn='corrected')
-    
-        if sep<solint_partial_selfcal:
-            logging.info('No direction dependent Stokes I selfcal after applying '+dd_selfcal_time_str)
-            utils.put_keyword(solar_ms,'dd_selfcal_time',dd_selfcal_time_str)
-            
-        elif sep>solint_partial_selfcal and sep<solint_full_selfcal:
-            utils.put_keyword(solar_ms,'dd_selfcal_time',mstime_str)
-            logging.info('Starting to do direction dependent Stokes I selfcal after applying '+dd_selfcal_time_str)
-            success=do_selfcal(solar_ms,logging_level=logging_level,num_phase_cal=1,ms_keyword='dd_selfcal_time',applymode='calonly')
-            datacolumn='corrected'
-            
-            
+        
+            applycal(solar_ms,gaintable=caltables,calwt=[False]*len(caltables),applymode='calonly')
+            flagdata(vis=solar_ms,mode='rflag',datacolumn='corrected')
+        
+            if sep<solint_partial_selfcal:
+                logging.info('No direction dependent Stokes I selfcal after applying '+dd_selfcal_time_str)
+                success=utils.put_keyword(solar_ms,'dd_selfcal_time',dd_selfcal_time_str,return_status=True)
+                
+            elif sep>solint_partial_selfcal and sep<solint_full_selfcal:
+                success=utils.put_keyword(solar_ms,'dd_selfcal_time',mstime_str,return_status=True)
+                logging.info('Starting to do direction dependent Stokes I selfcal after applying '+dd_selfcal_time_str)
+                success=do_selfcal(solar_ms,logging_level=logging_level,num_phase_cal=1,num_apcal=1,ms_keyword='dd_selfcal_time',applymode='calonly')
+                datacolumn='corrected'
+                
+                
+            else:
+                success=utils.put_keyword(solar_ms,'dd_selfcal_time',mstime_str,return_status=True)
+                logging.info('Starting to do direction dependent Stokes I selfcal after applying '+dd_selfcal_time_str)
+                success=do_selfcal(solar_ms,logging_level=logging_level,num_phase_cal=1,num_apcal=1,ms_keyword='dd_selfcal_time',applymode='calonly')
+                datacolumn='corrected'
         else:
-            utils.put_keyword(solar_ms,'dd_selfcal_time',mstime_str)
-            logging.info('Starting to do direction dependent Stokes I selfcal after applying '+dd_selfcal_time_str)
-            success=do_selfcal(solar_ms,logging_level=logging_level,num_phase_cal=1,num_apcal=1,ms_keyword='dd_selfcal_time',applymode='calonly')
-            datacolumn='corrected'
+            success=utils.put_keyword(solar_ms,'dd_selfcal_time',mstime_str,return_status=True)
+            logging.info('Starting to do direction dependent Stokes I selfcal as I failed to retrieve the keyword for DD selfcal')
+            success=do_selfcal(solar_ms,logging_level=logging_level,num_phase_cal=2,num_apcal=1,ms_keyword='dd_selfcal_time',applymode='calonly')
             
             
       
     else:  
-        utils.put_keyword(solar_ms,'dd_selfcal_time',mstime_str)
-        logging.info('Starting to do direction independent Stokes I selfcal')
+        success=utils.put_keyword(solar_ms,'dd_selfcal_time',mstime_str,return_status=True)
+        logging.info('Starting to do direction dependent Stokes I selfcal')
         success=do_selfcal(solar_ms,logging_level=logging_level,num_phase_cal=2,num_apcal=1,ms_keyword='dd_selfcal_time',applymode='calonly')
         
     
@@ -1431,22 +1476,20 @@ def solar_pipeline(time_duration,calib_time_duration,freqstr,filepath,time_integ
     
     fp.get_selfcal_times_paths()
     
-    filename='a'
-    while filename is not None:
-        filename=fp.get_current_file_for_selfcal(freqstr[0])
+    filename=fp.get_current_file_for_selfcal(freqstr[0])
+    while filename is not None: 
         calib_file=glob.glob(caltable_fold+'/*.bcal')
         if len(calib_file)!=0:
             bcal=calib_file[0]
         imagename="sun_only_"+filename[:-3]
         image_ms(filename,calib_ms=calib_filename,bcal=bcal,selfcal=True,imagename=imagename)
-        
-    print (bcal)
-    filename='a'	
-    #
-    #while filename is not None:
-#	    filename=fp.get_current_file_for_imaging('78MHz')
-#	    image_ms(filename,calib_ms=calib_ms,bcal=bcal,selfcal=True)
-                
+        filename=fp.get_current_file_for_selfcal(freqstr[0])
+
+    filename=fp.get_current_file_for_selfcal(freqstr[0])
+    while filename is not None:
+        imagename="sun_only_"+filename[:-3]
+        image_ms(filename,calib_ms=calib_ms,bcal=bcal,imagename=imagename,selfcal=True)
+        filename=fp.get_current_file_for_imaging(freqstr[0])
     
 def apply_solutions_and_image(msname,bcal,imagename):
     logging.info('Analysing '+msname)
