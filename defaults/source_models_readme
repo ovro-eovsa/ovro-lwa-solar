@@ -1,0 +1,6 @@
+The source models included in this directory are obtained from de Gasperin et al. 2020, A&A (https://ui.adsabs.harvard.edu/abs/2020A%26A...635A.150D/abstract).
+Each source model is a text file that contains a list of clean components in wsclean format. The models with a low resolution (45") are adopted.
+- CasA.txt: identical to CasLow-sources.txt at https://cdsarc.u-strasbg.fr/ftp/J/A+A/635/A150/CasLow-sources.txt
+- CygA.txt: identical to CygLow-sources.txt at https://cdsarc.u-strasbg.fr/ftp/J/A+A/635/A150/CygLow-sources.txt
+- TauA.txt: identical to TauLow-sources.txt at https://cdsarc.u-strasbg.fr/ftp/J/A+A/635/A150/TauLow-sources.txt
+- VirA.txt: identical to VirLow-sources.txt at https://cdsarc.u-strasbg.fr/ftp/J/A+A/635/A150/VirLow-sources.txt.gz
