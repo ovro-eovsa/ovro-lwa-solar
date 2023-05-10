@@ -1268,19 +1268,19 @@ def do_fresh_selfcal(solar_ms, num_phase_cal=3, num_apcal=5, logging_level='info
 
 
 def DI_selfcal(solar_ms, solint_full_selfcal=14400, solint_partial_selfcal=3600,
-               full_selfcal_rounds=[3, 5], partial_selfcal_rounds=[2, 1], logging_level='info'):
+               full_di_selfcal_rounds=[3, 5], partial_di_selfcal_rounds=[1, 1], logging_level='info'):
     """
-
+    Directional-independent self-calibration (full sky)
     :param solar_ms: input solar visibility
     :param solint_full_selfcal: interval for doing full self-calibration in seconds. Default to 4 hours
     :param solint_partial_selfcal: interval for doing partial self-calibration in seconds. Default to 1 hour.
-    :param full_selfcal_rounds: [rounds of phase-only selfcal, rounds of amp-phase selfcal]
-    :param partial_selfcal_rounds: [rounds of phase-only selfcal, rounds of amp-phase selfcal]
+    :param full_di_selfcal_rounds: [rounds of phase-only selfcal, rounds of amp-phase selfcal]
+            for full selfcalibration runs
+    :param partial_di_selfcal_rounds: [rounds of phase-only selfcal, rounds of amp-phase selfcal]
+            for partial selfcalibration runs
     :param logging_level: level of logging
     :return: N/A
     """
-    #### solint_full_selfcal = Full selfcal will be done in this interval with 3 phase cals and 5 ap cals
-    #### solint_partial_selfcal= We will do only 2 phase cals and 1 apcal in this interval
 
     solar_ms1 = solar_ms[:-3] + "_selfcalibrated.ms"
     if os.path.isdir(solar_ms1) == True:
@@ -1329,7 +1329,8 @@ def DI_selfcal(solar_ms, solint_full_selfcal=14400, solint_partial_selfcal=3600,
                     success = utils.put_keyword(solar_ms, 'di_selfcal_time', mstime_str, return_status=True)
                     logging.info(
                         'Starting to do direction independent Stokes I selfcal after applying ' + di_selfcal_time_str)
-                    success = do_selfcal(solar_ms, num_phase_cal=0, num_apcal=partial_selfcal_rounds[1], logging_level=logging_level)
+                    success = do_selfcal(solar_ms, num_phase_cal=0,
+                                         num_apcal=partial_di_selfcal_rounds[1], logging_level=logging_level)
                     datacolumn = 'corrected'
 
                 else:
@@ -1337,7 +1338,8 @@ def DI_selfcal(solar_ms, solint_full_selfcal=14400, solint_partial_selfcal=3600,
                     success = utils.put_keyword(solar_ms, 'di_selfcal_time', mstime_str, return_status=True)
                     logging.info(
                         'Starting to do direction independent Stokes I selfcal after applying ' + di_selfcal_time_str)
-                    success = do_selfcal(solar_ms, num_phase_cal=0, num_apcal=full_selfcal_rounds[1], logging_level=logging_level)
+                    success = do_selfcal(solar_ms, num_phase_cal=0,
+                                         num_apcal=full_di_selfcal_rounds[1], logging_level=logging_level)
                     datacolumn = 'corrected'
                     if success == False:
                         clearcal(solar_ms)
@@ -1346,19 +1348,19 @@ def DI_selfcal(solar_ms, solint_full_selfcal=14400, solint_partial_selfcal=3600,
                 success = utils.put_keyword(solar_ms, 'di_selfcal_time', mstime_str, return_status=True)
                 logging.info(
                     'Starting to do direction independent Stokes I selfcal as I failed to retrieve the keyword for DI selfcal')
-                do_fresh_selfcal(solar_ms, num_phase_cal=full_selfcal_rounds[0],
-                                 num_apcal=full_selfcal_rounds[1], logging_level=logging_level)
+                do_fresh_selfcal(solar_ms, num_phase_cal=full_di_selfcal_rounds[0],
+                                 num_apcal=full_di_selfcal_rounds[1], logging_level=logging_level)
         else:
             success = utils.put_keyword(solar_ms, 'di_selfcal_time', mstime_str, return_status=True)
             logging.info(
                 'Starting to do direction independent Stokes I selfcal as mysteriously I did not find a suitable caltable')
-            do_fresh_selfcal(solar_ms, num_phase_cal=full_selfcal_rounds[0],
-                             num_apcal=full_selfcal_rounds[1], logging_level=logging_level)
+            do_fresh_selfcal(solar_ms, num_phase_cal=full_di_selfcal_rounds[0],
+                             num_apcal=full_di_selfcal_rounds[1], logging_level=logging_level)
     else:
         success = utils.put_keyword(solar_ms, 'di_selfcal_time', mstime_str, return_status=True)
         logging.info('Starting to do direction independent Stokes I selfcal')
-        do_fresh_selfcal(solar_ms, num_phase_cal=full_selfcal_rounds[0],
-                         num_apcal=full_selfcal_rounds[1], logging_level=logging_level)
+        do_fresh_selfcal(solar_ms, num_phase_cal=full_di_selfcal_rounds[0],
+                         num_apcal=full_di_selfcal_rounds[1], logging_level=logging_level)
 
     logging.info('Doing a flux scaling using background strong sources')
     correct_flux_scaling(solar_ms, min_beam_val=0.1)
@@ -1370,9 +1372,21 @@ def DI_selfcal(solar_ms, solint_full_selfcal=14400, solint_partial_selfcal=3600,
     return solar_ms_slfcaled
 
 
-def DD_selfcal(solar_ms, solint_full_selfcal=1800, solint_partial_selfcal=600, logging_level='info'):
-    #### solint_full_selfcal = Full selfcal will be done in this interval with 1 phase cals and 1 ap cals
-    #### solint_partial_selfcal= We will do only 1 apcal
+def DD_selfcal(solar_ms, solint_full_selfcal=1800, solint_partial_selfcal=600,
+               full_dd_selfcal_rounds=[3, 5], partial_dd_selfcal_rounds=[1, 1],
+               logging_level='info'):
+    """
+    Directional-dependent self-calibration on the Sun only
+    :param solar_ms: input solar visibility
+    :param solint_full_selfcal: interval for doing full self-calibration in seconds. Default to 30 min
+    :param solint_partial_selfcal: interval for doing partial self-calibration in seconds. Default to 10 min.
+    :param full_dd_selfcal_rounds: [rounds of phase-only selfcal, rounds of amp-phase selfcal]
+            for full selfcalibration runs
+    :param partial_dd_selfcal_rounds: [rounds of phase-only selfcal, rounds of amp-phase selfcal]
+            for partial selfcalibration runs
+    :param logging_level: level of logging
+    :return: N/A
+    """
 
     solar_ms1 = solar_ms[:-3] + "_sun_selfcalibrated.ms"
     if os.path.isdir(solar_ms1):
@@ -1390,10 +1404,10 @@ def DD_selfcal(solar_ms, solint_full_selfcal=1800, solint_partial_selfcal=600, l
     if len(caltables) != 0:
         prior_selfcal = True
 
-    if prior_selfcal == True:
+    if prior_selfcal:
         dd_selfcal_time_str, success = utils.get_keyword(caltables[0], 'dd_selfcal_time', return_status=True)
 
-        if success == True:
+        if success:
             dd_selfcal_time = utils.get_time_from_name(dd_selfcal_time_str)
 
             sep = abs((dd_selfcal_time - mstime).value * 86400)  ### in seconds
@@ -1409,7 +1423,8 @@ def DD_selfcal(solar_ms, solint_full_selfcal=1800, solint_partial_selfcal=600, l
                 success = utils.put_keyword(solar_ms, 'dd_selfcal_time', mstime_str, return_status=True)
                 logging.info(
                     'Starting to do direction dependent Stokes I selfcal after applying ' + dd_selfcal_time_str)
-                success = do_selfcal(solar_ms, num_phase_cal=1, num_apcal=1, applymode='calonly',
+                success = do_selfcal(solar_ms, num_phase_cal=partial_dd_selfcal_rounds[0],
+                                     num_apcal=partial_dd_selfcal_rounds[1], applymode='calonly',
                                      logging_level=logging_level, ms_keyword='dd_selfcal_time')
                 datacolumn = 'corrected'
 
@@ -1418,14 +1433,16 @@ def DD_selfcal(solar_ms, solint_full_selfcal=1800, solint_partial_selfcal=600, l
                 success = utils.put_keyword(solar_ms, 'dd_selfcal_time', mstime_str, return_status=True)
                 logging.info(
                     'Starting to do direction dependent Stokes I selfcal after applying ' + dd_selfcal_time_str)
-                success = do_selfcal(solar_ms, num_phase_cal=1, num_apcal=1, applymode='calonly',
+                success = do_selfcal(solar_ms, num_phase_cal=full_dd_selfcal_rounds[0],
+                                     num_apcal=full_dd_selfcal_rounds[1], applymode='calonly',
                                      logging_level=logging_level, ms_keyword='dd_selfcal_time')
                 datacolumn = 'corrected'
         else:
             success = utils.put_keyword(solar_ms, 'dd_selfcal_time', mstime_str, return_status=True)
             logging.info(
                 'Starting to do direction dependent Stokes I selfcal as I failed to retrieve the keyword for DD selfcal')
-            success = do_selfcal(solar_ms, num_phase_cal=2, num_apcal=1, applymode='calonly',
+            success = do_selfcal(solar_ms, num_phase_cal=full_dd_selfcal_rounds[0],
+                                 num_apcal=full_dd_selfcal_rounds[1], applymode='calonly',
                                  logging_level=logging_level, ms_keyword='dd_selfcal_time')
 
 
@@ -1433,7 +1450,8 @@ def DD_selfcal(solar_ms, solint_full_selfcal=1800, solint_partial_selfcal=600, l
     else:
         success = utils.put_keyword(solar_ms, 'dd_selfcal_time', mstime_str, return_status=True)
         logging.info('Starting to do direction dependent Stokes I selfcal')
-        success = do_selfcal(solar_ms, num_phase_cal=2, num_apcal=1, applymode='calonly', logging_level=logging_level,
+        success = do_selfcal(solar_ms, num_phase_cal=full_dd_selfcal_rounds[0], num_apcal=full_dd_selfcal_rounds[1],
+                             applymode='calonly', logging_level=logging_level,
                              ms_keyword='dd_selfcal_time')
 
     logging.info('Splitted the selfcalibrated MS into a file named ' + solar_ms[:-3] + "_sun_selfcalibrated.ms")
@@ -1444,13 +1462,22 @@ def DD_selfcal(solar_ms, solint_full_selfcal=1800, solint_partial_selfcal=600, l
 
 
 def image_ms(solar_ms, calib_ms=None, bcal=None, selfcal=False, imagename='sun_only',
-             imsize=512, cell='1arcmin', logfile='analysis.log', logging_level='info',
-             caltable_fold='caltables'):
+             imsize=1024, cell='1arcmin', logfile='analysis.log', logging_level='info',
+             caltable_fold='caltables', full_di_selfcal_rounds=[2, 2], partial_di_selfcal_rounds=[0, 1],
+             full_dd_selfcal_rounds=[1, 1], partial_dd_selfcal_rounds=[0, 1]):
     """
     Pipeline to calibrate and imaging a solar visibility
     :param solar_ms: input solar measurement set
     :param calib_ms: (optional) input measurement set for generating the calibrations, usually is one observed at night
     :param bcal: (optional) bandpass calibration table. If not provided, use calib_ms to generate one.
+    :param full_di_selfcal_rounds: [rounds of phase-only selfcal, rounds of amp-phase selfcal]
+            for directional independent (full sky) full selfcalibration runs
+    :param partial_di_selfcal_rounds: [rounds of phase-only selfcal, rounds of amp-phase selfcal]
+            for directional independent (full sky) partial selfcalibration runs
+    :param full_dd_selfcal_rounds: [rounds of phase-only selfcal, rounds of amp-phase selfcal]
+            for directional-dependent full selfcalibration runs
+    :param partial_dd_selfcal_rounds: [rounds of phase-only selfcal, rounds of amp-phase selfcal]
+            for directional-dependent partial selfcalibration runs
     """
 
     if not os.path.isdir(caltable_fold):
@@ -1462,14 +1489,16 @@ def image_ms(solar_ms, calib_ms=None, bcal=None, selfcal=False, imagename='sun_o
 
     logging.info('Analysing ' + solar_ms)
     if selfcal:
-        solar_ms = DI_selfcal(solar_ms, logging_level=logging_level)
+        outms_di = DI_selfcal(solar_ms, logging_level=logging_level, full_di_selfcal_rounds=full_di_selfcal_rounds,
+                              partial_di_selfcal_rounds=partial_di_selfcal_rounds)
         logging.info('Removing the strong sources in the sky')
-        outms = remove_nonsolar_sources(solar_ms)
-        logging.info('The strong source subtracted MS is ' + outms)
+        outms_di_ = remove_nonsolar_sources(outms_di)
+        logging.info('The strong source subtracted MS is ' + outms_di_)
         logging.info('Starting to do Stokes I selfcal towards direction of sun')
-        outms = DD_selfcal(outms, logging_level=logging_level)
+        outms_dd = DD_selfcal(outms_di_, logging_level=logging_level, full_dd_selfcal_rounds=full_dd_selfcal_rounds,
+                              partial_dd_selfcal_rounds=partial_dd_selfcal_rounds)
         logging.info('Removing almost all sources in the sky except Sun')
-        outms = remove_nonsolar_sources(outms, imagename='for_weak_source_subtraction',
+        outms = remove_nonsolar_sources(outms_dd, imagename='for_weak_source_subtraction',
                                         remove_strong_sources_only=False)
         logging.info('The source subtracted MS is ' + outms)
     else:
@@ -1480,7 +1509,7 @@ def image_ms(solar_ms, calib_ms=None, bcal=None, selfcal=False, imagename='sun_o
     logging.info('Changing the phasecenter to position of Sun')
     change_phasecenter(outms)
     logging.info('Generating final solar centered image')
-    run_wsclean(outms, imagename=imagename, automask_thresh=5, uvrange='0', predict=False, imsize=1024, cell='1arcmin')
+    run_wsclean(outms, imagename=imagename, automask_thresh=5, uvrange='0', predict=False, imsize=imsize, cell=cell)
     logging.info('Correcting for the primary beam at the location of Sun')
     correct_primary_beam(outms, imagename + "-image.fits")
     # make_solar_image(outms, imagename=imagename, imsize=imsize, cell=cell)
