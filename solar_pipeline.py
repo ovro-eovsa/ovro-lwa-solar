@@ -1192,7 +1192,7 @@ def correct_flux_scaling(msfile, src_area=100, min_beam_val=0.1, caltable_suffix
     DI_val = utils.get_keyword(msfile, 'di_selfcal_time')
 
     logging.debug('Correcting the DATA with the scaling factor')
-    temp_file = 'temp_' + msfile
+    temp_file = '_tmp' + os.path.basename(msfile)
 
     split(vis=msfile, outputvis=temp_file)
 
@@ -1243,10 +1243,10 @@ def do_bandpass_correction(solar_ms, calib_ms=None, bcal=None, caltable_fold='ca
     # correct_ms_bug(solar_ms)
 
     apply_calibration(solar_ms, gaintable=bcal, doantflag=True, doflag=True, do_solar_imaging=False)
-    split(vis=solar_ms, outputvis=solar_ms[:-3] + "_calibrated.ms")
-    logging.info('Splitted the input solar MS into a file named ' + solar_ms[:-3] + "_calibrated.ms")
-    solar_ms = solar_ms[:-3] + "_calibrated.ms"
-    return solar_ms
+    solar_ms_cal = solar_ms[:-3] + "_calibrated.ms"
+    split(vis=solar_ms, outputvis=solar_ms_cal)
+    logging.info('Splitted the input solar MS into a file named ' + solar_ms_cal)
+    return solar_ms_cal
 
 
 def do_fresh_selfcal(solar_ms, num_phase_cal=3, num_apcal=5, logging_level='info'):
@@ -1292,13 +1292,14 @@ def DI_selfcal(solar_ms, solint_full_selfcal=14400, solint_partial_selfcal=3600,
 
     mstime = utils.get_time_from_name(solar_ms)
     mstime_str = utils.get_timestr_from_name(solar_ms)
+    msfreq_str = utils.get_freqstr_from_name(solar_ms)
 
-    caltables = glob.glob("caltables/*.gcal")
+    caltables = glob.glob("caltables/*"+msfreq_str+"*.gcal")
     if len(caltables) != 0:
         prior_selfcal = True
 
     if prior_selfcal:
-        dd_cal = glob.glob("caltables/*sun_only*.gcal")
+        dd_cal = glob.glob("caltables/*"+msfreq_str+"*sun_only*.gcal")
         di_cal = [cal for cal in caltables if cal not in dd_cal]
         print(di_cal)
         selfcal_time = utils.get_selfcal_time_to_apply(solar_ms, di_cal)
@@ -1395,11 +1396,12 @@ def DD_selfcal(solar_ms, solint_full_selfcal=1800, solint_partial_selfcal=600,
     selfcal_time = utils.get_selfcal_time_to_apply(solar_ms, glob.glob("caltables/*.gcal"))
     mstime = utils.get_time_from_name(solar_ms)
     mstime_str = utils.get_timestr_from_name(solar_ms)
+    msfreq_str = utils.get_freqstr_from_name(solar_ms)
 
     sep = 100000000
     prior_selfcal = False
 
-    caltables = glob.glob("caltables/" + selfcal_time + "*sun_only*.gcal")
+    caltables = glob.glob("caltables/" + selfcal_time + "*" + msfreq_str + "*sun_only*.gcal")
 
     if len(caltables) != 0:
         prior_selfcal = True
@@ -1479,17 +1481,19 @@ def image_ms(solar_ms, calib_ms=None, bcal=None, selfcal=False, imagename='sun_o
     :param partial_dd_selfcal_rounds: [rounds of phase-only selfcal, rounds of amp-phase selfcal]
             for directional-dependent partial selfcalibration runs
     """
+    if logging_level.lower() == 'info':
+        logging.basicConfig(filename=logfile, level=logging.INFO)
 
     if not os.path.isdir(caltable_fold):
         os.mkdir(caltable_fold)
     if os.path.isfile(imagename + "-image.fits"):
         return
 
-    solar_ms = do_bandpass_correction(solar_ms, calib_ms=calib_ms, bcal=bcal, caltable_fold=caltable_fold)
+    solar_ms_cal = do_bandpass_correction(solar_ms, calib_ms=calib_ms, bcal=bcal, caltable_fold=caltable_fold)
 
-    logging.info('Analysing ' + solar_ms)
+    logging.info('Analysing ' + solar_ms_cal)
     if selfcal:
-        outms_di = DI_selfcal(solar_ms, logging_level=logging_level, full_di_selfcal_rounds=full_di_selfcal_rounds,
+        outms_di = DI_selfcal(solar_ms_cal, logging_level=logging_level, full_di_selfcal_rounds=full_di_selfcal_rounds,
                               partial_di_selfcal_rounds=partial_di_selfcal_rounds)
         logging.info('Removing the strong sources in the sky')
         outms_di_ = remove_nonsolar_sources(outms_di)
@@ -1503,7 +1507,7 @@ def image_ms(solar_ms, calib_ms=None, bcal=None, selfcal=False, imagename='sun_o
         logging.info('The source subtracted MS is ' + outms)
     else:
         logging.info('Removing almost all sources in the sky except Sun')
-        outms = remove_nonsolar_sources(solar_ms)
+        outms = remove_nonsolar_sources(solar_ms_cal)
         logging.info('The source subtracted MS is ' + outms)
 
     logging.info('Changing the phasecenter to position of Sun')
@@ -1527,13 +1531,13 @@ def solar_pipeline(time_duration, calib_time_duration, freqstr, filepath, time_i
                    calib_ms=None, bcal=None, selfcal=False, imagename='sun_only',
                    imsize=512, cell='1arcmin', logfile='analysis.log', logging_level='info',
                    caltable_fold='caltables'):
-    if logging_level == 'info' or logging_level == 'INFO':
+    if logging_level.lower() == 'info':
         logging.basicConfig(filename=logfile, level=logging.INFO)
-    elif logging_level == 'warning' or logging_level == 'WARNING':
+    elif logging_level.lower() == 'warning':
         logging.basicConfig(filename=logfile, level=logging.WARNING)
-    elif logging_level == 'critical' or logging_level == 'CRITICAL':
+    elif logging_level.lower() == 'critical':
         logging.basicConfig(filename=logfile, level=logging.CRITICAL)
-    elif logging_level == 'error' or logging_level == 'ERROR':
+    elif logging_level.lower() == 'error':
         logging.basicConfig(filename=logfile, level=logging.ERROR)
     else:
         logging.basicConfig(filename=logfile, level=logging.DEBUG)

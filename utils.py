@@ -1,7 +1,7 @@
 import os, sys
 from astropy.time import Time
 from astropy.io import fits
-from casatools import image, table, msmetadata
+from casatools import image, table, msmetadata, quanta
 import numpy as np
 import logging, glob
 
@@ -90,7 +90,7 @@ def get_strong_source_list():
 
 
 def get_time_from_name(msname):
-    pieces = msname.split('_')
+    pieces = os.path.basename(msname).split('_')
     ymd = pieces[0]
     hms = pieces[1]
     mstime = Time(ymd[0:4] + "-" + ymd[4:6] + "-" + ymd[6:] +
@@ -100,8 +100,12 @@ def get_time_from_name(msname):
 
 
 def get_timestr_from_name(msname):
-    pieces = msname.split('_')
+    pieces = os.path.basename(msname).split('_')
     return '_'.join(pieces[0:2])
+
+
+def get_freqstr_from_name(msname):
+    return os.path.basename(msname)[16:21]
 
 
 def get_selfcal_time_to_apply(msname, caltables):
@@ -156,22 +160,18 @@ def convert_to_heliocentric_coords(msname, imagename, helio_imagename=None, reft
     import datetime as dt
     from suncasa.utils import helioimage2fits as hf
     from casatasks import importfits
+    msmd = msmetadata()
+    qa = quanta()
 
     if reftime == '':
-        msmd = msmetadata()
         msmd.open(msname)
-        times = msmd.timesforfield(0)
-        msmd.done()
-        time = Time(times[0] / 86400, scale='utc', format='mjd')
-        time.format = 'datetime'
-
-        tdt = dt.timedelta(seconds=3)
-
-        t1 = time - tdt
-        t2 = time + tdt
-        print(t1.strftime("%Y/%m/%d/%H:%M:%S"))
-        reftime = t1.strftime('%Y/%m/%d/%H:%M:%S') + "~" + t2.strftime('%Y/%m/%d/%H:%M:%S')
-    print(reftime)
+        trange = msmd.timerangeforobs(0)
+        btime = qa.time(trange['begin']['m0'], form='fits')[0]
+        etime = qa.time(trange['end']['m0'], form='fits')[0]
+        msmd.close()
+        reftime = btime+'~'+etime
+    print('Use this reference time for registration: ', reftime)
+    logging.debug('Use this reference time for registration: ', reftime)
     temp_image = imagename + ".tmp"
     if helio_imagename is None:
         helio_imagename = imagename.replace('.fits', '.helio.fits')
@@ -183,10 +183,7 @@ def convert_to_heliocentric_coords(msname, imagename, helio_imagename=None, reft
     try:
         hf.imreg(vis=msname, imagefile=temp_image, timerange=reftime,
                  fitsfile=helio_imagename, usephacenter=True, verbose=True, toTb=True)
+        return helio_imagename
     except:
         logging.warning("Could not convert to helicentric coordinates")
-        return helio_imagename
-    return None
-
-
-
+        return None
