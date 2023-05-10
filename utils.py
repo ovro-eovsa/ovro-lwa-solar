@@ -152,7 +152,7 @@ def put_keyword(caltable, keyword, val, return_status=False):
     return success
 
 
-def convert_to_heliocentric_coords(msname, imagename, reftime=''):
+def convert_to_heliocentric_coords(msname, imagename, helio_imagename=None, reftime=''):
     import datetime as dt
     from suncasa.utils import helioimage2fits as hf
     from casatasks import importfits
@@ -172,19 +172,20 @@ def convert_to_heliocentric_coords(msname, imagename, reftime=''):
         print(t1.strftime("%Y/%m/%d/%H:%M:%S"))
         reftime = t1.strftime('%Y/%m/%d/%H:%M:%S') + "~" + t2.strftime('%Y/%m/%d/%H:%M:%S')
     print(reftime)
-    temp_image = 'temp_' + imagename + ".image"
-    helio_image = imagename + ".helio"
-    if os.path.isdir(imagename) == False:
+    temp_image = imagename + ".tmp"
+    if helio_imagename is None:
+        helio_imagename = imagename.replace('.fits', '.helio.fits')
+    if not os.path.isdir(imagename):
         importfits(fitsimage=imagename, imagename=temp_image, overwrite=True)
     else:
         temp_image = imagename
 
     try:
         hf.imreg(vis=msname, imagefile=temp_image, timerange=reftime,
-                 fitsfile=helio_image, usephacenter=True, verbose=True, toTb=True)
+                 fitsfile=helio_imagename, usephacenter=True, verbose=True, toTb=True)
     except:
         logging.warning("Could not convert to helicentric coordinates")
-        return helio_image
+        return helio_imagename
     return None
 
 

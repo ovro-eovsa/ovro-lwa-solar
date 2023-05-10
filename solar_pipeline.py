@@ -663,7 +663,7 @@ def gen_calibration(msfile, modelcl=None, uvrange='', bcaltb=None, logging_level
     # Now do a bandpass calibration using the model component list
 
     if not bcaltb:
-        bcaltb = caltable_fold + "/" + os.path.splitext(msfile)[0] + '.bcal'
+        bcaltb = caltable_fold + "/" + os.path.basename(msfile).replace('.ms', '.bcal')
 
     logging.info("Generating bandpass solution")
     bandpass(msfile, caltable=bcaltb, uvrange=uvrange, combine='scan,field,obs', fillgaps=0)
@@ -1464,7 +1464,7 @@ def DD_selfcal(solar_ms, solint_full_selfcal=1800, solint_partial_selfcal=600,
 def image_ms(solar_ms, calib_ms=None, bcal=None, selfcal=False, imagename='sun_only',
              imsize=1024, cell='1arcmin', logfile='analysis.log', logging_level='info',
              caltable_fold='caltables', full_di_selfcal_rounds=[2, 2], partial_di_selfcal_rounds=[0, 1],
-             full_dd_selfcal_rounds=[1, 1], partial_dd_selfcal_rounds=[0, 1]):
+             full_dd_selfcal_rounds=[1, 1], partial_dd_selfcal_rounds=[0, 1], do_final_imaging=True):
     """
     Pipeline to calibrate and imaging a solar visibility
     :param solar_ms: input solar measurement set
@@ -1508,13 +1508,18 @@ def image_ms(solar_ms, calib_ms=None, bcal=None, selfcal=False, imagename='sun_o
 
     logging.info('Changing the phasecenter to position of Sun')
     change_phasecenter(outms)
-    logging.info('Generating final solar centered image')
-    run_wsclean(outms, imagename=imagename, automask_thresh=5, uvrange='0', predict=False, imsize=imsize, cell=cell)
-    logging.info('Correcting for the primary beam at the location of Sun')
-    correct_primary_beam(outms, imagename + "-image.fits")
-    # make_solar_image(outms, imagename=imagename, imsize=imsize, cell=cell)
-    # helio_img=utils.convert_to_heliocentric_coords(solar_ms,imagename+"-image.fits")
-    logging.info('Imaging completed for ' + solar_ms)
+
+    if do_final_imaging:
+        logging.info('Generating final solar centered image')
+        run_wsclean(outms, imagename=imagename, automask_thresh=5, uvrange='0', predict=False, imsize=imsize, cell=cell)
+        logging.info('Correcting for the primary beam at the location of Sun')
+        correct_primary_beam(outms, imagename + "-image.fits")
+        # make_solar_image(outms, imagename=imagename, imsize=imsize, cell=cell)
+        helio_image = utils.convert_to_heliocentric_coords(outms, imagename+"-image.fits")
+        logging.info('Imaging completed for ' + solar_ms)
+        return outms, helio_image
+    else:
+        return outms
 
 
 def solar_pipeline(time_duration, calib_time_duration, freqstr, filepath, time_integration=8, time_cadence=100,
@@ -1565,13 +1570,15 @@ def solar_pipeline(time_duration, calib_time_duration, freqstr, filepath, time_i
         if len(calib_file) != 0:
             bcal = calib_file[0]
         imagename = "sun_only_" + filename[:-3]
-        image_ms(filename, calib_ms=calib_filename, bcal=bcal, selfcal=True, imagename=imagename)
+        outms, helio_image = image_ms(filename, calib_ms=calib_filename, bcal=bcal, selfcal=True,
+                                    imagename=imagename, do_final_imaging=True)
         filename = fp.get_current_file_for_selfcal(freqstr[0])
 
     filename = fp.get_current_file_for_selfcal(freqstr[0])
     while filename is not None:
         imagename = "sun_only_" + filename[:-3]
-        image_ms(filename, calib_ms=calib_ms, bcal=bcal, imagename=imagename, selfcal=True)
+        outms, helio_image = image_ms(filename, calib_ms=calib_ms, bcal=bcal, selfcal=True,
+                                    imagename=imagename, do_final_imaging=True)
         filename = fp.get_current_file_for_imaging(freqstr[0])
 
 
