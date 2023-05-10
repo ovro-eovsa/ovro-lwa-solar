@@ -1267,7 +1267,18 @@ def do_fresh_selfcal(solar_ms, num_phase_cal=3, num_apcal=5, logging_level='info
     return
 
 
-def DI_selfcal(solar_ms, solint_full_selfcal=14400, solint_partial_selfcal=3600, logging_level='info'):
+def DI_selfcal(solar_ms, solint_full_selfcal=14400, solint_partial_selfcal=3600,
+               full_selfcal_rounds=[3, 5], partial_selfcal_rounds=[2, 1], logging_level='info'):
+    """
+
+    :param solar_ms: input solar visibility
+    :param solint_full_selfcal: interval for doing full self-calibration in seconds. Default to 4 hours
+    :param solint_partial_selfcal: interval for doing partial self-calibration in seconds. Default to 1 hour.
+    :param full_selfcal_rounds: [rounds of phase-only selfcal, rounds of amp-phase selfcal]
+    :param partial_selfcal_rounds: [rounds of phase-only selfcal, rounds of amp-phase selfcal]
+    :param logging_level: level of logging
+    :return: N/A
+    """
     #### solint_full_selfcal = Full selfcal will be done in this interval with 3 phase cals and 5 ap cals
     #### solint_partial_selfcal= We will do only 2 phase cals and 1 apcal in this interval
 
@@ -1318,7 +1329,7 @@ def DI_selfcal(solar_ms, solint_full_selfcal=14400, solint_partial_selfcal=3600,
                     success = utils.put_keyword(solar_ms, 'di_selfcal_time', mstime_str, return_status=True)
                     logging.info(
                         'Starting to do direction independent Stokes I selfcal after applying ' + di_selfcal_time_str)
-                    success = do_selfcal(solar_ms, num_phase_cal=0, num_apcal=1, logging_level=logging_level)
+                    success = do_selfcal(solar_ms, num_phase_cal=0, num_apcal=partial_selfcal_rounds[1], logging_level=logging_level)
                     datacolumn = 'corrected'
 
                 else:
@@ -1326,7 +1337,7 @@ def DI_selfcal(solar_ms, solint_full_selfcal=14400, solint_partial_selfcal=3600,
                     success = utils.put_keyword(solar_ms, 'di_selfcal_time', mstime_str, return_status=True)
                     logging.info(
                         'Starting to do direction independent Stokes I selfcal after applying ' + di_selfcal_time_str)
-                    success = do_selfcal(solar_ms, num_phase_cal=0, num_apcal=5, logging_level=logging_level)
+                    success = do_selfcal(solar_ms, num_phase_cal=0, num_apcal=full_selfcal_rounds[1], logging_level=logging_level)
                     datacolumn = 'corrected'
                     if success == False:
                         clearcal(solar_ms)
@@ -1335,16 +1346,19 @@ def DI_selfcal(solar_ms, solint_full_selfcal=14400, solint_partial_selfcal=3600,
                 success = utils.put_keyword(solar_ms, 'di_selfcal_time', mstime_str, return_status=True)
                 logging.info(
                     'Starting to do direction independent Stokes I selfcal as I failed to retrieve the keyword for DI selfcal')
-                do_fresh_selfcal(solar_ms, logging_level=logging_level)
+                do_fresh_selfcal(solar_ms, num_phase_cal=full_selfcal_rounds[0],
+                                 num_apcal=full_selfcal_rounds[1], logging_level=logging_level)
         else:
             success = utils.put_keyword(solar_ms, 'di_selfcal_time', mstime_str, return_status=True)
             logging.info(
                 'Starting to do direction independent Stokes I selfcal as mysteriously I did not find a suitable caltable')
-            do_fresh_selfcal(solar_ms, logging_level=logging_level)
+            do_fresh_selfcal(solar_ms, num_phase_cal=full_selfcal_rounds[0],
+                             num_apcal=full_selfcal_rounds[1], logging_level=logging_level)
     else:
         success = utils.put_keyword(solar_ms, 'di_selfcal_time', mstime_str, return_status=True)
         logging.info('Starting to do direction independent Stokes I selfcal')
-        do_fresh_selfcal(solar_ms, logging_level=logging_level)
+        do_fresh_selfcal(solar_ms, num_phase_cal=full_selfcal_rounds[0],
+                         num_apcal=full_selfcal_rounds[1], logging_level=logging_level)
 
     logging.info('Doing a flux scaling using background strong sources')
     correct_flux_scaling(solar_ms, min_beam_val=0.1)
