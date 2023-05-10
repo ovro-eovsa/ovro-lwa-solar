@@ -24,7 +24,6 @@ import utils
 import logging, glob
 from file_handler import File_Handler
 
-
 tb = table()
 me = measures()
 cl = componentlist()
@@ -1607,9 +1606,9 @@ def apply_solutions_and_image(msname, bcal, imagename):
         flagdata(vis=solar_ms, mode='rflag', datacolumn='corrected')
         split(vis=solar_ms, outputvis=solar_ms[:-3] + "_sun_selfcalibrated.ms")
     else:
-        split(vis=solar_ms,outputvis=solar_ms[:-3]+"_sun_selfcalibrated.ms",datacolumn='data')
-    outms=solar_ms[:-3]+"_sun_selfcalibrated.ms"
-    outms =remove_nonsolar_sources(outms,imagename='for_weak_source_subtraction',remove_strong_sources_only=False)
+        split(vis = solar_ms, outputvis=solar_ms[:-3]+"_sun_selfcalibrated.ms",datacolumn='data')
+    outms = solar_ms[:-3] + "_sun_selfcalibrated.ms"
+    outms = remove_nonsolar_sources(outms,imagename='for_weak_source_subtraction',remove_strong_sources_only=False)
     change_phasecenter(outms)
     run_wsclean(outms, imagename=imagename, automask_thresh=5, uvrange='0', predict=False, imsize=1024, cell='1arcmin')
     correct_primary_beam(outms, imagename + "-image.fits")
