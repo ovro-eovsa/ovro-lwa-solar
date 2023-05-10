@@ -207,7 +207,8 @@ def gen_model_file(visibility, filename='calibrator_source_list.txt', min_beam_v
             raise Exception("Unknown direction")
         d = me.measure(d0, 'AZEL')
         elev = d['m1']['value']
-        scale = math.sin(elev) ** 1.6
+        az=d['m0']['value']
+        scale = beam.calc_beam(az,el,avg_freq)#math.sin(elev) ** 1.6
         if elev < 0 or scale < min_beam_val:
             del srcs[s]
         else:
@@ -242,6 +243,11 @@ def point_source_model(msfile, ref_freq=80.0, output_freq=47.0,
     time = me.epoch('UTC', '%fs' % t0)
     me.doframe(ovro)
     me.doframe(time)
+    
+    msmd.open(visibility)
+    chan_freqs = msmd.chanfreqs(0)
+    msmd.done()
+    avg_freq = 0.5 * (chan_freqs[0] + chan_freqs[-1]) * 1e-6
 
     for s in range(len(srcs) - 1, -1, -1):
         coord = srcs[s]['position'].split()
@@ -257,7 +263,8 @@ def point_source_model(msfile, ref_freq=80.0, output_freq=47.0,
             raise Exception("Unknown direction")
         d = me.measure(d0, 'AZEL')
         elev = d['m1']['value']
-        scale = math.sin(elev) ** 1.6
+        az=d['m0']['value']
+        scale = beam.calc_beam(az,el,avg_freq)
         if elev < 0 or scale < min_beam_val:
             del srcs[s]
         else:
@@ -757,6 +764,11 @@ def get_nonsolar_sources_loc_pix(msfile, image="allsky", verbose=False, min_beam
     time = me.epoch('UTC', '%fs' % t0)
     me.doframe(ovro)
     me.doframe(time)
+    
+    msmd.open(visibility)
+    chan_freqs = msmd.chanfreqs(0)
+    msmd.done()
+    avg_freq = 0.5 * (chan_freqs[0] + chan_freqs[-1]) * 1e-6
 
     for i in range(len(srcs) - 1, -1, -1):
         src = srcs[i]
@@ -774,7 +786,8 @@ def get_nonsolar_sources_loc_pix(msfile, image="allsky", verbose=False, min_beam
             raise Exception("Unknown direction")
         d = me.measure(d0, 'AZEL')
         elev = d['m1']['value']
-        scale = math.sin(elev) ** 1.6
+        az=d['m0']['value']
+        scale = beam.calc_beam(az,el,avg_freq)
         if elev > 0 and scale > min_beam_val:
             ra = d0_j2000['m0']['value']
             dec = d0_j2000['m1']['value']
@@ -1214,7 +1227,8 @@ def correct_primary_beam(msfile, imagename):
     logging.debug('Solar azimuth: ' + str(d['m0']['value']))
     logging.debug('Solar elevation: ' + str(d['m1']['value']))
     elev = d['m1']['value']
-    scale = math.sin(elev) ** 1.6
+    az=d['m0']['value']
+    scale = beam.calc_beam(az,el,avg_freq)
     logging.info('The Stokes I beam correction factor is ' + str(round(scale, 4)))
     hdu = fits.open(imagename, mode='update')
     hdu[0].data /= scale
