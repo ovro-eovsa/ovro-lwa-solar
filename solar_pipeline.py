@@ -20,6 +20,8 @@ from astropy.wcs import WCS
 from astropy.io import fits
 import matplotlib.pyplot as plt
 import utils
+import logging,glob
+from file_handler import File_Handler
 
 
 tb = table()
@@ -166,14 +168,7 @@ def gen_model_file(visibility,filename='calibrator_source_list.txt',min_beam_val
     :return:
     """
     
-    srcs = [{'label': 'CasA', 'flux': '16530', 'alpha': -0.72,
-             'position': 'J2000 23h23m24s +58d48m54s'},
-            {'label': 'CygA', 'flux': '16300', 'alpha': -0.58,
-             'position': 'J2000 19h59m28.35663s +40d44m02.0970s'},
-            {'label': 'TauA', 'flux': '1770', 'alpha': -0.27,
-             'position': 'J2000 05h34m31.94s +22d00m52.2s'},
-            {'label': 'VirA', 'flux': '2400', 'alpha': -0.86,
-             'position': 'J2000 12h30m49.42338s +12d23m28.0439s'}]
+    srcs=utils.get_strong_source_list()
     
     
     print ("generating model file")
@@ -266,7 +261,7 @@ def point_source_model(msfile, ref_freq=80.0, output_freq=47.0,
             print('scale {0:.3f}'.format(scale))
             srcs[s]['flux'] = flux80_47(float(srcs[s]['flux']), srcs[s]['alpha'],
                                         ref_freq=ref_freq, output_freq=output_freq) * scale
-
+        
     cl.done()
 
     if not modelcl:
@@ -277,6 +272,8 @@ def point_source_model(msfile, ref_freq=80.0, output_freq=47.0,
         if verbose:
             print(
                 "cl.addcomponent(flux=%s, dir='%s', index=%s, spectrumtype='spectral index', freq='47MHz', label='%s')" % (
+                    s['flux'], s['position'], s['alpha'], s['label']))
+            logging.debug("cl.addcomponent(flux=%s, dir='%s', index=%s, spectrumtype='spectral index', freq='47MHz', label='%s')" % (
                     s['flux'], s['position'], s['alpha'], s['label']))
     if os.path.exists(modelcl) and overwrite:
         os.system('rm -rf ' + modelcl)
@@ -299,15 +296,20 @@ def gen_model_cl(msfile, ref_freq=80.0, output_freq=47.0,
     """
      
     if includesun==True:
+        logging.info("User wants to add solar model")
+        logging.info("Proceeding to use point source model generation scheme.")
         modelcl,ft_needed=point_source_model(msfile,min_beam_val=min_beam_val)
         return modelcl,ft_needed
     try:
         filename='calibrator_source_list.txt'
+        logging.info("Generating component list using Gasperin et al. (2020)")
         gen_model_file(msfile,filename,min_beam_val=min_beam_val)
         imagename="dummy"
+        logging.debug("Generating a dummy image")
         os.system("wsclean -no-dirty -no-update-model-required -size 4096 4096 "+\
                     "-scale 2arcmin -niter 10 -name "+imagename+" "+msfile)
         ##### making the residual a blank image
+        logging.debug("Setting all values of dummy image to 0.")
         hdu=fits.open(imagename+"-residual.fits",mode="update")
         hdu[0].data*=0.0
         hdu.flush()
@@ -315,11 +317,13 @@ def gen_model_cl(msfile, ref_freq=80.0, output_freq=47.0,
         ###### 
         os.system("wsclean -no-dirty -no-update-model-required -restore-list "+\
                     imagename+"-residual.fits "+filename+" calibrator-model.fits "+msfile)
-    
+        
         if os.path.isfile("calibrator-model.fits")==False:
+            logging.warning("Calibrator model not generated. Proceeding with point source model")
             raise RuntimeError("WSClean version 3.3 or above. Proceeding with point source model")
+        logging.info("Model file generated using the clean component list")
         max1,min1=utils.get_image_maxmin("calibrator-model.fits",local=False)
-        if min1<0:
+        if min1<0 and (max1/max(abs(min1),0.000001))<10000:  ### some small negative is tolerable
             raise RuntimeError("Negative in model. Going for point source model")
         if predict==True:
             os.system("wsclean -predict -name calibrator "+msfile)
@@ -344,12 +348,12 @@ def gen_ant_flags_from_autocorr(msfile, antflagfile=None, datacolumn='DATA', tav
         :param datacolumn: specify which data column to use. Default to "DATA".
             Could be "CORRECTED_DATA" if the dataset is calibrated
         :param tavg: If set to True, will time average before evaluating flags.
+        :param antflagfile: Output file that contains the flagged antennas. If not defined, use msfile.replace('.ms', 'antflags')
         :param thresh_core: Threshold to use for flagging for core antennas. Default is 1.
         :param thresh_exp: Threshold to use for flagging for expansion antennas. Default is 1.
         :param flag_exp_with_core_stat: If True, use statistics of core antennas to determine flags for outer antennas
         :param flag_either_pol: If True, the antenna will be flagged if either polarization is bad (OR scheme).
                               If False, the antenna will be flagged only if both polarizations are bad (AND scheme).
-        :param antflagfile: Output file that contains the flagged antennas. If not defined, use msfile.replace('.ms', 'antflags')
 
     Returns:
         Path to the text file with the list of antennas to flag (antflagfile).
@@ -402,6 +406,7 @@ def gen_ant_flags_from_autocorr(msfile, antflagfile=None, datacolumn='DATA', tav
     stdval_exp = np.ma.std(autos_ampdb[inds_exp, :], axis=0)
     if flag_exp_with_core_stat:
         print('!! Use core antenna statistics to flag outer antennas !!')
+        logging.info('!! Use core antenna statistics to flag outer antennas !!')
         medval_exp = medval_core
         stdval_exp = stdval_core
     if debug:
@@ -455,7 +460,6 @@ def gen_ant_flags_from_autocorr(msfile, antflagfile=None, datacolumn='DATA', tav
                      (autos_ampdb[inds_exp, 0] < medval_exp[0] - thresh_exp * stdval_exp[0])) &
                      ((autos_ampdb[inds_exp, 3] > medval_exp[3] + thresh_exp * stdval_exp[3]) |
                      (autos_ampdb[inds_exp, 3] < medval_exp[3] - thresh_exp * stdval_exp[3])))]
-
     flagsall = np.sort(np.append(flagscore, flagsexp))
     print('{0:d} bad antennas found out of {1:d} antennas'.format(flagsall.size, Nants))
     if flagsall.size > 0:
@@ -612,9 +616,12 @@ def flag_bad_ants(msfile, antflagfile=None, datacolumn='DATA', thresh_core=1.0, 
         flaglist = flagmanager(msfile, mode='list')
         # check if previous flags exist. If so, restore to original state
         if len(flaglist) > 1:
+            logging.debug('Clearing all previous flags')
             flagmanager(msfile, mode='restore', versionname=flaglist[0]['name'])
     if antflagfile is None:
+        logging.debug('Antenna flag file not supplied.')
         antflagfile = os.path.splitext(os.path.abspath(msfile))[0] + '.badants'
+        logging.info('Generating antenna flags from auto-correlation')
         res = gen_ant_flags_from_autocorr(msfile, antflagfile=antflagfile, datacolumn=datacolumn,
                                           thresh_core=thresh_core, thresh_exp=thresh_exp)
     if os.path.isfile(antflagfile):
@@ -622,13 +629,15 @@ def flag_bad_ants(msfile, antflagfile=None, datacolumn='DATA', thresh_core=1.0, 
             antenna_list = f.readline()
             print('Applying flags for these antennas')
             print(antenna_list)
+            logging.info('Flagging antennas '+antenna_list)
         flagdata(vis=msfile, mode='manual', antenna=antenna_list)
     else:
+        logging.info("No flag is found. Do nothing")
         print("No flag is found. Do nothing")
     return antflagfile
 
 
-def gen_calibration(msfile, modelcl=None, uvrange='', bcaltb=None):
+def gen_calibration(msfile, modelcl=None, uvrange='', bcaltb=None,logging_level='info',caltable_fold='caltables'):
     """
     This function is for doing initial self-calibrations using strong sources that are above the horizon
     It is recommended to use a dataset observed at night when the Sun is not in the field of view
@@ -636,8 +645,11 @@ def gen_calibration(msfile, modelcl=None, uvrange='', bcaltb=None):
     :param msfile: input CASA ms visibility for calibration
     :param modelcl: input model of strong sources as a component list, produced from gen_model_cl()
     """
+
+    
     if not modelcl or not (os.path.exists(modelcl)):
         print('Model component list does not exist. Generating one from scratch.')
+        logging.info('Model component list does not exist. Generating one from scratch.')
         modelcl,ft_needed = gen_model_cl(msfile)
     else:
         ft_needed=True
@@ -647,20 +659,32 @@ def gen_calibration(msfile, modelcl=None, uvrange='', bcaltb=None):
         clearcal(msfile, addmodel=True)
         ft(msfile, complist=modelcl, usescratch=True)
     # Now do a bandpass calibration using the model component list
+    
     if not bcaltb:
-        bcaltb = os.path.splitext(msfile)[0] + '.bcal'
+        bcaltb = caltable_fold+"/"+os.path.splitext(msfile)[0] + '.bcal'
+    
+    logging.info("Generating bandpass solution")
     bandpass(msfile, caltable=bcaltb, uvrange=uvrange, combine='scan,field,obs', fillgaps=0)
+    logging.debug("Applying the bandpass solutions")
     applycal(vis=msfile,gaintable=bcaltb)
+    logging.debug("Doing a rflag run on corrected data")
     flagdata(vis=msfile,mode='rflag',datacolumn='corrected')
+    logging.debug("Finding updated and final bandpass table")
     bandpass(msfile, caltable=bcaltb, uvrange=uvrange, combine='scan,field,obs', fillgaps=0)
+    
+
+    if logging_level=='debug':
+        utils.get_flagged_solution_num(bcaltb)
     return bcaltb
 
 
 def apply_calibration(msfile, gaintable=None, doantflag=False,doflag=False, antflagfile=None, do_solar_imaging=True,
                       imagename='test'):
     if doantflag:
+        logging.info("Flagging using auro-correlation")
         flag_bad_ants(msfile, antflagfile=antflagfile)   
     if not gaintable:
+        logging.error("No bandpass table found. Proceed with extreme caution")
         print('No calibration table is provided. Abort... ')
     else:
         if type(gaintable) == str:
@@ -669,6 +693,7 @@ def apply_calibration(msfile, gaintable=None, doantflag=False,doflag=False, antf
     clearcal(msfile)
     applycal(msfile, gaintable=gaintable, flagbackup=True, applymode='calflag')
     if doflag==True:
+        logging.debug("Running rflag on corrected data")
         flagdata(vis=msfile,mode='rflag',datacolumn='corrected')
     sunpos = get_sun_pos(msfile)
     if do_solar_imaging:
@@ -705,11 +730,13 @@ def get_solar_loc_pix(msfile, image="allsky"):
     ra = m['m0']['value']
     dec = m['m1']['value']
     coord = SkyCoord(ra * u.rad, dec * u.rad, frame='icrs')
+    logging.info('RA, Dec of Sun is radians:'+str(ra)+","+str(dec))
     head = fits.getheader(image + "-model.fits")
     w = WCS(head)
     pix = skycoord_to_pixel(coord, w)
     x = int(pix[0])
     y = int(pix[1])
+    logging.info('RA, Dec of Sun is '+str(ra)+"pix,"+str(dec)+",pix in imagename "+image)
     return x, y
 
 
@@ -720,11 +747,7 @@ def get_nonsolar_sources_loc_pix(msfile, image="allsky", verbose=False,min_beam_
     :return: an updated directionary of strong sources with 'xpix' and 'ypix' added
     """
     from astropy.wcs.utils import skycoord_to_pixel
-    srcs = [{'label': 'CasA', 'position': 'J2000 23h23m24s +58d48m54s','flux': '16530', 'alpha': -0.72},
-            {'label': 'CygA', 'position': 'J2000 19h59m28.35663s +40d44m02.0970s','flux': '16300', 'alpha': -0.58},
-            {'label': 'TauA', 'position': 'J2000 05h34m31.94s +22d00m52.2s', 'flux': '1770', 'alpha': -0.27},
-            {'label': 'VirA', 'position': 'J2000 12h30m49.42338s +12d23m28.0439s', 'flux': '2400', 'alpha': -0.86}]
-
+    srcs=utils.get_strong_source_list()
     tb.open(msfile)
     t0 = tb.getcell('TIME', 0)
     tb.close()
@@ -765,9 +788,11 @@ def get_nonsolar_sources_loc_pix(msfile, image="allsky", verbose=False,min_beam_
             y = int(pix[1])
             srcs[i]['xpix'] = x
             srcs[i]['ypix'] = y
+            logging.debug('Found source {0:s} at pix x {1:d}, y {2:d}'.format(srcs[i]['label'], x, y))
             if verbose:
                 print('Found source {0:s} at pix x {1:d}, y {2:d}'.format(srcs[i]['label'], x, y))
         else:
+            logging.debug('Source {0:s} has a <0 elevation or very low gain'.format(srcs[i]['label']))
             if verbose:
                 print('Source {0:s} has a <0 elevation or very low gain'.format(srcs[i]['label']))
             del srcs[i]
@@ -852,9 +877,11 @@ def remove_nonsolar_sources(msfile, imagename='allsky', imsize=4096, cell='2arcm
     :param minuv: minimum uv to consider for imaging (in # of wavelengths)
     :return: a CASA measurement set with non-solar sources removed. Default name is "*_sun_only.ms"
     """
+    outms = msfile[:-3] + "_sun_only.ms"
+    if os.path.isdir(outms):
+        return outms
     run_wsclean(msfile=msfile, imagename=imagename, imsize=imsize, cell=cell, uvrange=minuv,predict=False,automask_thresh=5)
     image_nosun = gen_nonsolar_source_model(msfile, imagename=imagename,remove_strong_sources_only=remove_strong_sources_only)
-    outms = msfile[:-3] + "_sun_only.ms"
     predict_model(msfile, outms="temp.ms", image=image_nosun)
     uvsub("temp.ms")
     split(vis="temp.ms",outputvis=outms,datacolumn='corrected')
@@ -894,8 +921,9 @@ def correct_ms_bug(msfile):
     tb.flush()
     tb.close()
 
-def do_selfcal(msfile,num_apcal=5,applymode='calflag'):
-    num_phase_cal=3
+def do_selfcal(msfile,num_apcal=5,applymode='calflag',num_phase_cal=3,logging_level='info',ms_keyword='di_selfcal_time'):
+    logging.info('The plan is to do '+str(num_phase_cal)+" rounds of phase selfcal")
+    logging.info('The plan is to do '+str(num_apcal)+" rounds of amplitude-phase selfcal")
     max1=np.zeros(2)
     min1=np.zeros(2)
     for i in range(num_phase_cal):
@@ -903,41 +931,62 @@ def do_selfcal(msfile,num_apcal=5,applymode='calflag'):
         run_wsclean(msfile,imagename=imagename)
         good=utils.check_image_quality(imagename+"-image.fits",max1,min1)
         print (good)
+        logging.debug('Maximum pixel values are: '+str(max1[0])+","+str(max1[1]))
+        logging.debug('Minimum pixel values around peaks are: '+str(min1[0])+","+str(min1[1]))
         if good==False:
+            logging.info('Dynamic range has reduced. Doing a round of flagging')
             flagdata(vis=msfile,mode='rflag',datacolumn='corrected')
             run_wsclean(msfile,imagename=imagename)
             good=utils.check_image_quality(imagename+"-image.fits",max1,min1,reorder=False)
             print (good)
+            logging.debug('Maximum pixel values are: '+str(max1[0])+","+str(max1[1]))
+            logging.debug('Minimum pixel values around peaks are: '+str(min1[0])+","+str(min1[1]))
             if good==False:
+                logging.info('Flagging could not solve the issue. Restoring flags, applying last good solutions.') 
                 utils.restore_flag(msfile)
+                logging.debug('Restoring flags')
                 os.system("rm -rf "+imagename+"-*.fits")
                 caltable=msfile[:-3]+"_self"+str(i-1)+".gcal"
                 os.system("rm -rf "+caltable)
                 imagename=msfile[:-3]+"_self"+str(i-2)
                 caltable=imagename+".gcal"
                 if os.path.isdir(caltable):
+                    logging.info("Applying "+caltable)
                     applycal(vis=msfile,gaintable=caltable,calwt=[False],applymode=applymode)
                     os.system("cp -r "+caltable+" caltables/")
                 else:
-                    clearcal(msfile)
-                   
+                    logging.warning("No caltable found. Setting corrected data to DATA")
+                    clearcal(msfile)   
                 return good
-            
+        logging.debug("Finding gain solutions and writing in into "+imagename+".gcal")   
         gaincal(vis=msfile,caltable=imagename+".gcal",uvrange=">10lambda",\
                 calmode='p',solmode='L1R',rmsthresh=[10,8,6])
+        utils.put_keyword(imagename+".gcal",ms_keyword,utils.get_keyword(msfile,ms_keyword))
+        if logging_level=='debug' or logging_level=='DEBUG':
+            utils.get_flagged_solution_num(imagename+".gcal")
+        logging.debug("Applying solutions")
         applycal(vis=msfile,gaintable=imagename+".gcal",calwt=[False],applymode=applymode)
-     
-    final_phase_caltable=imagename+".gcal" 
+    
+    logging.info("Phase self-calibration finished successfully")
+    
+    if num_phase_cal>0: 
+        final_phase_caltable=imagename+".gcal" 
+    else:
+        final_phase_caltable=''
     for i in range(num_phase_cal,num_phase_cal+num_apcal):
         imagename=msfile[:-3]+"_self"+str(i)
         run_wsclean(msfile,imagename=imagename)
         good=utils.check_image_quality(imagename+"-image.fits",max1,min1)
+        logging.debug('Maximum pixel values are: '+str(max1[0])+","+str(max1[1]))
+        logging.debug('Minimum pixel values around peaks are: '+str(min1[0])+","+str(min1[1]))
         if good==False:
+            logging.info('Dynamic range has reduced. Doing a round of flagging')
             flagdata(vis=msfile,mode='rflag',datacolumn='corrected')
             run_wsclean(msfile,imagename=imagename)
             good=utils.check_image_quality(imagename+"-image.fits",max1,min1,reorder=False)
             print (good)
             if good==False:
+                logging.info('Flagging could not solve the issue. Restoring flags, applying last good solutions.') 
                 utils.restore_flag(msfile)
                 os.system("rm -rf "+imagename+"-*.fits")
                 caltable=msfile[:-3]+"_self"+str(i-1)+"_ap_over_p.gcal"
@@ -945,36 +994,56 @@ def do_selfcal(msfile,num_apcal=5,applymode='calflag'):
                 imagename=msfile[:-3]+"_self"+str(i-2)
                 caltable=imagename+"_ap_over_p.gcal"
                 if os.path.isdir(caltable):
-                    applycal(vis=msfile,gaintable=[caltable,final_phase_caltable],calwt=[False,False],applymode=applymode)
+                    logging.info("Applying "+caltable+" and "+final_phase_caltable)
+                    if num_phase_cal>0:
+                        applycal(vis=msfile,gaintable=[caltable,final_phase_caltable],calwt=[False,False],applymode=applymode)
+                        os.system("cp -r "+final_phase_caltable+" caltables/")
+                    else:
+                        applycal(vis=msfile,gaintable=[caltable],calwt=[False,False],applymode=applymode)
                     os.system("cp -r "+caltable+" caltables/")
-                    os.system("cp -r "+final_phase_caltable+" caltables/")
+                    
                 else:
-                    applycal(vis=msfile,gaintable=[final_phase_caltable],calwt=[False],applymode=applymode)
-                    os.system("cp -r "+final_phase_caltable+" caltables/")
+                    logging.warning("No good aplitude-phase selfcal solution found.")
+                    if num_phase_cal>0:
+                        logging.info("Applying "+final_phase_caltable)
+                        applycal(vis=msfile,gaintable=[final_phase_caltable],calwt=[False],applymode=applymode)
+                        os.system("cp -r "+final_phase_caltable+" caltables/")
+                    else:
+                        logging.warning("No caltable found. Setting corrected data to DATA")
+                        clearcal(msfile) 
                 return good
         caltable=imagename+"_ap_over_p.gcal"
+        
         gaincal(vis=msfile,caltable=caltable,uvrange=">10lambda",\
                 calmode='ap',solnorm=True,normtype='median',solmode='L1R',\
                 rmsthresh=[10,8,6],gaintable=final_phase_caltable)
+        utils.put_keyword(caltable,ms_keyword,utils.get_keyword(msfile,ms_keyword))
+        if logging_level=='debug' or logging_level=='DEBUG':
+            utils.get_flagged_solution_num(imagename+"_ap_over_p.gcal")
         applycal(vis=msfile,gaintable=[caltable,final_phase_caltable],calwt=[False,False],applymode=applymode)
         if i==num_phase_cal:
             flagdata(vis=msfile,mode='rflag',datacolumn='corrected')
+    logging.debug('Flagging on the residual')
     flagdata(vis=msfile,mode='rflag',datacolumn='residual')
     os.system("cp -r "+caltable+" caltables/")
     os.system("cp -r "+final_phase_caltable+" caltables/")
     return True
     
 def run_wsclean(msfile,imagename,automask_thresh=8,imsize=4096, cell='2arcmin',uvrange='10',predict=True): ### uvrange is in lambda units
+    logging.debug("Running WSCLEAN")
     os.system("wsclean -no-dirty -no-update-model-required -no-negative -size "+str(imsize)+" "+\
             str(imsize)+" -scale "+cell+" -weight uniform -minuv-l "+str(uvrange)+" -auto-mask "+str(automask_thresh)+\
-            " -niter 100000 -name "+imagename+" -mgain 0.7 "+msfile)
+            " -niter 100000 -name "+imagename+" -mgain 0.7 -beam-fitting-size 2 "+msfile)
     if predict:
+        logging.debug("Predicting model visibilities from "+imagename+" in "+msfile)
         os.system("wsclean -predict -name "+imagename+" "+msfile)
 
 def change_phasecenter(msfile):
     m = get_sun_pos(msfile, str_output=False)
     ra = m['m0']['value']### ra in radians
     dec = m['m1']['value'] ### dec in radians
+    logging.debug('Solar ra in radians: '+str(m['m0']['value']))
+    logging.debug('Solar dec in radians: '+str(m['m1']['value']))
     print (ra,dec)
     neg=False
     if ra<0:
@@ -1009,149 +1078,429 @@ def change_phasecenter(msfile):
         dec1='-'+dec1
     print (ra1)
     print (dec1)
+    logging.info("Changing the phasecenter to "+ra1+" "+dec1)
     os.system("chgcentre "+msfile+" "+ra1+" "+dec1)
     
 def get_point_flux(modelcl,src):    
     tb.open(modelcl)
     flux=tb.getcol('Flux')
     names=tb.getcol('Label')
+    tb.close()
     for i,name in enumerate(names):
         if name==src['label']:
             return np.real(flux[0,i])
+    logging.warning("There is no matching source in the Component list "+\
+                "corresponding to "+src['label'])
     return -1
             
 def correct_flux_scaling(msfile,src_area=100,min_beam_val=0.1,caltable_suffix='fluxscale'): 
     import glob
-    images=glob.glob(msfile[:-3]+"_self*-image.fits")
-    num_image=len(images)
     
-    final_image=msfile[:-3]+"_self"+str(num_image-1)+"-image.fits"
+    mstime_str=utils.get_timestr_from_name(msfile)
+    di_selfcal_str,success=utils.get_keyword(msfile,'di_selfcal_time',return_status=True)
     
-    
-    
-    os.system("rm -rf calibrator-model.fits")
-    
-    modelcl,ft_needed = gen_model_cl(msfile,predict=False,min_beam_val=min_beam_val)
-    srcs = get_nonsolar_sources_loc_pix(msfile, final_image,min_beam_val=min_beam_val)
-    
-
-    head = fits.getheader(final_image)
-    
-    if head['cunit1'] == 'deg':
-        dx = np.abs(head['cdelt1'] * 60.)
-    elif head['cunit1']=='asec':
-        dx = np.abs(head['cdelt1']/60.)
-    else:
-        print(head['cunit1'] + ' not recognized as "deg". Model could be wrong.')
-    if head['cunit2'] == 'deg':
-        dy = np.abs(head['cdelt2'] * 60.)
-    elif head['cunit2']=='asec':
-        dx = np.abs(head['cdelt2']/60.)
-    else:
-        print(head['cunit2'] + ' not recognized as "deg" or "asec". Model could be wrong.')
-    src_area_xpix = src_area / dx
-    src_area_ypix = src_area / dy
-    scaling_factor=[]
-    for s in srcs:
-        src_x = s['xpix']
-        src_y = s['ypix']
-        bbox = [[src_y - src_area_ypix // 2, src_y + src_area_ypix // 2],
-                [src_x - src_area_xpix // 2, src_x + src_area_xpix // 2]]
-        #print (bbox)
+    if di_selfcal_str==mstime_str and success:
+        images=glob.glob(msfile[:-3]+"_self*-image.fits")
+        num_image=len(images)
+        final_image=msfile[:-3]+"_self"+str(num_image-1)+"-image.fits"
+        os.system("rm -rf calibrator-model.fits")
+        modelcl,ft_needed = gen_model_cl(msfile,predict=False,min_beam_val=min_beam_val)
+        srcs = get_nonsolar_sources_loc_pix(msfile, final_image,min_beam_val=min_beam_val)
+        head = fits.getheader(final_image)
         
-        if os.path.isfile('calibrator-model.fits')==False:
-            model_flux=get_point_flux(modelcl,s)   ### if wsclean failed, then Component List was generated in gen_model_cl
-        else:     
-            model_flux=imstat(imagename='calibrator-model.fits',box=str(src_x-src_area_xpix // 2)+","+\
-                                                           str(src_y-src_area_ypix // 2)+","+\
-                                                           str(src_x+src_area_xpix // 2)+","+\
-                                                           str(src_y+src_area_ypix // 2))['flux'][0]
-        if model_flux<0:
-                 model_flux=get_point_flux(modelcl,s)   ### if model had negative, then Component List was generated in gen_model_cl      
-                                              
-        image_flux=imstat(imagename=final_image,box=str(src_x-src_area_xpix // 2)+","+\
-                                                           str(src_y-src_area_ypix // 2)+","+\
-                                                           str(src_x+src_area_xpix // 2)+","+\
-                                                           str(src_y+src_area_ypix // 2))['flux'][0]  
-        #print (image_flux)
-        print (s['label'],image_flux,model_flux)
-        if (model_flux>0 and image_flux>0):
-            scaling_factor.append(model_flux/image_flux)
-    if len(scaling_factor)>0:
-        mean_factor=np.mean(np.array(scaling_factor))
-        print (scaling_factor)
-        print (mean_factor)
+        if head['cunit1'] == 'deg':
+            dx = np.abs(head['cdelt1'] * 60.)
+        elif head['cunit1']=='asec':
+            dx = np.abs(head['cdelt1']/60.)
+        else:
+            logging.warning(head['cunit1'] + ' not recognized as "deg" or "asec". Model could be wrong.')
+            print(head['cunit1'] + ' not recognized as "deg" or "asec". Model could be wrong.')
+        if head['cunit2'] == 'deg':
+            dy = np.abs(head['cdelt2'] * 60.)
+        elif head['cunit2']=='asec':
+            dx = np.abs(head['cdelt2']/60.)
+        else:
+            logging.warning(head['cunit2'] + ' not recognized as "deg" or asec. Model could be wrong.')
+            print(head['cunit2'] + ' not recognized as "deg" or "asec". Model could be wrong.')
+        src_area_xpix = src_area / dx
+        src_area_ypix = src_area / dy
+        scaling_factor=[]
+        for s in srcs:
+            src_x = s['xpix']
+            src_y = s['ypix']
+            bbox = [[src_y - src_area_ypix // 2, src_y + src_area_ypix // 2],
+                    [src_x - src_area_xpix // 2, src_x + src_area_xpix // 2]]
+            
+            
+            if os.path.isfile('calibrator-model.fits')==False:
+                model_flux=get_point_flux(modelcl,s)   ### if wsclean failed, then Component List was generated in gen_model_cl
+            else:     
+                model_flux=imstat(imagename='calibrator-model.fits',box=str(src_x-src_area_xpix // 2)+","+\
+                                                               str(src_y-src_area_ypix // 2)+","+\
+                                                               str(src_x+src_area_xpix // 2)+","+\
+                                                               str(src_y+src_area_ypix // 2))['flux'][0]
+            if model_flux<0:
+                     logging.warning('Model flux is negative. Picking flux from point source model')
+                     model_flux=get_point_flux(modelcl,s)   ### if model had negative, then Component List was generated in gen_model_cl      
+            logging.info('Model flux of '+s['label']+' is  '+str(model_flux))                                    
+            image_flux=imstat(imagename=final_image,box=str(src_x-src_area_xpix // 2)+","+\
+                                                               str(src_y-src_area_ypix // 2)+","+\
+                                                               str(src_x+src_area_xpix // 2)+","+\
+                                                               str(src_y+src_area_ypix // 2))['flux'][0]  
+            logging.info('Model flux of '+s['label']+' is  '+str(image_flux))                                                      
+            #print (image_flux)
+            print (s['label'],image_flux,model_flux)
+            if (model_flux>0 and image_flux>0):
+                scaling_factor.append(model_flux/image_flux)
+                logging.info('Scaling factor obtained from '+s['label']+' is '+str(scaling_factor[-1]))
+            else:
+                logging.warning('Scaling factor is not calculated for '+s['label']+' as either/both model and image flux is negative')
+        if len(scaling_factor)>0:
+            mean_factor=np.mean(np.array(scaling_factor))
+            print (scaling_factor)
+            print (mean_factor)
+            logging.info('Scaling factor is '+str(mean_factor))
+            
+            logging.debug("Generating caltable for fluxscaling. Filename is "+msfile[:-3]+"."+caltable_suffix)
+            caltable=msfile[:-3]+"."+caltable_suffix
+            gencal(vis=msfile,caltable=caltable,caltype='amp',parameter=np.sqrt(1./mean_factor))
         
+            os.system("cp -r "+caltable+" caltables/")
+    elif success==True:
+        caltable=glob.glob("caltables/"+di_selfcal_str+"*.fluxscale")[0]
+        logging.info("Applying {0:s} for doing fluxscaling".format(caltable))
+    else:
         caltable=msfile[:-3]+"."+caltable_suffix
-        gencal(vis=msfile,caltable=caltable,caltype='amp',parameter=np.sqrt(1./mean_factor))
+        gencal(vis=msfile,caltable=caltable,caltype='amp',parameter=1)
+        logging.warning("Could not find appropriate flux scaling factor. No correction will be done.")
+    
+    DI_val=utils.get_keyword(msfile,'di_selfcal_time')
 
-        tb.open(msfile,nomodify=False)
-        data=tb.getcol('CORRECTED_DATA')
-        data=data*mean_factor
-        tb.putcol('CORRECTED_DATA',data)
-        tb.flush()
-        tb.close()                                                                                                
+    logging.debug('Correcting the DATA with the scaling factor')
+    temp_file='temp_'+msfile
+    
+    split(vis=msfile,outputvis=temp_file)
+    
+    applycal(vis=temp_file,gaintable=caltable,calwt=False)
+    
+    os.system("rm -rf "+msfile+"*")
+    
+    split(vis=temp_file,outputvis=msfile)
+    os.system("rm -rf "+temp_file+"*")
+    utils.put_keyword(msfile,'di_selfcal_time',DI_val)
+    return                                                                                                
         
 def correct_primary_beam(msfile,imagename):
     m = get_sun_pos(msfile, str_output=False)
+    logging.debug('Solar ra: '+str(m['m0']['value']))
+    logging.debug('Solar dec: '+str(m['m1']['value']))
     d = me.measure(m, 'AZEL')
+    logging.debug('Solar azimuth: '+str(d['m0']['value']))
+    logging.debug('Solar elevation: '+str(d['m1']['value']))
     elev=d['m1']['value']
     scale=math.sin(elev) ** 1.6
+    logging.info('The Stokes I beam correction factor is '+str(round(scale,4)))
     hdu=fits.open(imagename,mode='update')
     hdu[0].data/=scale
     hdu.flush()
     hdu.close()
     return
     
-def pipeline(solar_ms, calib_ms=None, bcal=None, selfcal=False, imagename='sun_only', imsize=512, cell='1arcmin',caltable_fold='caltables'):
+def do_bandpass_correction(solar_ms,calib_ms=None,bcal=None,caltable_fold='caltables',logging_level='info'):
+    solar_ms1=solar_ms[:-3]+"_calibrated.ms"
+    if os.path.isdir(solar_ms1):
+        return solar_ms1
+    if not bcal or os.path.isdir(bcal)==False:
+        logging.debug('Bandpass table not supplied or is not present on disc. Creating one'+\
+                    ' from the supplied MS')
+        if os.path.exists(calib_ms):
+            logging.debug('Flagging all data which are zero')
+            flagdata(vis=calib_ms,mode='clip',clipzeros=True)
+            logging.debug('Flagging antennas before calibration.')
+            flag_bad_ants(calib_ms)
+            bcal = gen_calibration(calib_ms,logging_level=logging_level,caltable_fold=caltable_fold)
+            logging.info('Bandpass calibration table generated using '+calib_ms)
+        else:
+            print('Neither calib_ms nor bcal exists. Need to provide calibrations to continue. Abort..')
+            logging.error('Neither calib_ms nor bcal exists. Need to provide calibrations to continue. Abort..')
+    #correct_ms_bug(solar_ms)
+
+    apply_calibration(solar_ms, gaintable=bcal, doantflag=True, doflag=True,do_solar_imaging=False)
+    split(vis=solar_ms,outputvis=solar_ms[:-3]+"_calibrated.ms")
+    logging.info('Splitted the input solar MS into a file named '+solar_ms[:-3]+"_calibrated.ms")
+    solar_ms=solar_ms[:-3]+"_calibrated.ms"
+    return solar_ms
+
+
+def do_fresh_selfcal(solar_ms,logging_level='info'):
+    logging.info('Starting to do direction independent Stokes I selfcal')
+    success=do_selfcal(solar_ms,logging_level=logging_level)
+    if success==False:
+        logging.info('Starting fresh selfcal as DR decreased significantly')
+        clearcal(solar_ms)
+        success=do_selfcal(solar_ms,logging_level=logging_level)
+    return
+    
+def DI_selfcal(solar_ms,solint_full_selfcal=14400, solint_partial_selfcal=3600,logging_level='info'):
+#### solint_full_selfcal = Full selfcal will be done in this interval with 3 phase cals and 5 ap cals
+#### solint_partial_selfcal= We will do only 2 phase cals and 1 apcal in this interval
+    
+    solar_ms1=solar_ms[:-3]+"_selfcalibrated.ms"
+    if os.path.isdir(solar_ms1)==True:
+        return solar_ms1
+    
+    sep=100000000
+    prior_selfcal=False
+    caltables=[]
+ 
+    mstime=utils.get_time_from_name(solar_ms)
+    mstime_str=utils.get_timestr_from_name(solar_ms)
+    
+    caltables=glob.glob("caltables/*.gcal")
+    if len(caltables)!=0:
+        prior_selfcal=True
+    
+        
+    if prior_selfcal==True: 
+        dd_cal=glob.glob("caltables/*sun_only*.gcal")
+        di_cal=[cal for cal in caltables if cal not in dd_cal]
+        print (di_cal)
+        selfcal_time=utils.get_selfcal_time_to_apply(solar_ms,di_cal)
+        print (selfcal_time)
+
+        caltables=glob.glob("caltables/"+selfcal_time+"*.gcal")
+        dd_cal=glob.glob("caltables/"+selfcal_time+"*sun_only*.gcal")
+        di_cal=[cal for cal in caltables if cal not in dd_cal]
+        
+        if len(di_cal)!=0:
+            di_selfcal_time_str,success=utils.get_keyword(di_cal[0],'di_selfcal_time',return_status=True)
+            print (di_selfcal_time_str,success)
+            if success==True:
+                di_selfcal_time=utils.get_time_from_name(di_selfcal_time_str)
+                
+                sep=abs((di_selfcal_time-mstime).value*86400)  ### in seconds
+            
+            
+                applycal(solar_ms,gaintable=di_cal,calwt=[False]*len(di_cal))
+                flagdata(vis=solar_ms,mode='rflag',datacolumn='corrected')
+            
+                if sep<solint_partial_selfcal:
+                    logging.info('No direction independent Stokes I selfcal after applying '+di_selfcal_time_str)
+                    success=utils.put_keyword(solar_ms,'di_selfcal_time',di_selfcal_time_str,return_status=True)
+                    
+                    
+                elif sep>solint_partial_selfcal and sep<solint_full_selfcal:
+                    success=utils.put_keyword(solar_ms,'di_selfcal_time',mstime_str,return_status=True)
+                    logging.info('Starting to do direction independent Stokes I selfcal after applying '+di_selfcal_time_str)
+                    success=do_selfcal(solar_ms,logging_level=logging_level,num_apcal=1,num_phase_cal=0)
+                    datacolumn='corrected'
+                    
+                else:
+                    success=utils.put_keyword(solar_ms,'di_selfcal_time',mstime_str,return_status=True)
+                    logging.info('Starting to do direction independent Stokes I selfcal after applying '+di_selfcal_time_str)
+                    success=do_selfcal(solar_ms,logging_level=logging_level,num_apcal=5,num_phase_cal=0)
+                    datacolumn='corrected' 
+                    if success==False:
+                        clearcal(solar_ms)
+                        success=do_selfcal(solar_ms,logging_level=logging_level)
+            else:
+                success=utils.put_keyword(solar_ms,'di_selfcal_time',mstime_str,return_status=True)
+                logging.info('Starting to do direction independent Stokes I selfcal as I failed to retrieve the keyword for DI selfcal')
+                do_fresh_selfcal(solar_ms,logging_level=logging_level)
+        else:
+            success=utils.put_keyword(solar_ms,'di_selfcal_time',mstime_str,return_status=True)
+            logging.info('Starting to do direction independent Stokes I selfcal as mysteriously I did not find a suitable caltable')
+            do_fresh_selfcal(solar_ms,logging_level=logging_level)
+    else:  
+        success=utils.put_keyword(solar_ms,'di_selfcal_time',mstime_str,return_status=True)
+        logging.info('Starting to do direction independent Stokes I selfcal')
+        do_fresh_selfcal(solar_ms,logging_level=logging_level)
+        
+    logging.info('Doing a flux scaling using background strong sources')
+    correct_flux_scaling(solar_ms,min_beam_val=0.1)
+    
+    logging.info('Splitted the selfcalibrated MS into a file named '+solar_ms[:-3]+"_selfcalibrated.ms")
+       
+    split(vis=solar_ms,outputvis=solar_ms[:-3]+"_selfcalibrated.ms", datacolumn='data')
+    solar_ms=solar_ms[:-3]+"_selfcalibrated.ms" 
+    return solar_ms
+    
+def DD_selfcal(solar_ms,solint_full_selfcal=1800, solint_partial_selfcal=600,logging_level='info'):
+#### solint_full_selfcal = Full selfcal will be done in this interval with 1 phase cals and 1 ap cals
+#### solint_partial_selfcal= We will do only 1 apcal
+
+    solar_ms1=solar_ms[:-3]+"_sun_selfcalibrated.ms"
+    if os.path.isdir(solar_ms1):
+        return solar_ms1
+    
+    selfcal_time=utils.get_selfcal_time_to_apply(solar_ms,glob.glob("caltables/*.gcal"))
+    mstime=utils.get_time_from_name(solar_ms)
+    mstime_str=utils.get_timestr_from_name(solar_ms)
+    
+    sep=100000000
+    prior_selfcal=False
+    
+
+    caltables=glob.glob("caltables/"+selfcal_time+"*sun_only*.gcal")
+    
+    if len(caltables)!=0:
+        prior_selfcal=True
+        
+    if prior_selfcal==True: 
+        dd_selfcal_time_str,success=utils.get_keyword(caltables[0],'dd_selfcal_time',return_status=True)
+        
+        if success==True:
+            dd_selfcal_time=utils.get_time_from_name(dd_selfcal_time_str)
+            
+            sep=abs((dd_selfcal_time-mstime).value*86400)  ### in seconds
+        
+        
+            applycal(solar_ms,gaintable=caltables,calwt=[False]*len(caltables),applymode='calonly')
+            flagdata(vis=solar_ms,mode='rflag',datacolumn='corrected')
+        
+            if sep<solint_partial_selfcal:
+                logging.info('No direction dependent Stokes I selfcal after applying '+dd_selfcal_time_str)
+                success=utils.put_keyword(solar_ms,'dd_selfcal_time',dd_selfcal_time_str,return_status=True)
+                
+            elif sep>solint_partial_selfcal and sep<solint_full_selfcal:
+                success=utils.put_keyword(solar_ms,'dd_selfcal_time',mstime_str,return_status=True)
+                logging.info('Starting to do direction dependent Stokes I selfcal after applying '+dd_selfcal_time_str)
+                success=do_selfcal(solar_ms,logging_level=logging_level,num_phase_cal=1,num_apcal=1,ms_keyword='dd_selfcal_time',applymode='calonly')
+                datacolumn='corrected'
+                
+                
+            else:
+                success=utils.put_keyword(solar_ms,'dd_selfcal_time',mstime_str,return_status=True)
+                logging.info('Starting to do direction dependent Stokes I selfcal after applying '+dd_selfcal_time_str)
+                success=do_selfcal(solar_ms,logging_level=logging_level,num_phase_cal=1,num_apcal=1,ms_keyword='dd_selfcal_time',applymode='calonly')
+                datacolumn='corrected'
+        else:
+            success=utils.put_keyword(solar_ms,'dd_selfcal_time',mstime_str,return_status=True)
+            logging.info('Starting to do direction dependent Stokes I selfcal as I failed to retrieve the keyword for DD selfcal')
+            success=do_selfcal(solar_ms,logging_level=logging_level,num_phase_cal=2,num_apcal=1,ms_keyword='dd_selfcal_time',applymode='calonly')
+            
+            
+      
+    else:  
+        success=utils.put_keyword(solar_ms,'dd_selfcal_time',mstime_str,return_status=True)
+        logging.info('Starting to do direction dependent Stokes I selfcal')
+        success=do_selfcal(solar_ms,logging_level=logging_level,num_phase_cal=2,num_apcal=1,ms_keyword='dd_selfcal_time',applymode='calonly')
+        
+    
+    logging.info('Splitted the selfcalibrated MS into a file named '+solar_ms[:-3]+"_sun_selfcalibrated.ms")
+       
+    split(vis=solar_ms,outputvis=solar_ms[:-3]+"_sun_selfcalibrated.ms")
+    solar_ms=solar_ms[:-3]+"_sun_selfcalibrated.ms" 
+    return solar_ms
+        
+    
+def image_ms(solar_ms, calib_ms=None, bcal=None, selfcal=False, imagename='sun_only',\
+                 imsize=512, cell='1arcmin',logfile='analysis.log',logging_level='info',
+                 caltable_fold='caltables'):
     """
     Pipeline to calibrate and imaging a solar visibility
     :param solar_ms: input solar measurement set
     :param calib_ms: (optional) input measurement set for generating the calibrations, usually is one observed at night
     :param bcal: (optional) bandpass calibration table. If not provided, use calib_ms to generate one.
     """
+    
+        
     if os.path.isdir(caltable_fold)==False:
     	os.mkdir(caltable_fold)
-    	
-    if not bcal:
-        if os.path.exists(calib_ms):
-            flag_bad_ants(calib_ms)
-            #flagdata(vis=calib_ms,mode='clip',clipzeros=True)
-            bcal = gen_calibration(calib_ms)
-        else:
-            print('Neither calib_ms nor bcal exists. Need to provide calibrations to continue. Abort..')
-    #correct_ms_bug(solar_ms)
-    apply_calibration(solar_ms, gaintable=bcal, doantflag=False, doflag=True,do_solar_imaging=False)
-    split(vis=solar_ms,outputvis=solar_ms[:-3]+"_calibrated.ms")
-     
-    solar_ms=solar_ms[:-3]+"_calibrated.ms"
+    if os.path.isfile(imagename+"-image.fits"):
+        return
+    	    
+    solar_ms=do_bandpass_correction(solar_ms,calib_ms=calib_ms,bcal=bcal,caltable_fold=caltable_fold)
     
-    
+    logging.info('Analysing '+solar_ms)
     if selfcal==True:
-      success=do_selfcal(solar_ms)
-      correct_flux_scaling(solar_ms,min_beam_val=0.1,caltable_suffix='fluxscale')
-      os.system("cp -r "+solar_ms[:-3]+"*.fluxscale "+caltable_fold+"/")
-      split(vis=solar_ms,outputvis=solar_ms[:-3]+"_selfcalibrated.ms")
-      solar_ms=solar_ms[:-3]+"_selfcalibrated.ms"
+      solar_ms=DI_selfcal(solar_ms,logging_level=logging_level)
+      logging.info('Removing the strong sources in the sky')
       outms = remove_nonsolar_sources(solar_ms)
-      success=do_selfcal(outms,num_apcal=1,applymode='calonly')
-      split(vis=outms,outputvis=outms[:-3]+"_sun_selfcalibrated.ms")
-      outms=outms[:-3]+"_sun_selfcalibrated.ms"
+      logging.info('The strong source subtracted MS is '+outms)
+      logging.info('Starting to do Stokes I selfcal towards direction of sun')
+      outms=DD_selfcal(outms,logging_level=logging_level)
+      logging.info('Removing almost all sources in the sky except Sun')
       outms =remove_nonsolar_sources(outms,imagename='for_weak_source_subtraction',remove_strong_sources_only=False)
+      logging.info('The source subtracted MS is '+outms)
     else:
+       logging.info('Removing almost all sources in the sky except Sun')
        outms = remove_nonsolar_sources(solar_ms)
+       logging.info('The source subtracted MS is '+outms)
     
+    logging.info('Changing the phasecenter to position of Sun')
     change_phasecenter(outms)
+    logging.info('Generating final solar centered image')
     run_wsclean(outms,imagename=imagename,automask_thresh=5,uvrange='0',predict=False,imsize=1024,cell='1arcmin')
+    logging.info('Correcting for the primary beam at the location of Sun')
     correct_primary_beam(outms,imagename+"-image.fits")
     #make_solar_image(outms, imagename=imagename, imsize=imsize, cell=cell)
+    
+def solar_pipeline(time_duration,calib_time_duration,freqstr,filepath,time_integration=8,time_cadence=100,observation_integration=8,\
+                    calib_ms=None, bcal=None, selfcal=False, imagename='sun_only',\
+                    imsize=512, cell='1arcmin',logfile='analysis.log',logging_level='info',
+                    caltable_fold='caltables'):
+                    
+    if logging_level=='info' or logging_level=='INFO':
+        logging.basicConfig(filename=logfile,level=logging.INFO)
+    elif logging_level=='warning' or logging_level=='WARNING':
+        logging.basicConfig(filename=logfile,level=logging.WARNING)
+    elif logging_level=='critical' or logging_level=='CRITICAL':
+        logging.basicConfig(filename=logfile,level=logging.CRITICAL)
+    elif logging_level=='error' or logging_level=='ERROR':
+        logging.basicConfig(filename=logfile,level=logging.ERROR)
+    else:
+        logging.basicConfig(filename=logfile,level=logging.DEBUG)
 
+    fp=File_Handler(time_duration=time_duration,freqstr=freqstr,file_path=filepath,\
+                    time_integration=time_integration,time_cadence=time_cadence)
+    
+    calib_fp=File_Handler(time_duration=calib_time_duration,freqstr=freqstr,file_path=filepath)
+    
+    
+    print_str='Start the pipeline for imaging {0:s}'.format(time_duration)
+    logging.info(print_str)
+    try:
+        print_str='Frequencies to be analysed: {0:s}'.format(','.join(freqstr))
+    except:
+        print_str='Frequencies to be analysed: {0:s}'.format(freqstr)
+        
+    logging.info(print_str)
+    print_str='Chosen time integration and time cadence are {0:d} and {0:d}'.format(time_integration,time_cadence)
 
+    calib_fp.start=calib_fp.parse_duration()
+    calib_fp.end=calib_fp.parse_duration(get_end=True)
+    calib_fp.get_selfcal_times_paths()
+
+    calib_filename=calib_fp.get_current_file_for_selfcal(freqstr[0])
+    
+    fp.start=fp.parse_duration()
+    fp.end=fp.parse_duration(get_end=True)
+    
+    fp.get_selfcal_times_paths()
+    
+    filename=fp.get_current_file_for_selfcal(freqstr[0])
+    while filename is not None: 
+        calib_file=glob.glob(caltable_fold+'/*.bcal')
+        if len(calib_file)!=0:
+            bcal=calib_file[0]
+        imagename="sun_only_"+filename[:-3]
+        image_ms(filename,calib_ms=calib_filename,bcal=bcal,selfcal=True,imagename=imagename)
+        filename=fp.get_current_file_for_selfcal(freqstr[0])
+
+    filename=fp.get_current_file_for_selfcal(freqstr[0])
+    while filename is not None:
+        imagename="sun_only_"+filename[:-3]
+        image_ms(filename,calib_ms=calib_ms,bcal=bcal,imagename=imagename,selfcal=True)
+        filename=fp.get_current_file_for_imaging(freqstr[0])
+    
 def apply_solutions_and_image(msname,bcal,imagename):
+    logging.info('Analysing '+msname)
     apply_calibration(msname, gaintable=bcal, doantflag=True, doflag=True,do_solar_imaging=False)
     split(vis=msname,outputvis=msname[:-3]+"_calibrated.ms")
     msname=msname[:-3]+"_calibrated.ms"
     selfcal_time=utils.get_selfcal_time_to_apply(msname)
+    logging.info('Will apply selfcal solutions from '+selfcal_time)
     caltables=glob.glob("caltables/"+selfcal_time+"*.gcal") 
     dd_cal=glob.glob("caltables/"+selfcal_time+"*sun_only*.gcal")
     di_cal=[i for i in caltables if i not in dd_cal]
@@ -1167,9 +1516,13 @@ def apply_solutions_and_image(msname,bcal,imagename):
     if num_dd_cal!=0:
         applycal(solar_ms,gaintable=dd_cal,calwt=[False]*len(dd_cal),applymode='calonly')
         flagdata(vis=solar_ms,mode='rflag',datacolumn='corrected')
-    split(vis=solar_ms,outputvis=solar_ms[:-3]+"_sun_selfcalibrated.ms")
+        split(vis=solar_ms,outputvis=solar_ms[:-3]+"_sun_selfcalibrated.ms")
+    else:
+        split(vis=solar_ms,outputvis=solar_ms[:-3]+"_sun_selfcalibrated.ms",datacolumn='data')
+
     outms=solar_ms[:-3]+"_sun_selfcalibrated.ms"
     outms =remove_nonsolar_sources(outms,imagename='for_weak_source_subtraction',remove_strong_sources_only=False)
     change_phasecenter(outms)
     run_wsclean(outms,imagename=imagename,automask_thresh=5,uvrange='0',predict=False,imsize=1024,cell='1arcmin')
-    correct_primary_beam(outms,imagename+"-image.fits")
+    correct_primary_beam(outms,imagename+"-image.fits")  
+    logging.info('Imaging completed for '+msname)  

@@ -1,30 +1,9 @@
 import os,sys
 from astropy.time import Time
 from astropy.io import fits
-from casatools import image
+from casatools import image,table,msmetadata
 import numpy as np
-from astropy.time import Time
-import glob
-
-def list_msfiles(filepath='20230318/'):
-    """
-    Find measurement sets across all lwacalim nodes under a file path.
-    Return a list of dictionary containing their path, name, time, and frequency information
-    :param filepath: path relative to /data0x/
-    :return msfiles: a list of dictionary containing all ms files with path, name, time, and frequency
-    """
-    msfiles = []
-    for i in range(1, 8):
-        out = os.popen('ssh lwacalim0{0:d} ls /data0{1:d}/{2:s}/'.format(i, i, filepath)).read()
-        names = out.split('\n')[:-1]
-        for n in names:
-            if n[-6:] == 'MHz.ms':
-                pathstr = 'lwacalim0{0:d}:/data0{1:d}/20230318/{2:s}'.format(i, i, n)
-                tmpstr = n[:15].replace('_', 'T')
-                timestr = tmpstr[:4] + '-' + tmpstr[4:6] + '-' + tmpstr[6:11] + ':' + tmpstr[11:13] + ':' + tmpstr[13:]
-                freqstr = n[16:21]
-                msfiles.append({'path': pathstr, 'name': n, 'time': timestr, 'freq': freqstr})
-    return msfiles
+import logging,glob
 
 def get_image_data(imagename):
      if os.path.isfile(imagename):
@@ -82,26 +61,145 @@ def restore_flag(msfile):
     flagmanager(vis=msfile,mode='delete',versionname=last_flagtable)           
     return
 
-def get_time_from_name(msname):
+    
+def get_flagged_solution_num(caltable):
+    tb=table()
+    tb.open(caltable)
+    flag=tb.getcol('FLAG')
+    tb.close()
+    shape=flag.shape
+    for i in range(shape[1]):
+        num_solutions_flagged=np.where(flag[:,i,:]==True)
+        if shape[1]==1:
+            logging.debug(str(len(num_solutions_flagged[0]))+" flagged out of "+str(shape[0]*shape[2]))
+        else:
+            logging.debug(str(len(num_solutions_flagged[0]))+" flagged out of "+str(shape[0]*shape[2])+" in channel "+str(i))
+    return         
+    
+def get_strong_source_list():
+    srcs = [{'label': 'CasA', 'position': 'J2000 23h23m24s +58d48m54s','flux': '16530', 'alpha': -0.72},
+            {'label': 'CygA', 'position': 'J2000 19h59m28.35663s +40d44m02.0970s','flux': '16300', 'alpha': -0.58},
+            {'label': 'TauA', 'position': 'J2000 05h34m31.94s +22d00m52.2s', 'flux': '1770', 'alpha': -0.27},
+            {'label': 'VirA', 'position': 'J2000 12h30m49.42338s +12d23m28.0439s', 'flux': '2400', 'alpha': -0.86}]
+    return srcs
+    
+
+def get_timestr_from_name(msname):
     pieces=msname.split('_')
-    ymd=pieces[0]
-    hms=pieces[1]
-    mstime=Time(ymd[0:4]+"-"+ymd[4:6]+"-"+ymd[6:]+\
-                'T'+hms[0:2]+":"+hms[2:4]+":"+hms[4:],\
-                scale='utc',format='isot')
-    return mstime
+    return '_'.join(pieces[0:2])
     
-def get_selfcal_time_to_apply(msname):
+def get_selfcal_time_to_apply(msname,caltables):
     mstime=get_time_from_name(msname)
-    caltables=glob.glob("caltables/*.gcal")
     times=np.unique(np.array(['_'.join(i.split('/')[1].split('_')[0:2]) for i in caltables]))
+   
+    if len(times)>0:
+        sep=np.zeros(len(times))
+        for n,t1 in enumerate(times):
+            caltime=get_time_from_name(t1)
+            sep[n]=abs((caltime-mstime).value*86400)
+        
+        time_to_apply=times[np.argsort(sep)[0]]
+        return time_to_apply    
+    return 'none'
     
-    sep=np.zeros(len(times))
-    for n,t1 in enumerate(times):
-        caltime=get_time_from_name(t1)
-        sep[n]=abs((caltime-mstime).value*86400)
-        
-    time_to_apply=times[np.argsort(sep)[0]]
-    return time_to_apply
-        
-                 
+def get_keyword(caltable,keyword,return_status=False):
+    tb=table()
+    success=False
+    try:
+        tb.open(caltable)
+        val=tb.getkeyword(keyword)
+        success=True
+    except:
+        pass
+    finally:
+        tb.close()
+    if return_status==False:
+        return val
+    return val,success
+
+def put_keyword(caltable,keyword,val,return_status=False):
+    tb=table()
+    success=False
+    try:
+        tb.open(caltable,nomodify=False)
+        tb.putkeyword(keyword,val)
+        tb.flush()
+        success=True
+    except:
+        pass
+    finally:
+        tb.close()
+    if return_status==False:
+        return
+    return success
+    
+def convert_to_heliocentric_coords(msname,imagename,reftime=''):
+    import datetime as dt
+    from suncasa.utils import helioimage2fits as hf
+    from casatasks import importfits
+    
+    if reftime=='':
+        msmd=msmetadata()
+        msmd.open(msname)
+        times=msmd.timesforfield(0)
+        msmd.done()
+        time=Time(times[0]/86400,scale='utc',format='mjd')
+        time.format='datetime'
+    
+        tdt=dt.timedelta(seconds=3)
+    
+        t1=time-tdt
+        t2=time+tdt
+        print (t1.strftime("%Y/%m/%d/%H:%M:%S")) 
+        reftime=t1.strftime('%Y/%m/%d/%H:%M:%S')+"~"+t2.strftime('%Y/%m/%d/%H:%M:%S')
+    print (reftime) 
+    temp_image='temp_'+imagename+".image"
+    helio_image=imagename+".helio"
+    if os.path.isdir(imagename)==False:
+        importfits(fitsimage=imagename,imagename=temp_image,overwrite=True)
+    else:
+        temp_image=imagename
+    
+    try:
+        hf.imreg(vis=msname,imagefile=temp_image,timerange=reftime,\
+                fitsfile=helio_image,usephacenter=False,verbose=True,toTb=True)
+    except:
+       logging.warning("Could not convert to helicentric coordinates")
+       return helio_image
+    return None
+
+
+
+def convert_to_heliocentric_coords1(msname,imagename):
+    import datetime as dt
+    from suncasa.utils import helioimage2fits as hf
+    from casatasks import importfits
+
+    msmd=msmetadata()
+    msmd.open(msname)
+    times=msmd.timesforfield(0)
+    msmd.done()
+    time=Time(times[0]/86400,scale='utc',format='mjd')
+    time.format='datetime'
+
+    tdt=dt.timedelta(seconds=60)
+
+    t1=time-tdt
+    t2=time+tdt
+
+    time_str=t1.strftime('%Y/%m/%d/%H:%M:%S')+"~"+t2.strftime('%Y/%m/%d/%H:%M:%S')
+
+    temp_image='temp_'+imagename+".image"
+    helio_image=imagename+".helio"
+    if os.path.isdir(imagename)==False:
+        importfits(fitsimage=imagename,imagename=temp_image,overwrite=True)
+    else:
+        temp_image=imagename
+    try:
+    	hf.imreg(vis=msname,imagefile=temp_image,timerange=time_str,\
+                fitsfile=helio_image,usephacenter=False,verbose=True,toTb=True)
+    except:
+       logging.warning("Could not convert to helicentric coordinates")
+       return helio_image
+    return None
+
