@@ -12,8 +12,8 @@ Requirements:
 from casatasks import clearcal, ft, bandpass, applycal, flagdata, tclean, flagmanager, uvsub, gaincal, split, imstat, \
     gencal
 from casatools import table, measures, componentlist, msmetadata
-import math,glob
-import sys,os,time
+import math
+import sys, os, time
 import numpy as np
 from astropy.coordinates import SkyCoord
 import astropy.units as u
@@ -1536,7 +1536,6 @@ def solar_pipeline(time_duration, calib_time_duration, freqstr, filepath, time_i
         logging.basicConfig(filename=logfile, level=logging.CRITICAL)
     elif logging_level == 'error' or logging_level == 'ERROR':
         logging.basicConfig(filename=logfile, level=logging.ERROR)
-        
     else:
         logging.basicConfig(filename=logfile, level=logging.DEBUG)
 
@@ -1609,7 +1608,6 @@ def apply_solutions_and_image(msname, bcal, imagename):
         split(vis=solar_ms, outputvis=solar_ms[:-3] + "_sun_selfcalibrated.ms")
     else:
         split(vis=solar_ms,outputvis=solar_ms[:-3]+"_sun_selfcalibrated.ms",datacolumn='data')
-
     outms=solar_ms[:-3]+"_sun_selfcalibrated.ms"
     outms =remove_nonsolar_sources(outms,imagename='for_weak_source_subtraction',remove_strong_sources_only=False)
     change_phasecenter(outms)

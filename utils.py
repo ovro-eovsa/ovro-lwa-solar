@@ -99,7 +99,6 @@ def get_time_from_name(msname):
     return mstime
 
 
-
 def get_timestr_from_name(msname):
     pieces = msname.split('_')
     return '_'.join(pieces[0:2])
