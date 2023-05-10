@@ -190,36 +190,4 @@ def convert_to_heliocentric_coords(msname, imagename, helio_imagename=None, reft
     return None
 
 
-def convert_to_heliocentric_coords1(msname, imagename):
-    import datetime as dt
-    from suncasa.utils import helioimage2fits as hf
-    from casatasks import importfits
-
-    msmd = msmetadata()
-    msmd.open(msname)
-    times = msmd.timesforfield(0)
-    msmd.done()
-    time = Time(times[0] / 86400, scale='utc', format='mjd')
-    time.format = 'datetime'
-
-    tdt = dt.timedelta(seconds=60)
-
-    t1 = time - tdt
-    t2 = time + tdt
-
-    time_str = t1.strftime('%Y/%m/%d/%H:%M:%S') + "~" + t2.strftime('%Y/%m/%d/%H:%M:%S')
-
-    temp_image = 'temp_' + imagename + ".image"
-    helio_image = imagename + ".helio"
-    if os.path.isdir(imagename) == False:
-        importfits(fitsimage=imagename, imagename=temp_image, overwrite=True)
-    else:
-        temp_image = imagename
-    try:
-        hf.imreg(vis=msname, imagefile=temp_image, timerange=time_str,
-                 fitsfile=helio_image, usephacenter=True, verbose=True, toTb=True)
-    except:
-        logging.warning("Could not convert to helicentric coordinates")
-        return helio_image
-    return None
 

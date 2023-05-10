@@ -12,13 +12,8 @@ Requirements:
 from casatasks import clearcal, ft, bandpass, applycal, flagdata, tclean, flagmanager, uvsub, gaincal, split, imstat, \
     gencal
 from casatools import table, measures, componentlist, msmetadata
-<<<<<<< HEAD
 import math,glob
 import sys,os,time
-=======
-import math
-import sys, os, time
->>>>>>> 412da2b64e6c15963b9b894726c35dc3755b240f
 import numpy as np
 from astropy.coordinates import SkyCoord
 import astropy.units as u
