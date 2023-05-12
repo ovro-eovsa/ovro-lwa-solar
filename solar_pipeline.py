@@ -896,14 +896,19 @@ def change_phasecenter(msfile):
     os.system("chgcentre " + msfile + " " + ra1 + " " + dec1)
 
 
-def get_point_flux(modelcl, src):
+def get_point_flux(modelcl, src,pol=''):
     tb.open(modelcl)
     flux = tb.getcol('Flux')
     names = tb.getcol('Label')
     tb.close()
     for i, name in enumerate(names):
         if name == src['label']:
-            return np.real(flux[0, i])
+            if pol=='':
+            	return abs(np.real(flux[0, i]))
+            elif pol=='-XX':
+                return 0.5*(np.real(flux[0, i])+np.real(flux[1, i]))  ##X=0.5*(I+Q)
+            elif pol=='-YY':
+                return 0.5*(np.real(flux[0, i])-np.real(flux[1, i]))  ##X=0.5*(I-Q)
     logging.warning("There is no matching source in the Component list " + \
                     "corresponding to " + src['label'])
     return -1
@@ -928,7 +933,7 @@ def correct_flux_scaling(msfile, src_area=100, min_beam_val=0.1, caltable_suffix
             images = glob.glob(msfile[:-3] + "_self*-image.fits")
         else:
             images= glob.glob(msfile[:-3] + "_self*XX-image.fits")
-        num_image = len(images)
+        num_image = 12#len(images)
         
         
         mean_factor=[]
@@ -972,7 +977,7 @@ def correct_flux_scaling(msfile, src_area=100, min_beam_val=0.1, caltable_suffix
 
                 if os.path.isfile('calibrator'+prefix+'-model.fits') == False:
                     model_flux = get_point_flux(modelcl,
-                                                s)  ### if wsclean failed, then Component List was generated in gen_model_cl
+                                                s,prefix)  ### if wsclean failed, then Component List was generated in gen_model_cl
                 else:
         
                     model_flux = imstat(imagename='calibrator'+prefix+'-model.fits', box=str(src_x - src_area_xpix // 2) + "," + \
@@ -982,7 +987,7 @@ def correct_flux_scaling(msfile, src_area=100, min_beam_val=0.1, caltable_suffix
                 if model_flux < 0:
                     logging.warning('Model flux is negative. Picking flux from point source model')
                     model_flux = get_point_flux(modelcl,
-                                                s)  ### if model had negative, then Component List was generated in gen_model_cl
+                                                s,prefix)  ### if model had negative, then Component List was generated in gen_model_cl
                 logging.info('Model flux of ' + s['label'] + ' is  ' + str(model_flux))
                 image_flux = imstat(imagename=final_image, box=str(src_x - src_area_xpix // 2) + "," + \
                                                                str(src_y - src_area_ypix // 2) + "," + \
