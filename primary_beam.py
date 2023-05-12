@@ -1,6 +1,7 @@
 import numpy as np
 import glob, logging, math, os
 from casatools import msmetadata
+from scipy.interpolate import griddata as gd
 
 def knn_search(arr,grid):
     '''
@@ -11,9 +12,18 @@ def knn_search(arr,grid):
     dists    = np.sqrt(((grid - arr[:,:gridsize])**2.).sum(axis=0))
     return np.argsort(dists)[0]
     
+def primary_beam_correction_val(pol,jones_matrix):
+    if pol=='XX':
+        return jones_matrix[0,0]**2
+    if pol=='YY':
+        return jones_matrix[1,1]**2
+                
+    if pol=='I':
+        return 0.5*(jones_matrix[1,1]**2+jones_matrix[0,0]**2)
+    
             
-class primary_beam():
-    def __init__(self,msfile=None,beam_file_path=None,freq=None):
+class woody_beam():
+    def __init__(self,msfile=None,beam_file_path='/opt/beam/',freq=None):
         try:
             self.beam_file_path=beam_file_path
         except:
@@ -57,7 +67,7 @@ class primary_beam():
                 logging.debug('Beam files read successfully')
             else:
                 raise RuntimeError    
-        except:
+        except OSError:
             logging.warning("Beam file does not exist in give path."+\
                     "Switching to analytical beam.")   
             self.beamIQUV = np.nan
@@ -104,22 +114,22 @@ class primary_beam():
                 Qfctr = self.Qbeam.reshape(self.gridsize*self.gridsize)[index]
                 Ufctr = self.Ubeam.reshape(self.gridsize*self.gridsize)[index]
                 Vfctr = self.Vbeam.reshape(self.gridsize*self.gridsize)[index]
-                return np.array([[Ifctr,Qfctr],[Ufctr,Vfctr]])
+                return np.array([[np.sqrt(Ifctr),0],[0,np.sqrt(Ifctr)]])
             else:
                 raise RuntimeError
         except:
             Ifctr=math.sin(el*np.pi/180)**1.6
-            return np.array([[Ifctr,0],[0,0]])
+            return np.array([[np.sqrt(Ifctr),0],[0,np.sqrt(Ifctr)]])
 
                 
                 
-class jones:
+class jones_beam:
     """
     For loading and returning LWA dipole beam values (derived from DW beam simulations) on the ASTM.
     Last edit: 11 September 2020
     """
     
-    def __init__(self,msfile=None,beam_file_path=None,freq=None):
+    def __init__(self,msfile=None,beam_file_path='/opt/beam',freq=None):
         try:
             self.beam_file_path=beam_file_path
         except:
@@ -166,6 +176,7 @@ class jones:
         
     def read_beam_file(self):
         try:
+            self.ctrl_freq()
             self.beamjonesfile = self.beam_file_path+'/beamLudwig3rd.npz'
             if os.path.exists(self.beamjonesfile):
                 self.beamjones = np.load(self.beamjonesfile)
@@ -175,7 +186,12 @@ class jones:
                 self.Cxnrot90 = self.beamjones['cxfull_nrot90']
                 self.l = self.beamjones['lfull']
                 self.m = self.beamjones['mfull']
-                self.freqs = self.beamjones['freqfull']
+                self.freqs = self.beamjones['frqvals']#self.beamjones['freqfull']
+                num_freqs=self.freqs.size
+                num_l=self.l.size
+                self.freqs=np.repeat(self.freqs,num_l) #### This works only if Co shape is (num_freqs x num_l)
+                self.l=np.tile(self.l,num_freqs)
+                self.m=np.tile(self.m,num_freqs)
             else:
                 raise RuntimeError    
         except:
@@ -191,18 +207,20 @@ class jones:
         Returns: Jones matrix at coordinates (l,m)
 
         """
-         try:
+        try:
             if self.beam_file_path is not None:
-                coval = gd( (self.l.ravel(), self.m.ravel(), self.freqs.ravel()), \
-                        selfs.Co.ravel(), (l, m, self.freq), method='linear')
-                cxval = gd( (self.l.ravel(), self.m.ravel(), self.freqs.ravel()), \
-                        selfs.Cx.ravel(), (l, m, self.freq), method='linear')
-                corot90val  = gd( (self.l.ravel(), self.m.ravel(), self.freqs.ravel()), \
+                coval = gd( (self.l, self.m, self.freqs), \
+                        self.Co.ravel(), (l, m, self.freq), method='linear')
+                cxval = gd( (self.l, self.m, self.freqs), \
+                        self.Cx.ravel(), (l, m, self.freq), method='linear')
+                corot90val  = gd( (self.l, self.m, self.freqs), \
                           self.Corot90.ravel(), (l, m, self.freq), method='linear')
-                cxnrot90val = gd( (self.l.ravel(), self.m.ravel(), self.freqs.ravel()), \
+                cxnrot90val = gd( (self.l, self.m, self.freqs), \
                           self.Cxnrot90.ravel(), (l, m, self.freq), method='linear')
                 Jonesmat = np.array([ [coval,       cxval     ], 
                                   [cxnrot90val, corot90val] ])
                 return Jonesmat
-            except:
-                return np.nan
+            else:
+                raise RuntimeError
+        except OSError:
+            return np.nan

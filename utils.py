@@ -36,13 +36,39 @@ def get_image_maxmin(imagename, local=True):
 
 
 def check_image_quality(imagename, max1, min1, reorder=True):
+    len1=len(max1)
     if max1[0] == 0:
-        max1[0], min1[0] = get_image_maxmin(imagename)
-        print(max1, min1)
+        try:
+            imagename1=imagename+"-image.fits"
+            print (imagename1)
+            max1[0], min1[0] = get_image_maxmin(imagename1)
+            print(max1, min1)
+        except:
+            imagename1=imagename+"-XX-image.fits"
+            print (imagename1)
+            max1[0], min1[0] = get_image_maxmin(imagename1)
+            imagename1=imagename+"-YY-image.fits"
+            print (imagename1)
+            max1[2], min1[2] = get_image_maxmin(imagename1)
     else:
         if reorder and max1[1] > 0.001:
             max1[0], min1[0] = max1[1], min1[1]
-        max1[1], min1[1] = get_image_maxmin(imagename)
+            if len1==4:
+                max1[2], min1[2] = max1[3], min1[3]
+        try:
+            imagename1=imagename+"-image.fits"
+            print (imagename1)
+            max1[1], min1[1] = get_image_maxmin(imagename1)
+            print(max1, min1)
+        except:
+            imagename1=imagename+"-XX-image.fits"
+            print (imagename1)
+            max1[1], min1[1] = get_image_maxmin(imagename1)
+            imagename1=imagename+"-YY-image.fits"
+            print (imagename1)
+            max1[3], min1[3] = get_image_maxmin(imagename1)
+            
+        
 
         DR1 = max1[0] / abs(min1[0])
         DR2 = max1[1] / abs(min1[1])
@@ -52,6 +78,15 @@ def check_image_quality(imagename, max1, min1, reorder=True):
             ## absolute value of minimum increases by more than 20 percent
             if min1[1] < 0:
                 return False
+        if len1==4:
+            DR1 = max1[2] / abs(min1[2])
+            DR2 = max1[3] / abs(min1[3])
+            print(DR1, DR2)
+            if (DR1 - DR2) / DR2 > 0.2:
+                ### if max decreases by more than 20 percent
+                ## absolute value of minimum increases by more than 20 percent
+                if min1[3] < 0:
+                    return False    
     return True
 
 

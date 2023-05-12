@@ -23,39 +23,14 @@ import matplotlib.pyplot as plt
 import utils
 import logging, glob
 from file_handler import File_Handler
-
+from primary_beam import woody_beam as beam 
+import primary_beam
+from generate_calibrator_model import model_generation
+import generate_calibrator_model
 tb = table()
 me = measures()
 cl = componentlist()
 msmd = msmetadata()
-
-
-def flux80_47(flux_hi, sp, ref_freq=80., output_freq=47.):
-    """
-    Given a flux at 80 MHz and a sp_index, return the flux at 47 MHz.
-    :param flux_hi: flux at the reference frequency
-    :param sp: spectral index
-    :param ref_freq: reference frequency in MHz
-    :param output_freq: output frequency in MHz
-    :return: flux caliculated at the output frequency
-    """
-    return flux_hi * 10 ** (sp * math.log(output_freq / ref_freq, 10))
-
-
-def conv_deg(dec):
-    if 's' in dec:
-        dec = dec.split('s')[0]
-    if 'm' in dec:
-        dec, ss = dec.split('m')
-        if ss == '':
-            ss = '0'
-    dd, mm = dec.split('d')
-    if dd.startswith('-'):
-        neg = True
-    else:
-        neg = False
-    deg = float(dd) + float(mm) / 60 + float(ss) / 3600
-    return '%fdeg' % deg
 
 
 def get_sun_pos(msfile, str_output=True):
@@ -119,229 +94,6 @@ def get_antids(msfile):
 
     msmd.close()
     return np.array(core_ant_ids), np.array(exp_ant_ids)
-
-
-def write_source_file(file_handle, source_name, primary_beam, source_num):  #### works only if logarithimicSI is false
-
-    try:
-        calfilepath = '/data07/msurajit/ovro-lwa-solar/defaults/'
-        f1 = open(calfilepath + source_name + ".txt", "r")
-        j = 0
-
-        while True:
-            line = f1.readline()
-            if not line:
-                break
-            if source_num == 0 and j == 0:
-                file_handle.write(line)
-            elif j != 0:
-                try:
-                    splitted = line.split(',')
-                    I_flux = float(splitted[4])
-
-                    beam_corrected_I_flux = I_flux * primary_beam
-                    splitted[4] = str(beam_corrected_I_flux)
-
-                    for k, phrase in enumerate(splitted[5:]):
-                        if k == 0:
-                            splitted[5 + k] = '[' + str(float(phrase[1:]) * primary_beam)
-                        else:
-                            if phrase[-1] == ']':
-                                splitted[5 + k] = str(float(phrase[:-1]) * primary_beam) + ']'
-                                break
-                            else:
-                                splitted[5 + k] = str(float(phrase) * primary_beam)
-                    line1 = ','.join(splitted)
-                    line1 = line1[:-1] + " " + str(primary_beam) + "\n"
-                    if splitted[5 + k + 1] == 'false':
-                        file_handle.write(line1)
-                    else:
-                        raise RuntimeError("Function now works only if logarithmicSI is false")
-                except IndexError:
-                    pass
-
-            j += 1
-    finally:
-        f1.close()
-
-
-def gen_model_file(visibility, filename='calibrator_source_list.txt', min_beam_val=0.01):
-    """
-    :param filename: output txt file that contains clean components for all visible strong calibration sources
-        in wsclean format
-    :param visibility: input visibility
-    :return: N/A
-    """
-
-    srcs = utils.get_strong_source_list()
-
-    print("generating model file")
-
-    tb.open(visibility)
-    t0 = tb.getcell('TIME', 0)
-    tb.close()
-    # me.set_data_path('/opt/astro/casa-data')
-    ovro = me.observatory('OVRO_MMA')
-    time = me.epoch('UTC', '%fs' % t0)
-    me.doframe(ovro)
-    me.doframe(time)
-
-    msmd.open(visibility)
-    chan_freqs = msmd.chanfreqs(0)
-    msmd.done()
-    avg_freq = 0.5 * (chan_freqs[0] + chan_freqs[-1]) * 1e-6
-
-    f1 = open(filename, 'w')
-    num_source = 0
-    for s in range(len(srcs) - 1, -1, -1):
-        coord = srcs[s]['position'].split()
-        d0 = None
-        if len(coord) == 1:
-            d0 = me.direction(coord[0])
-            d0_j2000 = me.measure(d0, 'J2000')
-            srcs[s]['position'] = 'J2000 %frad %frad' % (d0_j2000['m0']['value'], d0_j2000['m1']['value'])
-        elif len(coord) == 3:
-            coord[2] = conv_deg(coord[2])
-            d0 = me.direction(coord[0], coord[1], coord[2])
-        else:
-            raise Exception("Unknown direction")
-        d = me.measure(d0, 'AZEL')
-        elev = d['m1']['value']
-        az=d['m0']['value']
-        scale = beam.calc_beam(az,el,avg_freq)#math.sin(elev) ** 1.6
-        if elev < 0 or scale < min_beam_val:
-            del srcs[s]
-        else:
-            print(srcs[s]['label'])
-            print('scale {0:.2f}'.format(scale))
-            write_source_file(f1, srcs[s]['label'], scale, num_source)
-            num_source += 1
-
-    return
-
-
-def point_source_model(msfile, ref_freq=80.0, output_freq=47.0,
-                       includesun=False, solar_flux=16000, solar_alpha=2.2,
-                       modelcl=None, verbose=True, overwrite=True, min_beam_val=0.01):
-    srcs = [{'label': 'CasA', 'flux': '16530', 'alpha': -0.72,
-             'position': 'J2000 23h23m24s +58d48m54s'},
-            {'label': 'CygA', 'flux': '16300', 'alpha': -0.58,
-             'position': 'J2000 19h59m28.35663s +40d44m02.0970s'},
-            {'label': 'TauA', 'flux': '1770', 'alpha': -0.27,
-             'position': 'J2000 05h34m31.94s +22d00m52.2s'},
-            {'label': 'VirA', 'flux': '2400', 'alpha': -0.86,
-             'position': 'J2000 12h30m49.42338s +12d23m28.0439s'}]
-    if includesun:
-        srcs.append({'label': 'Sun', 'flux': str(solar_flux), 'alpha': solar_alpha,
-                     'position': 'SUN'})
-
-    tb.open(msfile)
-    t0 = tb.getcell('TIME', 0)
-    tb.close()
-    # me.set_data_path('/opt/astro/casa-data')
-    ovro = me.observatory('OVRO_MMA')
-    time = me.epoch('UTC', '%fs' % t0)
-    me.doframe(ovro)
-    me.doframe(time)
-    
-    msmd.open(visibility)
-    chan_freqs = msmd.chanfreqs(0)
-    msmd.done()
-    avg_freq = 0.5 * (chan_freqs[0] + chan_freqs[-1]) * 1e-6
-
-    for s in range(len(srcs) - 1, -1, -1):
-        coord = srcs[s]['position'].split()
-        d0 = None
-        if len(coord) == 1:
-            d0 = me.direction(coord[0])
-            d0_j2000 = me.measure(d0, 'J2000')
-            srcs[s]['position'] = 'J2000 %frad %frad' % (d0_j2000['m0']['value'], d0_j2000['m1']['value'])
-        elif len(coord) == 3:
-            coord[2] = conv_deg(coord[2])
-            d0 = me.direction(coord[0], coord[1], coord[2])
-        else:
-            raise Exception("Unknown direction")
-        d = me.measure(d0, 'AZEL')
-        elev = d['m1']['value']
-        az=d['m0']['value']
-        scale = beam.calc_beam(az,el,avg_freq)
-        if elev < 0 or scale < min_beam_val:
-            del srcs[s]
-        else:
-            print('scale {0:.3f}'.format(scale))
-            srcs[s]['flux'] = flux80_47(float(srcs[s]['flux']), srcs[s]['alpha'],
-                                        ref_freq=ref_freq, output_freq=output_freq) * scale
-
-    cl.done()
-
-    if not modelcl:
-        modelcl = msfile.replace('.ms', '.cl')
-    for s in srcs:
-        cl.addcomponent(flux=s['flux'], dir=s['position'], index=s['alpha'],
-                        spectrumtype='spectral index', freq='{0:f}MHz'.format(output_freq), label=s['label'])
-        if verbose:
-            print(
-                "cl.addcomponent(flux=%s, dir='%s', index=%s, spectrumtype='spectral index', freq='47MHz', label='%s')" % (
-                    s['flux'], s['position'], s['alpha'], s['label']))
-            logging.debug(
-                "cl.addcomponent(flux=%s, dir='%s', index=%s, spectrumtype='spectral index', freq='47MHz', label='%s')" % (
-                    s['flux'], s['position'], s['alpha'], s['label']))
-    if os.path.exists(modelcl) and overwrite:
-        os.system('rm -rf ' + modelcl)
-    cl.rename(modelcl)
-    cl.done()
-    return modelcl, True
-
-
-def gen_model_cl(msfile, ref_freq=80.0, output_freq=47.0,
-                 includesun=False, solar_flux=16000, solar_alpha=2.2,
-                 modelcl=None, verbose=True, overwrite=True, predict=True,
-                 min_beam_val=0.01):
-    """
-    Generate source models for bright sources as CASA clean components
-    :param msfile: input visibility
-    :param ref_freq: reference frequency of the preset flux values of bright sources
-    :param output_freq: output frequency to be written into the CASA component list
-    :param includesun: if True, add a precribed solar flux to the source list
-    :return:
-    """
-
-    if includesun == True:
-        logging.info("User wants to add solar model")
-        logging.info("Proceeding to use point source model generation scheme.")
-        modelcl, ft_needed = point_source_model(msfile, min_beam_val=min_beam_val)
-        return modelcl, ft_needed
-    try:
-        filename = 'calibrator_source_list.txt'
-        logging.info("Generating component list using Gasperin et al. (2020)")
-        gen_model_file(msfile, filename, min_beam_val=min_beam_val)
-        imagename = "dummy"
-        logging.debug("Generating a dummy image")
-        os.system("wsclean -no-dirty -no-update-model-required -size 4096 4096 " + \
-                  "-scale 2arcmin -niter 10 -name " + imagename + " " + msfile)
-        ##### making the residual a blank image
-        logging.debug("Setting all values of dummy image to 0.")
-        hdu = fits.open(imagename + "-residual.fits", mode="update")
-        hdu[0].data *= 0.0
-        hdu.flush()
-        hdu.close()
-        ###### 
-        os.system("wsclean -no-dirty -no-update-model-required -restore-list " + \
-                  imagename + "-residual.fits " + filename + " calibrator-model.fits " + msfile)
-
-        if os.path.isfile("calibrator-model.fits") == False:
-            logging.warning("Calibrator model not generated. Proceeding with point source model")
-            raise RuntimeError("WSClean version 3.3 or above. Proceeding with point source model")
-        logging.info("Model file generated using the clean component list")
-        max1, min1 = utils.get_image_maxmin("calibrator-model.fits", local=False)
-        if min1 < 0 and (max1 / max(abs(min1), 0.000001)) < 10000:  ### some small negative is tolerable
-            raise RuntimeError("Negative in model. Going for point source model")
-        if predict == True:
-            os.system("wsclean -predict -name calibrator " + msfile)
-        return None, False
-    except:
-        modelcl, ft_needed = point_source_model(msfile, min_beam_val=min_beam_val)
-        return modelcl, ft_needed
 
 
 def gen_ant_flags_from_autocorr(msfile, antflagfile=None, datacolumn='DATA', tavg=False,
@@ -647,7 +399,7 @@ def flag_bad_ants(msfile, antflagfile=None, datacolumn='DATA', thresh_core=1.0, 
     return antflagfile
 
 
-def gen_calibration(msfile, modelcl=None, uvrange='', bcaltb=None, logging_level='info', caltable_fold='caltables'):
+def gen_calibration(msfile, modelcl=None, uvrange='>20lambda', bcaltb=None, logging_level='info', caltable_fold='caltables',pol='I'):
     """
     This function is for doing initial self-calibrations using strong sources that are above the horizon
     It is recommended to use a dataset observed at night when the Sun is not in the field of view
@@ -659,7 +411,12 @@ def gen_calibration(msfile, modelcl=None, uvrange='', bcaltb=None, logging_level
     if not modelcl or not (os.path.exists(modelcl)):
         print('Model component list does not exist. Generating one from scratch.')
         logging.info('Model component list does not exist. Generating one from scratch.')
-        modelcl, ft_needed = gen_model_cl(msfile)
+        if pol=='I':
+            md=model_generation(vis=msfile,pol=pol,separate_pol=False)
+        else:
+            md=model_generation(vis=msfile,pol=pol,separate_pol=True)
+        #md.point_source_model_needed=True  	    
+        modelcl, ft_needed = md.gen_model_cl()
     else:
         ft_needed = True
 
@@ -739,7 +496,7 @@ def get_solar_loc_pix(msfile, image="allsky"):
     dec = m['m1']['value']
     coord = SkyCoord(ra * u.rad, dec * u.rad, frame='icrs')
     logging.info('RA, Dec of Sun is radians:' + str(ra) + "," + str(dec))
-    head = fits.getheader(image + "-model.fits")
+    head=fits.getheader(image)
     w = WCS(head)
     pix = skycoord_to_pixel(coord, w)
     x = int(pix[0])
@@ -765,10 +522,6 @@ def get_nonsolar_sources_loc_pix(msfile, image="allsky", verbose=False, min_beam
     me.doframe(ovro)
     me.doframe(time)
     
-    msmd.open(visibility)
-    chan_freqs = msmd.chanfreqs(0)
-    msmd.done()
-    avg_freq = 0.5 * (chan_freqs[0] + chan_freqs[-1]) * 1e-6
 
     for i in range(len(srcs) - 1, -1, -1):
         src = srcs[i]
@@ -779,23 +532,26 @@ def get_nonsolar_sources_loc_pix(msfile, image="allsky", verbose=False, min_beam
             d0_j2000 = me.measure(d0, 'J2000')
             src['position'] = 'J2000 %frad %frad' % (d0_j2000['m0']['value'], d0_j2000['m1']['value'])
         elif len(coord) == 3:
-            coord[2] = conv_deg(coord[2])
+            coord[2] = generate_calibrator_model.conv_deg(coord[2])
             d0 = me.direction(coord[0], coord[1], coord[2])
             d0_j2000 = me.measure(d0, 'J2000')
         else:
             raise Exception("Unknown direction")
         d = me.measure(d0, 'AZEL')
-        elev = d['m1']['value']
-        az=d['m0']['value']
-        scale = beam.calc_beam(az,el,avg_freq)
+        elev = d['m1']['value']*180/np.pi
+        az=d['m0']['value']*180/np.pi
+        pb=beam(msfile=msfile)
+        jones_matrix=pb.srcIQUV(az=az,el=elev)
+        
+        
+        scale=primary_beam.primary_beam_correction_val('I',jones_matrix)
         if elev > 0 and scale > min_beam_val:
             ra = d0_j2000['m0']['value']
             dec = d0_j2000['m1']['value']
             coord = SkyCoord(ra * u.rad, dec * u.rad, frame='icrs')
-            if os.path.isfile(image + "-model.fits"):
-                head = fits.getheader(image + "-model.fits")
-            else:
-                head = fits.getheader(image)
+            
+            head = fits.getheader(image)
+            
             w = WCS(head)
             pix = skycoord_to_pixel(coord, w)
             x = int(pix[0])
@@ -814,7 +570,7 @@ def get_nonsolar_sources_loc_pix(msfile, image="allsky", verbose=False, min_beam
 
 
 def gen_nonsolar_source_model(msfile, imagename="allsky", outimage=None, sol_area=400., src_area=200.,
-                              remove_strong_sources_only=True, verbose=True):
+                              remove_strong_sources_only=True, verbose=True,pol='I'):
     """
     Take the full sky image, remove non-solar sources from the image
     :param msfile: path to CASA measurement set
@@ -827,10 +583,15 @@ def gen_nonsolar_source_model(msfile, imagename="allsky", outimage=None, sol_are
     :param verbose: Toggle to print out more information
     :return: FITS image with non-solar sources removed
     """
-
+    imagename1=imagename 
+    if pol=='I':
+        imagename=imagename+"-image.fits"
+    else:
+        imagename=imagename+"-XX-image.fits"
     solx, soly = get_solar_loc_pix(msfile, imagename)
     srcs = get_nonsolar_sources_loc_pix(msfile, imagename)
-    head = fits.getheader(imagename + "-model.fits")
+    
+    head = fits.getheader(imagename)
     if head['cunit1'] == 'deg':
         dx = np.abs(head['cdelt1'] * 60.)
     else:
@@ -839,35 +600,49 @@ def gen_nonsolar_source_model(msfile, imagename="allsky", outimage=None, sol_are
         dy = np.abs(head['cdelt2'] * 60.)
     else:
         print(head['cunit2'] + ' not recognized as "deg". Model could be wrong.')
-    data = fits.getdata(imagename + "-model.fits")
-    if remove_strong_sources_only:
-        new_data = np.zeros_like(data)
-        src_area_xpix = src_area / dx
-        src_area_ypix = src_area / dy
-        for s in srcs:
-            src_x = s['xpix']
-            src_y = s['ypix']
-            bbox = [[src_y - src_area_ypix // 2, src_y + src_area_ypix // 2],
-                    [src_x - src_area_xpix // 2, src_x + src_area_xpix // 2]]
-            slicey, slicex = slice(int(bbox[0][0]), int(bbox[0][1]) + 1), slice(int(bbox[1][0]), int(bbox[1][1]) + 1)
-            new_data[0, 0, slicey, slicex] = data[0, 0, slicey, slicex]
-            if verbose:
-                print('Adding source {0:s} to model at x {1:d}, y {2:d} '
-                      'with flux {3:.1f} Jy'.format(s['label'], src_x, src_y, np.max(data[0, 0, slicey, slicex])))
-    else:
-        new_data = np.copy(data)
-        sol_area_xpix = int(sol_area / dx)
-        sol_area_ypix = int(sol_area / dy)
-        new_data[0, 0, soly - sol_area_ypix // 2:soly + sol_area_ypix // 2 + 1,
-        solx - sol_area_xpix // 2:solx + sol_area_xpix // 2 + 1] = 0.0000
+   
+    imagename=imagename1
+    for pola in ['I','XX','YY']:
+        if pol=='I' and pola=='I':
+            prefix=''
+        elif pola=='XX' and pol!='I':
+            prefix='-XX'
+        elif pola=='YY' and pol!='I':
+            prefix='-YY'
+        else:
+            continue
+        print (pola,pol) 
+        data = fits.getdata(imagename + prefix+"-model.fits")
+        head=fits.getheader(imagename + prefix+"-model.fits")
+        if remove_strong_sources_only:
+            new_data = np.zeros_like(data)
+            src_area_xpix = src_area / dx
+            src_area_ypix = src_area / dy
+            for s in srcs:
+                src_x = s['xpix']
+                src_y = s['ypix']
+                bbox = [[src_y - src_area_ypix // 2, src_y + src_area_ypix // 2],
+                        [src_x - src_area_xpix // 2, src_x + src_area_xpix // 2]]
+                slicey, slicex = slice(int(bbox[0][0]), int(bbox[0][1]) + 1), slice(int(bbox[1][0]), int(bbox[1][1]) + 1)
+                new_data[0, 0, slicey, slicex] = data[0, 0, slicey, slicex]
+                if verbose:
+                    print('Adding source {0:s} to model at x {1:d}, y {2:d} '
+                          'with flux {3:.1f} Jy'.format(s['label'], src_x, src_y, np.max(data[0, 0, slicey, slicex])))
+        else:
+            new_data = np.copy(data)
+            sol_area_xpix = int(sol_area / dx)
+            sol_area_ypix = int(sol_area / dy)
+            new_data[0, 0, soly - sol_area_ypix // 2:soly + sol_area_ypix // 2 + 1,
+            solx - sol_area_xpix // 2:solx + sol_area_xpix // 2 + 1] = 0.0000
 
-    if not outimage:
-        outimage = imagename + "_no_sun"
-    fits.writeto(outimage + '-model.fits', new_data, header=head, overwrite=True)
+        if not outimage:
+            outimage = imagename + "_no_sun"
+        print (outimage+prefix+'-model.fits')
+        fits.writeto(outimage + prefix+'-model.fits', new_data, header=head, overwrite=True)
     return outimage
 
 
-def predict_model(msfile, outms, image="_no_sun"):
+def predict_model(msfile, outms, image="_no_sun",pol='I'):
     """
     Predict a model measurement set from an image. In the pipeline, it is
     used for transforming a model all sky image without the Sun to the output ms, and write it into the model column
@@ -878,11 +653,11 @@ def predict_model(msfile, outms, image="_no_sun"):
     """
     os.system("cp -r " + msfile + " " + outms)
     clearcal(outms, addmodel=True)
-    os.system("wsclean -predict -name " + image + " " + outms)
+    os.system("wsclean -predict -pol "+pol+" -name " + image + " " + outms)
 
 
 def remove_nonsolar_sources(msfile, imagename='allsky', imsize=4096, cell='2arcmin', minuv=0,
-                            remove_strong_sources_only=True):
+                            remove_strong_sources_only=True,pol='I'):
     """
     Wrapping for removing the nonsolar sources from the solar measurement set
     :param msfile: input CASA measurement set
@@ -896,10 +671,10 @@ def remove_nonsolar_sources(msfile, imagename='allsky', imsize=4096, cell='2arcm
     if os.path.isdir(outms):
         return outms
     run_wsclean(msfile=msfile, imagename=imagename, imsize=imsize, cell=cell, uvrange=minuv, predict=False,
-                automask_thresh=5)
+                automask_thresh=5,pol=pol)
     image_nosun = gen_nonsolar_source_model(msfile, imagename=imagename,
-                                            remove_strong_sources_only=remove_strong_sources_only)
-    predict_model(msfile, outms="temp.ms", image=image_nosun)
+                                            remove_strong_sources_only=remove_strong_sources_only,pol=pol)
+    predict_model(msfile, outms="temp.ms", image=image_nosun,pol=pol)
     uvsub("temp.ms")
     split(vis="temp.ms", outputvis=outms, datacolumn='corrected')
     os.system("rm -rf temp.ms")
@@ -940,23 +715,34 @@ def correct_ms_bug(msfile):
 
 
 def do_selfcal(msfile, num_phase_cal=3, num_apcal=5, applymode='calflag', logging_level='info',
-               ms_keyword='di_selfcal_time'):
+               ms_keyword='di_selfcal_time',pol='I'):
     logging.info('The plan is to do ' + str(num_phase_cal) + " rounds of phase selfcal")
     logging.info('The plan is to do ' + str(num_apcal) + " rounds of amplitude-phase selfcal")
-    max1 = np.zeros(2)
-    min1 = np.zeros(2)
+    
+    num_pol=2
+    if pol=='XX,YY':
+        num_pol=4
+
+    max1 = np.zeros(num_pol)
+    min1 = np.zeros(num_pol)
+    
     for i in range(num_phase_cal):
         imagename = msfile[:-3] + "_self" + str(i)
-        run_wsclean(msfile, imagename=imagename)
-        good = utils.check_image_quality(imagename + "-image.fits", max1, min1)
+        run_wsclean(msfile, imagename=imagename,pol=pol)
+        
+        
+        good = utils.check_image_quality(imagename, max1, min1)
+        
         print(good)
         logging.debug('Maximum pixel values are: ' + str(max1[0]) + "," + str(max1[1]))
         logging.debug('Minimum pixel values around peaks are: ' + str(min1[0]) + "," + str(min1[1]))
         if not good:
             logging.info('Dynamic range has reduced. Doing a round of flagging')
             flagdata(vis=msfile, mode='rflag', datacolumn='corrected')
-            run_wsclean(msfile, imagename=imagename)
-            good = utils.check_image_quality(imagename + "-image.fits", max1, min1, reorder=False)
+            run_wsclean(msfile, imagename=imagename,pol=pol)
+            
+            good = utils.check_image_quality(imagename, max1, min1)
+            
             print(good)
             logging.debug('Maximum pixel values are: ' + str(max1[0]) + "," + str(max1[1]))
             logging.debug('Minimum pixel values around peaks are: ' + str(min1[0]) + "," + str(min1[1]))
@@ -994,15 +780,19 @@ def do_selfcal(msfile, num_phase_cal=3, num_apcal=5, applymode='calflag', loggin
         final_phase_caltable = ''
     for i in range(num_phase_cal, num_phase_cal + num_apcal):
         imagename = msfile[:-3] + "_self" + str(i)
-        run_wsclean(msfile, imagename=imagename)
-        good = utils.check_image_quality(imagename + "-image.fits", max1, min1)
+        run_wsclean(msfile, imagename=imagename,pol=pol)
+        
+        good = utils.check_image_quality(imagename, max1, min1)
+        
         logging.debug('Maximum pixel values are: ' + str(max1[0]) + "," + str(max1[1]))
         logging.debug('Minimum pixel values around peaks are: ' + str(min1[0]) + "," + str(min1[1]))
         if not good:
             logging.info('Dynamic range has reduced. Doing a round of flagging')
             flagdata(vis=msfile, mode='rflag', datacolumn='corrected')
-            run_wsclean(msfile, imagename=imagename)
-            good = utils.check_image_quality(imagename + "-image.fits", max1, min1, reorder=False)
+            run_wsclean(msfile, imagename=imagename,pol=pol)
+            
+            good = utils.check_image_quality(imagename, max1, min1)
+            
             print(good)
             if not good:
                 logging.info('Flagging could not solve the issue. Restoring flags, applying last good solutions.')
@@ -1051,15 +841,15 @@ def do_selfcal(msfile, num_phase_cal=3, num_apcal=5, applymode='calflag', loggin
 
 
 def run_wsclean(msfile, imagename, automask_thresh=8, imsize=4096, cell='2arcmin', uvrange='10',
-                predict=True):  ### uvrange is in lambda units
+                predict=True,pol='I'):  ### uvrange is in lambda units
     logging.debug("Running WSCLEAN")
     os.system("wsclean -no-dirty -no-update-model-required -no-negative -size " + str(imsize) + " " + \
               str(imsize) + " -scale " + cell + " -weight uniform -minuv-l " + str(uvrange) + " -auto-mask " + str(
         automask_thresh) + \
-              " -niter 100000 -name " + imagename + " -mgain 0.7 -beam-fitting-size 2 " + msfile)
+              " -niter 100000 -name " + imagename + " -mgain 0.7 -beam-fitting-size 2 -pol "+pol+' ' + msfile)
     if predict:
         logging.debug("Predicting model visibilities from " + imagename + " in " + msfile)
-        os.system("wsclean -predict -name " + imagename + " " + msfile)
+        os.system("wsclean -predict -pol "+pol+" "+ "-name " + imagename + " " + msfile)
 
 
 def change_phasecenter(msfile):
@@ -1119,81 +909,113 @@ def get_point_flux(modelcl, src):
     return -1
 
 
-def correct_flux_scaling(msfile, src_area=100, min_beam_val=0.1, caltable_suffix='fluxscale'):
+def correct_flux_scaling(msfile, src_area=100, min_beam_val=0.1, caltable_suffix='fluxscale',pol='I'):
     import glob
-
+    
+    os.system("rm -rf calibrator-model.fits calibrator-XX-model.fits calibrator-YY-model.fits")
     mstime_str = utils.get_timestr_from_name(msfile)
     di_selfcal_str, success = utils.get_keyword(msfile, 'di_selfcal_time', return_status=True)
 
     if di_selfcal_str == mstime_str and success:
-        images = glob.glob(msfile[:-3] + "_self*-image.fits")
+        if pol=='I':
+            md=model_generation(vis=msfile,pol=pol,separate_pol=False)
+        else:
+            md=model_generation(vis=msfile,pol=pol,separate_pol=True)
+        md.predict=False
+        md.min_beam_val=min_beam_val
+        modelcl, ft_needed = md.gen_model_cl()
+        if pol=='I':
+            images = glob.glob(msfile[:-3] + "_self*-image.fits")
+        else:
+            images= glob.glob(msfile[:-3] + "_self*XX-image.fits")
         num_image = len(images)
-        final_image = msfile[:-3] + "_self" + str(num_image - 1) + "-image.fits"
-        os.system("rm -rf calibrator-model.fits")
-        modelcl, ft_needed = gen_model_cl(msfile, predict=False, min_beam_val=min_beam_val)
-        srcs = get_nonsolar_sources_loc_pix(msfile, final_image, min_beam_val=min_beam_val)
-        head = fits.getheader(final_image)
-
-        if head['cunit1'] == 'deg':
-            dx = np.abs(head['cdelt1'] * 60.)
-        elif head['cunit1'] == 'asec':
-            dx = np.abs(head['cdelt1'] / 60.)
-        else:
-            logging.warning(head['cunit1'] + ' not recognized as "deg" or "asec". Model could be wrong.')
-            print(head['cunit1'] + ' not recognized as "deg" or "asec". Model could be wrong.')
-        if head['cunit2'] == 'deg':
-            dy = np.abs(head['cdelt2'] * 60.)
-        elif head['cunit2'] == 'asec':
-            dx = np.abs(head['cdelt2'] / 60.)
-        else:
-            logging.warning(head['cunit2'] + ' not recognized as "deg" or asec. Model could be wrong.')
-            print(head['cunit2'] + ' not recognized as "deg" or "asec". Model could be wrong.')
-        src_area_xpix = src_area / dx
-        src_area_ypix = src_area / dy
-        scaling_factor = []
-        for s in srcs:
-            src_x = s['xpix']
-            src_y = s['ypix']
-            bbox = [[src_y - src_area_ypix // 2, src_y + src_area_ypix // 2],
-                    [src_x - src_area_xpix // 2, src_x + src_area_xpix // 2]]
-
-            if os.path.isfile('calibrator-model.fits') == False:
-                model_flux = get_point_flux(modelcl,
-                                            s)  ### if wsclean failed, then Component List was generated in gen_model_cl
+        
+        
+        mean_factor=[]
+        pol_prefix=[]
+        for pola in ['I','XX','YY']:
+            if pol=='I' and pola=='I':
+                prefix=''
+            elif pola=='XX' and pol!='I':
+                prefix='-XX'
+            elif pola=='YY' and pol!='I':
+                prefix='-YY'
             else:
-                model_flux = imstat(imagename='calibrator-model.fits', box=str(src_x - src_area_xpix // 2) + "," + \
-                                                                           str(src_y - src_area_ypix // 2) + "," + \
-                                                                           str(src_x + src_area_xpix // 2) + "," + \
-                                                                           str(src_y + src_area_ypix // 2))['flux'][0]
-            if model_flux < 0:
-                logging.warning('Model flux is negative. Picking flux from point source model')
-                model_flux = get_point_flux(modelcl,
-                                            s)  ### if model had negative, then Component List was generated in gen_model_cl
-            logging.info('Model flux of ' + s['label'] + ' is  ' + str(model_flux))
-            image_flux = imstat(imagename=final_image, box=str(src_x - src_area_xpix // 2) + "," + \
-                                                           str(src_y - src_area_ypix // 2) + "," + \
-                                                           str(src_x + src_area_xpix // 2) + "," + \
-                                                           str(src_y + src_area_ypix // 2))['flux'][0]
-            logging.info('Model flux of ' + s['label'] + ' is  ' + str(image_flux))
-            # print (image_flux)
-            print(s['label'], image_flux, model_flux)
-            if (model_flux > 0 and image_flux > 0):
-                scaling_factor.append(model_flux / image_flux)
-                logging.info('Scaling factor obtained from ' + s['label'] + ' is ' + str(scaling_factor[-1]))
+                continue
+            final_image = msfile[:-3] + "_self" + str(num_image - 1) + prefix+"-image.fits"
+        
+            srcs = get_nonsolar_sources_loc_pix(msfile, final_image, min_beam_val=min_beam_val)
+            head = fits.getheader(final_image)
+
+            if head['cunit1'] == 'deg':
+                dx = np.abs(head['cdelt1'] * 60.)
+            elif head['cunit1'] == 'asec':
+                dx = np.abs(head['cdelt1'] / 60.)
             else:
-                logging.warning('Scaling factor is not calculated for ' + s[
-                    'label'] + ' as either/both model and image flux is negative')
-        if len(scaling_factor) > 0:
-            mean_factor = np.mean(np.array(scaling_factor))
-            print(scaling_factor)
-            print(mean_factor)
-            logging.info('Scaling factor is ' + str(mean_factor))
+                logging.warning(head['cunit1'] + ' not recognized as "deg" or "asec". Model could be wrong.')
+                print(head['cunit1'] + ' not recognized as "deg" or "asec". Model could be wrong.')
+            if head['cunit2'] == 'deg':
+                dy = np.abs(head['cdelt2'] * 60.)
+            elif head['cunit2'] == 'asec':
+                dx = np.abs(head['cdelt2'] / 60.)
+            else:
+                logging.warning(head['cunit2'] + ' not recognized as "deg" or asec. Model could be wrong.')
+                print(head['cunit2'] + ' not recognized as "deg" or "asec". Model could be wrong.')
+            src_area_xpix = src_area / dx
+            src_area_ypix = src_area / dy
+            scaling_factor = []
+            for s in srcs:
+                src_x = s['xpix']
+                src_y = s['ypix']
+                bbox = [[src_y - src_area_ypix // 2, src_y + src_area_ypix // 2],
+                        [src_x - src_area_xpix // 2, src_x + src_area_xpix // 2]]
 
-            logging.debug("Generating caltable for fluxscaling. Filename is " + msfile[:-3] + "." + caltable_suffix)
-            caltable = msfile[:-3] + "." + caltable_suffix
-            gencal(vis=msfile, caltable=caltable, caltype='amp', parameter=np.sqrt(1. / mean_factor))
+                if os.path.isfile('calibrator'+prefix+'-model.fits') == False:
+                    model_flux = get_point_flux(modelcl,
+                                                s)  ### if wsclean failed, then Component List was generated in gen_model_cl
+                else:
+        
+                    model_flux = imstat(imagename='calibrator'+prefix+'-model.fits', box=str(src_x - src_area_xpix // 2) + "," + \
+                                                                               str(src_y - src_area_ypix // 2) + "," + \
+                                                                               str(src_x + src_area_xpix // 2) + "," + \
+                                                                               str(src_y + src_area_ypix // 2))['flux'][0]
+                if model_flux < 0:
+                    logging.warning('Model flux is negative. Picking flux from point source model')
+                    model_flux = get_point_flux(modelcl,
+                                                s)  ### if model had negative, then Component List was generated in gen_model_cl
+                logging.info('Model flux of ' + s['label'] + ' is  ' + str(model_flux))
+                image_flux = imstat(imagename=final_image, box=str(src_x - src_area_xpix // 2) + "," + \
+                                                               str(src_y - src_area_ypix // 2) + "," + \
+                                                               str(src_x + src_area_xpix // 2) + "," + \
+                                                               str(src_y + src_area_ypix // 2))['flux'][0]
+                logging.info('Model flux of ' + s['label'] + ' is  ' + str(image_flux))
+                # print (image_flux)
+                print(s['label'], image_flux, model_flux)
+                if (model_flux > 0 and image_flux > 0):
+                    scaling_factor.append(model_flux / image_flux)
+                    logging.info('Scaling factor obtained from ' + s['label'] + ' is ' + str(scaling_factor[-1]))
+                else:
+                    logging.warning('Scaling factor is not calculated for ' + s[
+                        'label'] + ' as either/both model and image flux is negative')
+            if len(scaling_factor) > 0:
+                mean_factor.append(np.mean(np.array(scaling_factor)))
+                print(scaling_factor)
+                print(mean_factor)
+                if prefix=='-XX':
+                    pol_prefix.append('X')
+                elif prefix=='-YY':
+                    pol_prefix.append('Y')
+                else:
+                    pol_prefix.append('')
+                logging.info('Scaling factor is for '+prefix+":" + str(mean_factor))
 
-            os.system("cp -r " + caltable + " caltables/")
+        logging.debug("Generating caltable for fluxscaling. Filename is " + msfile[:-3] + "." + caltable_suffix)
+        caltable = msfile[:-3] + "." + caltable_suffix
+        pol=','.join(pol_prefix)
+        
+        gencal(vis=msfile, caltable=caltable, caltype='amp', parameter=np.sqrt(1. / np.array(mean_factor) ),pol=pol)
+
+        os.system("cp -r " + caltable + " caltables/")
     elif success == True:
         caltable = glob.glob("caltables/" + di_selfcal_str + "*.fluxscale")[0]
         logging.info("Applying {0:s} for doing fluxscaling".format(caltable))
@@ -1219,25 +1041,37 @@ def correct_flux_scaling(msfile, src_area=100, min_beam_val=0.1, caltable_suffix
     return
 
 
-def correct_primary_beam(msfile, imagename):
+def correct_primary_beam(msfile, imagename,pol='I'):
     m = get_sun_pos(msfile, str_output=False)
     logging.debug('Solar ra: ' + str(m['m0']['value']))
     logging.debug('Solar dec: ' + str(m['m1']['value']))
     d = me.measure(m, 'AZEL')
     logging.debug('Solar azimuth: ' + str(d['m0']['value']))
     logging.debug('Solar elevation: ' + str(d['m1']['value']))
-    elev = d['m1']['value']
-    az=d['m0']['value']
-    scale = beam.calc_beam(az,el,avg_freq)
-    logging.info('The Stokes I beam correction factor is ' + str(round(scale, 4)))
-    hdu = fits.open(imagename, mode='update')
-    hdu[0].data /= scale
-    hdu.flush()
-    hdu.close()
+    elev = d['m1']['value']*180/np.pi
+    az=d['m0']['value']*180/np.pi
+    pb=beam(msfile=msfile)
+    jones_matrix=pb.srcIQUV(az=az,el=elev)
+    
+    if pol=='I':
+        scale=primary_beam.primary_beam_correction_val('I',jones_matrix)
+        logging.info('The Stokes I beam correction factor is ' + str(round(scale, 4)))
+        hdu = fits.open(imagename+ "-image.fits", mode='update')
+        hdu[0].data /= scale
+        hdu.flush()
+        hdu.close()
+    elif pol=='XX,YY':
+        for n,pola in enumerate(['XX','YY']):
+            scale=primary_beam.primary_beam_correction_val(pola,jones_matrix)
+            logging.info('The Stokes '+pola+' beam correction factor is ' + str(round(scale, 4)))
+            hdu = fits.open(imagename+ "-"+pola+"-image.fits", mode='update')
+            hdu[0].data /= scale
+            hdu.flush()
+            hdu.close()
     return
 
 
-def do_bandpass_correction(solar_ms, calib_ms=None, bcal=None, caltable_fold='caltables', logging_level='info'):
+def do_bandpass_correction(solar_ms, calib_ms=None, bcal=None, caltable_fold='caltables', logging_level='info',pol='I'):
     solar_ms1 = solar_ms[:-3] + "_calibrated.ms"
     if os.path.isdir(solar_ms1):
         return solar_ms1
@@ -1249,7 +1083,7 @@ def do_bandpass_correction(solar_ms, calib_ms=None, bcal=None, caltable_fold='ca
             flagdata(vis=calib_ms, mode='clip', clipzeros=True)
             logging.debug('Flagging antennas before calibration.')
             flag_bad_ants(calib_ms)
-            bcal = gen_calibration(calib_ms, logging_level=logging_level, caltable_fold=caltable_fold)
+            bcal = gen_calibration(calib_ms, logging_level=logging_level, caltable_fold=caltable_fold,pol=pol)
             logging.info('Bandpass calibration table generated using ' + calib_ms)
         else:
             print('Neither calib_ms nor bcal exists. Need to provide calibrations to continue. Abort..')
@@ -1263,7 +1097,7 @@ def do_bandpass_correction(solar_ms, calib_ms=None, bcal=None, caltable_fold='ca
     return solar_ms
 
 
-def do_fresh_selfcal(solar_ms, num_phase_cal=3, num_apcal=5, logging_level='info'):
+def do_fresh_selfcal(solar_ms, num_phase_cal=3, num_apcal=5, logging_level='info',pol='I'):
     """
     Do fresh self-calibration if no self-calibration tables are found
     :param solar_ms: input solar visibility
@@ -1273,16 +1107,17 @@ def do_fresh_selfcal(solar_ms, num_phase_cal=3, num_apcal=5, logging_level='info
     :return: N/A
     """
     logging.info('Starting to do direction independent Stokes I selfcal')
-    success = do_selfcal(solar_ms, num_phase_cal=num_phase_cal, num_apcal=num_apcal, logging_level=logging_level)
+    success = do_selfcal(solar_ms, num_phase_cal=num_phase_cal, num_apcal=num_apcal, logging_level=logging_level,pol=pol)
     if not success:
+#TODO Understand why this step is needed
         logging.info('Starting fresh selfcal as DR decreased significantly')
         clearcal(solar_ms)
-        success = do_selfcal(solar_ms, num_phase_cal=num_phase_cal, num_apcal=num_apcal, logging_level=logging_level)
+        success = do_selfcal(solar_ms, num_phase_cal=num_phase_cal, num_apcal=num_apcal, logging_level=logging_level,pol=pol)
     return
 
 
 def DI_selfcal(solar_ms, solint_full_selfcal=14400, solint_partial_selfcal=3600,
-               full_di_selfcal_rounds=[3, 5], partial_di_selfcal_rounds=[1, 1], logging_level='info'):
+               full_di_selfcal_rounds=[1,1], partial_di_selfcal_rounds=[1, 1], logging_level='info',pol='I'):
     """
     Directional-independent self-calibration (full sky)
     :param solar_ms: input solar visibility
@@ -1299,7 +1134,7 @@ def DI_selfcal(solar_ms, solint_full_selfcal=14400, solint_partial_selfcal=3600,
     solar_ms1 = solar_ms[:-3] + "_selfcalibrated.ms"
     if os.path.isdir(solar_ms1) == True:
         return solar_ms1
-
+    
     sep = 100000000
     prior_selfcal = False
     caltables = []
@@ -1344,7 +1179,7 @@ def DI_selfcal(solar_ms, solint_full_selfcal=14400, solint_partial_selfcal=3600,
                     logging.info(
                         'Starting to do direction independent Stokes I selfcal after applying ' + di_selfcal_time_str)
                     success = do_selfcal(solar_ms, num_phase_cal=0,
-                                         num_apcal=partial_di_selfcal_rounds[1], logging_level=logging_level)
+                                         num_apcal=partial_di_selfcal_rounds[1], logging_level=logging_level,pol=pol)
                     datacolumn = 'corrected'
 
                 else:
@@ -1353,31 +1188,31 @@ def DI_selfcal(solar_ms, solint_full_selfcal=14400, solint_partial_selfcal=3600,
                     logging.info(
                         'Starting to do direction independent Stokes I selfcal after applying ' + di_selfcal_time_str)
                     success = do_selfcal(solar_ms, num_phase_cal=0,
-                                         num_apcal=full_di_selfcal_rounds[1], logging_level=logging_level)
+                                         num_apcal=full_di_selfcal_rounds[1], logging_level=logging_level,pol=pol)
                     datacolumn = 'corrected'
                     if success == False:
                         clearcal(solar_ms)
-                        success = do_selfcal(solar_ms, logging_level=logging_level)
+                        success = do_selfcal(solar_ms, logging_level=logging_level,pol=pol)
             else:
                 success = utils.put_keyword(solar_ms, 'di_selfcal_time', mstime_str, return_status=True)
                 logging.info(
                     'Starting to do direction independent Stokes I selfcal as I failed to retrieve the keyword for DI selfcal')
                 do_fresh_selfcal(solar_ms, num_phase_cal=full_di_selfcal_rounds[0],
-                                 num_apcal=full_di_selfcal_rounds[1], logging_level=logging_level)
+                                 num_apcal=full_di_selfcal_rounds[1], logging_level=logging_level,pol=pol)
         else:
             success = utils.put_keyword(solar_ms, 'di_selfcal_time', mstime_str, return_status=True)
             logging.info(
                 'Starting to do direction independent Stokes I selfcal as mysteriously I did not find a suitable caltable')
             do_fresh_selfcal(solar_ms, num_phase_cal=full_di_selfcal_rounds[0],
-                             num_apcal=full_di_selfcal_rounds[1], logging_level=logging_level)
+                             num_apcal=full_di_selfcal_rounds[1], logging_level=logging_level,pol=pol)
     else:
         success = utils.put_keyword(solar_ms, 'di_selfcal_time', mstime_str, return_status=True)
         logging.info('Starting to do direction independent Stokes I selfcal')
         do_fresh_selfcal(solar_ms, num_phase_cal=full_di_selfcal_rounds[0],
-                         num_apcal=full_di_selfcal_rounds[1], logging_level=logging_level)
-
+                         num_apcal=full_di_selfcal_rounds[1], logging_level=logging_level,pol=pol)
+    
     logging.info('Doing a flux scaling using background strong sources')
-    correct_flux_scaling(solar_ms, min_beam_val=0.1)
+    correct_flux_scaling(solar_ms, min_beam_val=0.1,pol=pol)
 
     logging.info('Splitted the selfcalibrated MS into a file named ' + solar_ms[:-3] + "_selfcalibrated.ms")
 
@@ -1388,7 +1223,7 @@ def DI_selfcal(solar_ms, solint_full_selfcal=14400, solint_partial_selfcal=3600,
 
 def DD_selfcal(solar_ms, solint_full_selfcal=1800, solint_partial_selfcal=600,
                full_dd_selfcal_rounds=[3, 5], partial_dd_selfcal_rounds=[1, 1],
-               logging_level='info'):
+               logging_level='info',pol='I'):
     """
     Directional-dependent self-calibration on the Sun only
     :param solar_ms: input solar visibility
@@ -1439,7 +1274,7 @@ def DD_selfcal(solar_ms, solint_full_selfcal=1800, solint_partial_selfcal=600,
                     'Starting to do direction dependent Stokes I selfcal after applying ' + dd_selfcal_time_str)
                 success = do_selfcal(solar_ms, num_phase_cal=partial_dd_selfcal_rounds[0],
                                      num_apcal=partial_dd_selfcal_rounds[1], applymode='calonly',
-                                     logging_level=logging_level, ms_keyword='dd_selfcal_time')
+                                     logging_level=logging_level, ms_keyword='dd_selfcal_time',pol=pol)
                 datacolumn = 'corrected'
 
 
@@ -1449,7 +1284,7 @@ def DD_selfcal(solar_ms, solint_full_selfcal=1800, solint_partial_selfcal=600,
                     'Starting to do direction dependent Stokes I selfcal after applying ' + dd_selfcal_time_str)
                 success = do_selfcal(solar_ms, num_phase_cal=full_dd_selfcal_rounds[0],
                                      num_apcal=full_dd_selfcal_rounds[1], applymode='calonly',
-                                     logging_level=logging_level, ms_keyword='dd_selfcal_time')
+                                     logging_level=logging_level, ms_keyword='dd_selfcal_time',pol=pol)
                 datacolumn = 'corrected'
         else:
             success = utils.put_keyword(solar_ms, 'dd_selfcal_time', mstime_str, return_status=True)
@@ -1457,7 +1292,7 @@ def DD_selfcal(solar_ms, solint_full_selfcal=1800, solint_partial_selfcal=600,
                 'Starting to do direction dependent Stokes I selfcal as I failed to retrieve the keyword for DD selfcal')
             success = do_selfcal(solar_ms, num_phase_cal=full_dd_selfcal_rounds[0],
                                  num_apcal=full_dd_selfcal_rounds[1], applymode='calonly',
-                                 logging_level=logging_level, ms_keyword='dd_selfcal_time')
+                                 logging_level=logging_level, ms_keyword='dd_selfcal_time',pol=pol)
 
 
 
@@ -1466,7 +1301,7 @@ def DD_selfcal(solar_ms, solint_full_selfcal=1800, solint_partial_selfcal=600,
         logging.info('Starting to do direction dependent Stokes I selfcal')
         success = do_selfcal(solar_ms, num_phase_cal=full_dd_selfcal_rounds[0], num_apcal=full_dd_selfcal_rounds[1],
                              applymode='calonly', logging_level=logging_level,
-                             ms_keyword='dd_selfcal_time')
+                             ms_keyword='dd_selfcal_time',pol=pol)
 
     logging.info('Splitted the selfcalibrated MS into a file named ' + solar_ms[:-3] + "_sun_selfcalibrated.ms")
 
@@ -1477,8 +1312,8 @@ def DD_selfcal(solar_ms, solint_full_selfcal=1800, solint_partial_selfcal=600,
 
 def image_ms(solar_ms, calib_ms=None, bcal=None, selfcal=False, imagename='sun_only',
              imsize=1024, cell='1arcmin', logfile='analysis.log', logging_level='info',
-             caltable_fold='caltables', full_di_selfcal_rounds=[2, 2], partial_di_selfcal_rounds=[0, 1],
-             full_dd_selfcal_rounds=[1, 1], partial_dd_selfcal_rounds=[0, 1], do_final_imaging=True):
+             caltable_fold='caltables', full_di_selfcal_rounds=[4, 8], partial_di_selfcal_rounds=[0, 1],
+             full_dd_selfcal_rounds=[2, 1], partial_dd_selfcal_rounds=[0, 1], do_final_imaging=True,pol='I'):
     """
     Pipeline to calibrate and imaging a solar visibility
     :param solar_ms: input solar measurement set
@@ -1499,25 +1334,25 @@ def image_ms(solar_ms, calib_ms=None, bcal=None, selfcal=False, imagename='sun_o
     if os.path.isfile(imagename + "-image.fits"):
         return
 
-    solar_ms = do_bandpass_correction(solar_ms, calib_ms=calib_ms, bcal=bcal, caltable_fold=caltable_fold)
+    solar_ms = do_bandpass_correction(solar_ms, calib_ms=calib_ms, bcal=bcal, caltable_fold=caltable_fold,pol=pol)
 
     logging.info('Analysing ' + solar_ms)
     if selfcal:
         outms_di = DI_selfcal(solar_ms, logging_level=logging_level, full_di_selfcal_rounds=full_di_selfcal_rounds,
-                              partial_di_selfcal_rounds=partial_di_selfcal_rounds)
+                              partial_di_selfcal_rounds=partial_di_selfcal_rounds,pol=pol)
         logging.info('Removing the strong sources in the sky')
-        outms_di_ = remove_nonsolar_sources(outms_di)
+        outms_di_ = remove_nonsolar_sources(outms_di,pol=pol)
         logging.info('The strong source subtracted MS is ' + outms_di_)
         logging.info('Starting to do Stokes I selfcal towards direction of sun')
         outms_dd = DD_selfcal(outms_di_, logging_level=logging_level, full_dd_selfcal_rounds=full_dd_selfcal_rounds,
-                              partial_dd_selfcal_rounds=partial_dd_selfcal_rounds)
+                              partial_dd_selfcal_rounds=partial_dd_selfcal_rounds,pol=pol)
         logging.info('Removing almost all sources in the sky except Sun')
         outms = remove_nonsolar_sources(outms_dd, imagename='for_weak_source_subtraction',
-                                        remove_strong_sources_only=False)
+                                        remove_strong_sources_only=False,pol=pol)
         logging.info('The source subtracted MS is ' + outms)
     else:
         logging.info('Removing almost all sources in the sky except Sun')
-        outms = remove_nonsolar_sources(solar_ms)
+        outms = remove_nonsolar_sources(solar_ms,pol=pol)
         logging.info('The source subtracted MS is ' + outms)
 
     logging.info('Changing the phasecenter to position of Sun')
@@ -1525,9 +1360,9 @@ def image_ms(solar_ms, calib_ms=None, bcal=None, selfcal=False, imagename='sun_o
 
     if do_final_imaging:
         logging.info('Generating final solar centered image')
-        run_wsclean(outms, imagename=imagename, automask_thresh=5, uvrange='0', predict=False, imsize=imsize, cell=cell)
+        run_wsclean(outms, imagename=imagename, automask_thresh=5, uvrange='0', predict=False, imsize=imsize, cell=cell,pol=pol)
         logging.info('Correcting for the primary beam at the location of Sun')
-        correct_primary_beam(outms, imagename + "-image.fits")
+        correct_primary_beam(outms, imagename,pol=pol)
         # make_solar_image(outms, imagename=imagename, imsize=imsize, cell=cell)
         helio_image = utils.convert_to_heliocentric_coords(outms, imagename+"-image.fits")
         logging.info('Imaging completed for ' + solar_ms)
@@ -1540,7 +1375,7 @@ def solar_pipeline(time_duration, calib_time_duration, freqstr, filepath, time_i
                    observation_integration=8,
                    calib_ms=None, bcal=None, selfcal=False, imagename='sun_only',
                    imsize=512, cell='1arcmin', logfile='analysis.log', logging_level='info',
-                   caltable_fold='caltables'):
+                   caltable_fold='caltables',pol='I'):
     if logging_level == 'info' or logging_level == 'INFO':
         logging.basicConfig(filename=logfile, level=logging.INFO)
     elif logging_level == 'warning' or logging_level == 'WARNING':
@@ -1585,14 +1420,14 @@ def solar_pipeline(time_duration, calib_time_duration, freqstr, filepath, time_i
             bcal = calib_file[0]
         imagename = "sun_only_" + filename[:-3]
         outms, helio_image = image_ms(filename, calib_ms=calib_filename, bcal=bcal, selfcal=True,
-                                    imagename=imagename, do_final_imaging=True)
+                                    imagename=imagename, do_final_imaging=True,pol=pol)
         filename = fp.get_current_file_for_selfcal(freqstr[0])
 
     filename = fp.get_current_file_for_selfcal(freqstr[0])
     while filename is not None:
         imagename = "sun_only_" + filename[:-3]
         outms, helio_image = image_ms(filename, calib_ms=calib_ms, bcal=bcal, selfcal=True,
-                                    imagename=imagename, do_final_imaging=True)
+                                    imagename=imagename, do_final_imaging=True,pol=pol)
         filename = fp.get_current_file_for_imaging(freqstr[0])
 
 
