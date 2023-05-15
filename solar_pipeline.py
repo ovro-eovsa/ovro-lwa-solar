@@ -219,7 +219,7 @@ def gen_model_file(visibility, filename='calibrator_source_list.txt', min_beam_v
     return
 
 
-def point_source_model(msfile, ref_freq=80.0, output_freq=47.0,
+def point_source_model(msfile, ref_freq=80.0, output_freq=None,
                        includesun=False, solar_flux=16000, solar_alpha=2.2,
                        modelcl=None, verbose=True, overwrite=True, min_beam_val=0.01):
     srcs = [{'label': 'CasA', 'flux': '16530', 'alpha': -0.72,
@@ -243,10 +243,11 @@ def point_source_model(msfile, ref_freq=80.0, output_freq=47.0,
     me.doframe(ovro)
     me.doframe(time)
     
-    msmd.open(msfile)
-    chan_freqs = msmd.chanfreqs(0)
-    msmd.done()
-    avg_freq = 0.5 * (chan_freqs[0] + chan_freqs[-1]) * 1e-6
+    if not output_freq: 
+        msmd.open(msfile)
+        output_freq=msmd.meanfreq(0) * 1e-6
+        msmd.done()
+    
 
     for s in range(len(srcs) - 1, -1, -1):
         coord = srcs[s]['position'].split()
@@ -268,7 +269,7 @@ def point_source_model(msfile, ref_freq=80.0, output_freq=47.0,
         else:
             print('scale {0:.3f}'.format(scale))
             srcs[s]['flux'] = flux80_47(float(srcs[s]['flux']), srcs[s]['alpha'],
-                                        ref_freq=ref_freq, output_freq=avg_freq) * scale
+                                        ref_freq=ref_freq, output_freq=output_freq) * scale
 
     cl.done()
 
