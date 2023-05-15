@@ -280,11 +280,11 @@ def point_source_model(msfile, ref_freq=80.0, output_freq=None,
                         spectrumtype='spectral index', freq='{0:f}MHz'.format(output_freq), label=s['label'])
         if verbose:
             print(
-                "cl.addcomponent(flux=%s, dir='%s', index=%s, spectrumtype='spectral index', freq='47MHz', label='%s')" % (
-                    s['flux'], s['position'], s['alpha'], s['label']))
+                "cl.addcomponent(flux=%s, dir='%s', index=%s, spectrumtype='spectral index', freq=%s, label='%s')" % (
+                    s['flux'], s['position'], s['alpha'], output_freq, s['label']))
             logging.debug(
-                "cl.addcomponent(flux=%s, dir='%s', index=%s, spectrumtype='spectral index', freq='47MHz', label='%s')" % (
-                    s['flux'], s['position'], s['alpha'], s['label']))
+                "cl.addcomponent(flux=%s, dir='%s', index=%s, spectrumtype='spectral index', freq=%s, label='%s')" % (
+                    s['flux'], s['position'], s['alpha'],output_freq, s['label']))
     if os.path.exists(modelcl) and overwrite:
         os.system('rm -rf ' + modelcl)
     cl.rename(modelcl)
