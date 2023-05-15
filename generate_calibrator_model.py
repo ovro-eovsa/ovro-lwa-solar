@@ -34,7 +34,7 @@ class model_generation():
         self.num_pol=len(self.polarisations)
         self.filename=filename
         self.ref_freq=80.0
-        self.output_freq=47.0
+        self.output_freq=None
         self.includesun=False
         self.solar_flux=16000
         self.solar_alpha=2.2
@@ -210,10 +210,10 @@ class model_generation():
 
     def ctrl_freq(self):
         msmd=msmetadata()
-        msmd.open(self.vis)
-        chan_freqs = msmd.chanfreqs(0)
+        self.avg_freq=msmd.meanfreq(0)*1e-6
         msmd.done()
-        self.avg_freq = 0.5 * (chan_freqs[0] + chan_freqs[-1]) * 1e-6
+        if not self.output_freq:
+        	self.output_freq=self.avg_freq
         
 
 

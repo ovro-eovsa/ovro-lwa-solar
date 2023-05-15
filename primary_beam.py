@@ -39,9 +39,8 @@ class woody_beam():
     def ctrl_freq(self):
         msmd=msmetadata()
         msmd.open(self.msfile)
-        chan_freqs = msmd.chanfreqs(0)
+        self.freq = msmd.meanfreq(0)*1e-6
         msmd.done()
-        self.freq = 0.5 * (chan_freqs[0] + chan_freqs[-1]) * 1e-6
         
     def get_beam_file(self):
         all_beam_files=glob.glob(self.beam_file_path+'/beamIQUV_*.npz')
