@@ -171,6 +171,7 @@ def convert_to_heliocentric_coords(msname, imagename, helio_imagename=None, reft
         msmd.close()
         reftime = btime+'~'+etime
     print('Use this reference time for registration: ', reftime)
+    logging.debug('Use this reference time for registration: ', reftime)
     temp_image = imagename + ".tmp"
     if helio_imagename is None:
         helio_imagename = imagename.replace('.fits', '.helio.fits')

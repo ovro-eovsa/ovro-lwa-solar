@@ -219,7 +219,7 @@ def gen_model_file(visibility, filename='calibrator_source_list.txt', min_beam_v
     return
 
 
-def point_source_model(msfile, ref_freq=80.0, output_freq=47.0,
+def point_source_model(msfile, ref_freq=80.0, output_freq=None,
                        includesun=False, solar_flux=16000, solar_alpha=2.2,
                        modelcl=None, verbose=True, overwrite=True, min_beam_val=0.01):
     srcs = [{'label': 'CasA', 'flux': '16530', 'alpha': -0.72,
@@ -242,6 +242,12 @@ def point_source_model(msfile, ref_freq=80.0, output_freq=47.0,
     time = me.epoch('UTC', '%fs' % t0)
     me.doframe(ovro)
     me.doframe(time)
+    
+    if not output_freq: 
+        msmd.open(msfile)
+        output_freq=msmd.meanfreq(0) * 1e-6
+        msmd.done()
+    
 
     for s in range(len(srcs) - 1, -1, -1):
         coord = srcs[s]['position'].split()
@@ -274,11 +280,11 @@ def point_source_model(msfile, ref_freq=80.0, output_freq=47.0,
                         spectrumtype='spectral index', freq='{0:f}MHz'.format(output_freq), label=s['label'])
         if verbose:
             print(
-                "cl.addcomponent(flux=%s, dir='%s', index=%s, spectrumtype='spectral index', freq='47MHz', label='%s')" % (
-                    s['flux'], s['position'], s['alpha'], s['label']))
+                "cl.addcomponent(flux=%s, dir='%s', index=%s, spectrumtype='spectral index', freq=%s, label='%s')" % (
+                    s['flux'], s['position'], s['alpha'], output_freq, s['label']))
             logging.debug(
-                "cl.addcomponent(flux=%s, dir='%s', index=%s, spectrumtype='spectral index', freq='47MHz', label='%s')" % (
-                    s['flux'], s['position'], s['alpha'], s['label']))
+                "cl.addcomponent(flux=%s, dir='%s', index=%s, spectrumtype='spectral index', freq=%s, label='%s')" % (
+                    s['flux'], s['position'], s['alpha'],output_freq, s['label']))
     if os.path.exists(modelcl) and overwrite:
         os.system('rm -rf ' + modelcl)
     cl.rename(modelcl)
@@ -1610,9 +1616,9 @@ def apply_solutions_and_image(msname, bcal, imagename):
         flagdata(vis=solar_ms, mode='rflag', datacolumn='corrected')
         split(vis=solar_ms, outputvis=solar_ms[:-3] + "_sun_selfcalibrated.ms")
     else:
-        split(vis=solar_ms, outputvis=solar_ms[:-3] + "_sun_selfcalibrated.ms", datacolumn='data')
+        split(vis = solar_ms, outputvis=solar_ms[:-3]+"_sun_selfcalibrated.ms",datacolumn='data')
     outms = solar_ms[:-3] + "_sun_selfcalibrated.ms"
-    outms = remove_nonsolar_sources(outms, imagename='for_weak_source_subtraction', remove_strong_sources_only=False)
+    outms = remove_nonsolar_sources(outms,imagename='for_weak_source_subtraction',remove_strong_sources_only=False)
     change_phasecenter(outms)
     run_wsclean(outms, imagename=imagename, automask_thresh=5, uvrange='0', predict=False, imsize=1024, cell='1arcmin')
     correct_primary_beam(outms, imagename + "-image.fits")
