@@ -242,6 +242,11 @@ def point_source_model(msfile, ref_freq=80.0, output_freq=47.0,
     time = me.epoch('UTC', '%fs' % t0)
     me.doframe(ovro)
     me.doframe(time)
+    
+    msmd.open(msfile)
+    chan_freqs = msmd.chanfreqs(0)
+    msmd.done()
+    avg_freq = 0.5 * (chan_freqs[0] + chan_freqs[-1]) * 1e-6
 
     for s in range(len(srcs) - 1, -1, -1):
         coord = srcs[s]['position'].split()
@@ -263,7 +268,7 @@ def point_source_model(msfile, ref_freq=80.0, output_freq=47.0,
         else:
             print('scale {0:.3f}'.format(scale))
             srcs[s]['flux'] = flux80_47(float(srcs[s]['flux']), srcs[s]['alpha'],
-                                        ref_freq=ref_freq, output_freq=output_freq) * scale
+                                        ref_freq=ref_freq, output_freq=avg_freq) * scale
 
     cl.done()
 
