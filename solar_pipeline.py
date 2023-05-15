@@ -906,9 +906,9 @@ def get_point_flux(modelcl, src,pol=''):
             if pol=='':
             	return abs(np.real(flux[0, i]))
             elif pol=='-XX':
-                return 0.5*(np.real(flux[0, i])+np.real(flux[1, i]))  ##X=0.5*(I+Q)
+                return (np.real(flux[0, i])+np.real(flux[1, i]))  ##X=(I+Q)
             elif pol=='-YY':
-                return 0.5*(np.real(flux[0, i])-np.real(flux[1, i]))  ##X=0.5*(I-Q)
+                return (np.real(flux[0, i])-np.real(flux[1, i]))  ##y=(I-Q)
     logging.warning("There is no matching source in the Component list " + \
                     "corresponding to " + src['label'])
     return -1
