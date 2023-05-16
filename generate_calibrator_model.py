@@ -227,11 +227,11 @@ class model_generation():
         :return: flux caliculated at the output frequency
         """
         if self.polarisations[0]=='I':
-            pb_val=0.5*(jones_matrix[1,1]**2+jones_matrix[0,0]**2)
+            pb_val=primary_beam.primary_beam_correction_val('I',jones_matrix)
             return flux_hi * 10 ** (sp * math.log(self.output_freq / self.ref_freq, 10))*pb_val
         else:
-            xx_pb_val=jones_matrix[0,0]**2
-            yy_pb_val=jones_matrix[1,1]**2
+            xx_pb_val=primary_beam.primary_beam_correction_val('XX',jones_matrix)
+            yy_pb_val=primary_beam.primary_beam_correction_val('YY',jones_matrix)
             flux_val=flux_hi * 10 ** (sp * math.log(self.output_freq / self.ref_freq, 10))
             I_flux=0.5*(xx_pb_val*flux_val+yy_pb_val*flux_val)
             Q_flux=0.5*(xx_pb_val*flux_val-yy_pb_val*flux_val)
