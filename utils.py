@@ -218,9 +218,10 @@ def convert_to_heliocentric_coords(msname, imagename, helio_imagename=None, reft
     try:
         hf.imreg(vis=msname, imagefile=temp_image, timerange=reftime,
                  fitsfile=helio_imagename, usephacenter=True, verbose=True, toTb=True)
+        return helio_imagename 
     except:
         logging.warning("Could not convert to helicentric coordinates")
-        return helio_imagename
+        
     return None
 
 
