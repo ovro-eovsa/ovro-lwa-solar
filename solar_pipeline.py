@@ -1106,6 +1106,69 @@ def get_point_flux(modelcl, src):
     return -1
 
 
+def get_flux_scaling_factor(msfile, imagefile, src_area=100, min_beam_val=0.1):
+    modelcl, ft_needed = gen_model_cl(msfile, predict=False, min_beam_val=min_beam_val)
+    srcs = get_nonsolar_sources_loc_pix(msfile, imagefile, min_beam_val=min_beam_val)
+    head = fits.getheader(imagefile)
+    msmd.open(msfile)
+    ref_freqmhz = msmd.meanfreq(0) * 1e-6
+    msmd.done()
+
+
+    if head['cunit1'] == 'deg':
+        dx = np.abs(head['cdelt1'] * 60.)
+    elif head['cunit1'] == 'asec':
+        dx = np.abs(head['cdelt1'] / 60.)
+    else:
+        logging.warning(head['cunit1'] + ' not recognized as "deg" or "asec". Model could be wrong.')
+        print(head['cunit1'] + ' not recognized as "deg" or "asec". Model could be wrong.')
+    if head['cunit2'] == 'deg':
+        dy = np.abs(head['cdelt2'] * 60.)
+    elif head['cunit2'] == 'asec':
+        dx = np.abs(head['cdelt2'] / 60.)
+    else:
+        logging.warning(head['cunit2'] + ' not recognized as "deg" or asec. Model could be wrong.')
+        print(head['cunit2'] + ' not recognized as "deg" or "asec". Model could be wrong.')
+    src_area_xpix = src_area / dx
+    src_area_ypix = src_area / dy
+    scaling_factor = []
+    srcs_with_scaling = []
+    for s in srcs:
+        src_x = s['xpix']
+        src_y = s['ypix']
+
+        if os.path.isfile('calibrator-model.fits') == False:
+            model_flux = get_point_flux(modelcl,
+                                        s)  ### if wsclean failed, then Component List was generated in gen_model_cl
+        else:
+            model_flux = imstat(imagename='calibrator-model.fits', box=str(src_x - src_area_xpix // 2) + "," +
+                                                                       str(src_y - src_area_ypix // 2) + "," +
+                                                                       str(src_x + src_area_xpix // 2) + "," +
+                                                                       str(src_y + src_area_ypix // 2))['flux'][0]
+        if model_flux < 0:
+            logging.warning('Model flux is negative. Picking flux from point source model')
+            model_flux = get_point_flux(modelcl,
+                                        s)  ### if model had negative, then Component List was generated in gen_model_cl
+        logging.info('Image flux of ' + s['label'] + ' is  ' + str(model_flux))
+        image_flux = imstat(imagename=imagefile, box=str(src_x - src_area_xpix // 2) + "," +
+                                                       str(src_y - src_area_ypix // 2) + "," +
+                                                       str(src_x + src_area_xpix // 2) + "," +
+                                                       str(src_y + src_area_ypix // 2))['flux'][0]
+        logging.info('Image flux of ' + s['label'] + ' is  ' + str(image_flux))
+        print(s['label'], image_flux, model_flux)
+        s['model_flux'] = model_flux
+        s['image_flux'] = image_flux
+        s['ref_freqmhz'] = ref_freqmhz
+        if (model_flux > 0 and image_flux > 0):
+            s['scaling_factor'] = model_flux / image_flux
+            logging.info('Scaling factor obtained from ' + s['label'] + ' is ' + str(s['scaling_factor']))
+        else:
+            logging.warning('Scaling factor is not calculated for ' + s[
+                    'label'] + ' as either/both model and image flux is negative')
+        srcs_with_scaling.append(s)
+    return srcs_with_scaling
+
+
 def correct_flux_scaling(msfile, src_area=100, min_beam_val=0.1, caltable_suffix='fluxscale'):
     import glob
 
@@ -1117,59 +1180,8 @@ def correct_flux_scaling(msfile, src_area=100, min_beam_val=0.1, caltable_suffix
         num_image = len(images)
         final_image = msfile[:-3] + "_self" + str(num_image - 1) + "-image.fits"
         os.system("rm -rf calibrator-model.fits")
-        modelcl, ft_needed = gen_model_cl(msfile, predict=False, min_beam_val=min_beam_val)
-        srcs = get_nonsolar_sources_loc_pix(msfile, final_image, min_beam_val=min_beam_val)
-        head = fits.getheader(final_image)
-
-        if head['cunit1'] == 'deg':
-            dx = np.abs(head['cdelt1'] * 60.)
-        elif head['cunit1'] == 'asec':
-            dx = np.abs(head['cdelt1'] / 60.)
-        else:
-            logging.warning(head['cunit1'] + ' not recognized as "deg" or "asec". Model could be wrong.')
-            print(head['cunit1'] + ' not recognized as "deg" or "asec". Model could be wrong.')
-        if head['cunit2'] == 'deg':
-            dy = np.abs(head['cdelt2'] * 60.)
-        elif head['cunit2'] == 'asec':
-            dx = np.abs(head['cdelt2'] / 60.)
-        else:
-            logging.warning(head['cunit2'] + ' not recognized as "deg" or asec. Model could be wrong.')
-            print(head['cunit2'] + ' not recognized as "deg" or "asec". Model could be wrong.')
-        src_area_xpix = src_area / dx
-        src_area_ypix = src_area / dy
-        scaling_factor = []
-        for s in srcs:
-            src_x = s['xpix']
-            src_y = s['ypix']
-            bbox = [[src_y - src_area_ypix // 2, src_y + src_area_ypix // 2],
-                    [src_x - src_area_xpix // 2, src_x + src_area_xpix // 2]]
-
-            if os.path.isfile('calibrator-model.fits') == False:
-                model_flux = get_point_flux(modelcl,
-                                            s)  ### if wsclean failed, then Component List was generated in gen_model_cl
-            else:
-                model_flux = imstat(imagename='calibrator-model.fits', box=str(src_x - src_area_xpix // 2) + "," + \
-                                                                           str(src_y - src_area_ypix // 2) + "," + \
-                                                                           str(src_x + src_area_xpix // 2) + "," + \
-                                                                           str(src_y + src_area_ypix // 2))['flux'][0]
-            if model_flux < 0:
-                logging.warning('Model flux is negative. Picking flux from point source model')
-                model_flux = get_point_flux(modelcl,
-                                            s)  ### if model had negative, then Component List was generated in gen_model_cl
-            logging.info('Model flux of ' + s['label'] + ' is  ' + str(model_flux))
-            image_flux = imstat(imagename=final_image, box=str(src_x - src_area_xpix // 2) + "," + \
-                                                           str(src_y - src_area_ypix // 2) + "," + \
-                                                           str(src_x + src_area_xpix // 2) + "," + \
-                                                           str(src_y + src_area_ypix // 2))['flux'][0]
-            logging.info('Model flux of ' + s['label'] + ' is  ' + str(image_flux))
-            # print (image_flux)
-            print(s['label'], image_flux, model_flux)
-            if (model_flux > 0 and image_flux > 0):
-                scaling_factor.append(model_flux / image_flux)
-                logging.info('Scaling factor obtained from ' + s['label'] + ' is ' + str(scaling_factor[-1]))
-            else:
-                logging.warning('Scaling factor is not calculated for ' + s[
-                    'label'] + ' as either/both model and image flux is negative')
+        srcs_with_scaling = get_flux_scaling_factor(msfile, final_image)
+        scaling_factor = srcs_with_scaling['scaling_factor']
         if len(scaling_factor) > 0:
             mean_factor = np.mean(np.array(scaling_factor))
             print(scaling_factor)
@@ -1486,8 +1498,8 @@ def image_ms(solar_ms, calib_ms=None, bcal=None, selfcal=False, imagename='sun_o
 
     if not os.path.isdir(caltable_fold):
         os.mkdir(caltable_fold)
-    if os.path.isfile(imagename + "-image.fits"):
-        return
+    #if os.path.isfile(imagename + "-image.fits"):
+    #    return
 
     solar_ms_cal = do_bandpass_correction(solar_ms, calib_ms=calib_ms, bcal=bcal, caltable_fold=caltable_fold)
 
