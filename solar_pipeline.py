@@ -292,6 +292,20 @@ def point_source_model(msfile, ref_freq=80.0, output_freq=None,
     return modelcl, True
 
 
+def correct_for_restoring_beam(image):
+    from casatasks import imhead
+    a=imhead(image)
+    major=a['restoringbeam']['major']['value']
+    minor=a['restoringbeam']['minor']['value']
+    cell=abs(a['incr'][0])*180/3.14159*3600
+    major_pix=major/cell
+    minor_pix=minor/cell
+    area=np.pi*major_pix*minor_pix/(4*np.log(2))
+    hdu=fits.open(image,mode='update')
+    hdu[0].data/=area
+    hdu.flush()
+    hdu.close()
+
 def gen_model_cl(msfile, ref_freq=80.0, output_freq=47.0,
                  includesun=False, solar_flux=16000, solar_alpha=2.2,
                  modelcl=None, verbose=True, overwrite=True, predict=True,
@@ -331,6 +345,7 @@ def gen_model_cl(msfile, ref_freq=80.0, output_freq=47.0,
         if os.path.isfile("calibrator-model.fits") == False:
             logging.warning("Calibrator model not generated. Proceeding with point source model")
             raise RuntimeError("WSClean version 3.3 or above. Proceeding with point source model")
+        correct_for_restoring_beam('calibrator-model.fits')
         logging.info("Model file generated using the clean component list")
         max1, min1 = utils.get_image_maxmin("calibrator-model.fits", local=False)
         if min1 < 0 and (max1 / max(abs(min1), 0.000001)) < 10000:  ### some small negative is tolerable
