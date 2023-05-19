@@ -346,7 +346,7 @@ def gen_model_cl(msfile, ref_freq=80.0, output_freq=47.0,
             logging.warning("Calibrator model not generated. Proceeding with point source model")
             raise RuntimeError("WSClean version 3.3 or above. Proceeding with point source model")
         if model==True:
-        	correct_for_restoring_beam('calibrator-model.fits')
+            correct_for_restoring_beam('calibrator-model.fits')
         logging.info("Model file generated using the clean component list")
         max1, min1 = utils.get_image_maxmin("calibrator-model.fits", local=False)
         if min1 < 0 and (max1 / max(abs(min1), 0.000001)) < 10000:  ### some small negative is tolerable
