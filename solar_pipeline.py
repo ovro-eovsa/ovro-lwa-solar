@@ -700,7 +700,7 @@ def gen_calibration(msfile, modelcl=None, uvrange='', bcaltb=None, logging_level
     return bcaltb
 
 
-def apply_calibration(msfile, gaintable=None, doantflag=False, doflag=False, antflagfile=None, do_solar_imaging=True,
+def apply_calibration(msfile, gaintable=None, doantflag=False, dorflag=False, antflagfile=None, do_solar_imaging=True,
                       imagename='test'):
     if doantflag:
         logging.info("Flagging using auro-correlation")
@@ -714,7 +714,7 @@ def apply_calibration(msfile, gaintable=None, doantflag=False, doflag=False, ant
     # Apply the calibration
     clearcal(msfile)
     applycal(msfile, gaintable=gaintable, flagbackup=True, applymode='calflag')
-    if doflag == True:
+    if dorflag:
         logging.debug("Running rflag on corrected data")
         flagdata(vis=msfile, mode='rflag', datacolumn='corrected')
     sunpos = get_sun_pos(msfile)
@@ -1256,7 +1256,8 @@ def correct_primary_beam(msfile, imagename):
     return
 
 
-def do_bandpass_correction(solar_ms, calib_ms=None, bcal=None, caltable_fold='caltables', logging_level='info'):
+def do_bandpass_correction(solar_ms, calib_ms=None, bcal=None, doantflag=True, dorflag=True,
+                           caltable_fold='caltables', logging_level='info'):
     solar_ms1 = solar_ms[:-3] + "_calibrated.ms"
     if os.path.isdir(solar_ms1):
         return solar_ms1
@@ -1275,7 +1276,7 @@ def do_bandpass_correction(solar_ms, calib_ms=None, bcal=None, caltable_fold='ca
             logging.error('Neither calib_ms nor bcal exists. Need to provide calibrations to continue. Abort..')
     # correct_ms_bug(solar_ms)
 
-    apply_calibration(solar_ms, gaintable=bcal, doantflag=True, doflag=True, do_solar_imaging=False)
+    apply_calibration(solar_ms, gaintable=bcal, doantflag=doantflag, dorflag=dorflag, do_solar_imaging=False)
     solar_ms_cal = solar_ms[:-3] + "_calibrated.ms"
     split(vis=solar_ms, outputvis=solar_ms_cal)
     logging.info('Splitted the input solar MS into a file named ' + solar_ms_cal)
@@ -1621,7 +1622,7 @@ def solar_pipeline(time_duration, calib_time_duration, freqstr, filepath, time_i
 
 def apply_solutions_and_image(msname, bcal, imagename):
     logging.info('Analysing ' + msname)
-    apply_calibration(msname, gaintable=bcal, doantflag=True, doflag=True, do_solar_imaging=False)
+    apply_calibration(msname, gaintable=bcal, doantflag=True, dorflag=True, do_solar_imaging=False)
     split(vis=msname, outputvis=msname[:-3] + "_calibrated.ms")
     msname = msname[:-3] + "_calibrated.ms"
     selfcal_time = utils.get_selfcal_time_to_apply(msname)
