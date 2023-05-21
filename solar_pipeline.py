@@ -220,7 +220,7 @@ def gen_model_file(visibility, filename='calibrator_source_list.txt', min_beam_v
 
 
 def point_source_model(msfile, ref_freq=80.0, output_freq=None,
-                       includesun=False, solar_flux=16000, solar_alpha=2.2,
+                       includesun=False, solar_flux=16000, solar_alpha=2.2, solar_position='',
                        modelcl=None, verbose=True, overwrite=True, min_beam_val=0.01):
     srcs = [{'label': 'CasA', 'flux': '16530', 'alpha': -0.72,
              'position': 'J2000 23h23m24s +58d48m54s'},
@@ -231,8 +231,13 @@ def point_source_model(msfile, ref_freq=80.0, output_freq=None,
             {'label': 'VirA', 'flux': '2400', 'alpha': -0.86,
              'position': 'J2000 12h30m49.42338s +12d23m28.0439s'}]
     if includesun:
-        srcs.append({'label': 'Sun', 'flux': str(solar_flux), 'alpha': solar_alpha,
+        if solar_position=='':
+            srcs.append({'label': 'Sun', 'flux': str(solar_flux), 'alpha': solar_alpha,
                      'position': 'SUN'})
+        else:
+            srcs.append({'label': 'Sun', 'flux': str(solar_flux), 'alpha': solar_alpha,
+                     'position': solar_position})
+            
 
     tb.open(msfile)
     t0 = tb.getcell('TIME', 0)
