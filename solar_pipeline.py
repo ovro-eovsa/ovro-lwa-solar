@@ -220,7 +220,7 @@ def gen_model_file(visibility, filename='calibrator_source_list.txt', min_beam_v
 
 
 def point_source_model(msfile, ref_freq=80.0, output_freq=None,
-                       includesun=False, solar_flux=16000, solar_alpha=2.2,
+                       includesun=False, solar_flux=16000, solar_alpha=2.2, solar_position='',
                        modelcl=None, verbose=True, overwrite=True, min_beam_val=0.01):
     srcs = [{'label': 'CasA', 'flux': '16530', 'alpha': -0.72,
              'position': 'J2000 23h23m24s +58d48m54s'},
@@ -231,8 +231,13 @@ def point_source_model(msfile, ref_freq=80.0, output_freq=None,
             {'label': 'VirA', 'flux': '2400', 'alpha': -0.86,
              'position': 'J2000 12h30m49.42338s +12d23m28.0439s'}]
     if includesun:
-        srcs.append({'label': 'Sun', 'flux': str(solar_flux), 'alpha': solar_alpha,
+        if solar_position=='':
+            srcs.append({'label': 'Sun', 'flux': str(solar_flux), 'alpha': solar_alpha,
                      'position': 'SUN'})
+        else:
+            srcs.append({'label': 'Sun', 'flux': str(solar_flux), 'alpha': solar_alpha,
+                     'position': solar_position})
+            
 
     tb.open(msfile)
     t0 = tb.getcell('TIME', 0)
@@ -309,7 +314,7 @@ def correct_for_restoring_beam(image):
 def gen_model_cl(msfile, ref_freq=80.0, output_freq=47.0,
                  includesun=False, solar_flux=16000, solar_alpha=2.2,
                  modelcl=None, verbose=True, overwrite=True, predict=True,
-                 min_beam_val=0.01):
+                 min_beam_val=0.01,model=True):
     """
     Generate source models for bright sources as CASA clean components
     :param msfile: input visibility
@@ -345,7 +350,8 @@ def gen_model_cl(msfile, ref_freq=80.0, output_freq=47.0,
         if os.path.isfile("calibrator-model.fits") == False:
             logging.warning("Calibrator model not generated. Proceeding with point source model")
             raise RuntimeError("WSClean version 3.3 or above. Proceeding with point source model")
-        correct_for_restoring_beam('calibrator-model.fits')
+        if model==True:
+            correct_for_restoring_beam('calibrator-model.fits')
         logging.info("Model file generated using the clean component list")
         max1, min1 = utils.get_image_maxmin("calibrator-model.fits", local=False)
         if min1 < 0 and (max1 / max(abs(min1), 0.000001)) < 10000:  ### some small negative is tolerable
@@ -1128,7 +1134,8 @@ def get_point_flux(modelcl, src):
 
 
 def get_flux_scaling_factor(msfile, imagefile, src_area=100, min_beam_val=0.1):
-    modelcl, ft_needed = gen_model_cl(msfile, predict=False, min_beam_val=min_beam_val)
+    modelcl, ft_needed = gen_model_cl(msfile, predict=False, min_beam_val=min_beam_val,model=False)  
+    			### here we are using the flux. Hence we set model==False
     srcs = get_nonsolar_sources_loc_pix(msfile, imagefile, min_beam_val=min_beam_val)
     head = fits.getheader(imagefile)
     msmd.open(msfile)
