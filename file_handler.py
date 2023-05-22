@@ -102,7 +102,7 @@ def file_downloader(file_list,path,freq):
           
 class File_Handler:
     def __init__(self,time_duration,freqstr,file_path,start=None,end=None, \
-                    time_integration=8,time_cadence=100,observation_integration=8):  ### time in seconds
+                    time_integration=10,time_cadence=100,observation_integration=10):  ### time in seconds
         self.duration=time_duration
         self.file_path=file_path
         if isinstance(freqstr,list)==True:
@@ -214,7 +214,7 @@ class File_Handler:
                 
                 return file_path
             except:
-                self.current_file_index=0
+                self.current_file_index=-1
                 return None         
         
         
@@ -361,7 +361,7 @@ class File_Handler:
             current_time=Time(f1['time'],format='isot')
             diff=(current_time-prev_time).value*86400
             
-            if diff>=self.time_cadence:
+            if round(diff)>=self.time_cadence:
             
                 current_index,temp=self.get_files_for_integration(sorted_msfiles,j,current_time)
                 filtered.append(temp)

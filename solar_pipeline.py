@@ -1527,9 +1527,11 @@ def image_ms(solar_ms, calib_ms=None, bcal=None, selfcal=False, imagename='sun_o
 
     if not os.path.isdir(caltable_fold):
         os.mkdir(caltable_fold)
+
     if os.path.isfile(imagename + "-image.helio.fits"):
         if not overwrite:
             return None, imagename + "-image.helio.fits"
+
 
     solar_ms_cal = do_bandpass_correction(solar_ms, calib_ms=calib_ms, bcal=bcal, caltable_fold=caltable_fold)
 
