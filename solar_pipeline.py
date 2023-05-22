@@ -1209,7 +1209,7 @@ def correct_flux_scaling(msfile, src_area=100, min_beam_val=0.1, caltable_suffix
         final_image = msfile[:-3] + "_self" + str(num_image - 1) + "-image.fits"
         os.system("rm -rf calibrator-model.fits")
         srcs_with_scaling = get_flux_scaling_factor(msfile, final_image)
-        scaling_factor = srcs_with_scaling['scaling_factor']
+        scaling_factor = [s['scaling_factor'] for s in srcs_with_scaling]
         if len(scaling_factor) > 0:
             mean_factor = np.mean(np.array(scaling_factor))
             print(scaling_factor)
