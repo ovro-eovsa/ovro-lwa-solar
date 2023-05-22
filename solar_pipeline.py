@@ -706,7 +706,7 @@ def gen_calibration(msfile, modelcl=None, uvrange='', bcaltb=None, logging_level
     return bcaltb
 
 
-def apply_calibration(msfile, gaintable=None, doantflag=False, doflag=False, antflagfile=None, do_solar_imaging=True,
+def apply_calibration(msfile, gaintable=None, doantflag=False, dorflag=False, antflagfile=None, do_solar_imaging=True,
                       imagename='test'):
     if doantflag:
         logging.info("Flagging using auro-correlation")
@@ -720,7 +720,7 @@ def apply_calibration(msfile, gaintable=None, doantflag=False, doflag=False, ant
     # Apply the calibration
     clearcal(msfile)
     applycal(msfile, gaintable=gaintable, flagbackup=True, applymode='calflag')
-    if doflag == True:
+    if dorflag:
         logging.debug("Running rflag on corrected data")
         flagdata(vis=msfile, mode='rflag', datacolumn='corrected')
     sunpos = get_sun_pos(msfile)
@@ -1209,7 +1209,7 @@ def correct_flux_scaling(msfile, src_area=100, min_beam_val=0.1, caltable_suffix
         final_image = msfile[:-3] + "_self" + str(num_image - 1) + "-image.fits"
         os.system("rm -rf calibrator-model.fits")
         srcs_with_scaling = get_flux_scaling_factor(msfile, final_image)
-        scaling_factor = srcs_with_scaling['scaling_factor']
+        scaling_factor = [s['scaling_factor'] for s in srcs_with_scaling]
         if len(scaling_factor) > 0:
             mean_factor = np.mean(np.array(scaling_factor))
             print(scaling_factor)
@@ -1263,7 +1263,8 @@ def correct_primary_beam(msfile, imagename):
     return
 
 
-def do_bandpass_correction(solar_ms, calib_ms=None, bcal=None, caltable_fold='caltables', logging_level='info'):
+def do_bandpass_correction(solar_ms, calib_ms=None, bcal=None, doantflag=True, dorflag=True,
+                           caltable_fold='caltables', logging_level='info'):
     solar_ms1 = solar_ms[:-3] + "_calibrated.ms"
     if os.path.isdir(solar_ms1):
         return solar_ms1
@@ -1282,7 +1283,7 @@ def do_bandpass_correction(solar_ms, calib_ms=None, bcal=None, caltable_fold='ca
             logging.error('Neither calib_ms nor bcal exists. Need to provide calibrations to continue. Abort..')
     # correct_ms_bug(solar_ms)
 
-    apply_calibration(solar_ms, gaintable=bcal, doantflag=True, doflag=True, do_solar_imaging=False)
+    apply_calibration(solar_ms, gaintable=bcal, doantflag=doantflag, dorflag=dorflag, do_solar_imaging=False)
     solar_ms_cal = solar_ms[:-3] + "_calibrated.ms"
     split(vis=solar_ms, outputvis=solar_ms_cal)
     logging.info('Splitted the input solar MS into a file named ' + solar_ms_cal)
@@ -1506,7 +1507,7 @@ def DD_selfcal(solar_ms, solint_full_selfcal=1800, solint_partial_selfcal=600,
 def image_ms(solar_ms, calib_ms=None, bcal=None, selfcal=False, imagename='sun_only',
              imsize=1024, cell='1arcmin', logfile='analysis.log', logging_level='info',
              caltable_fold='caltables', full_di_selfcal_rounds=[2, 2], partial_di_selfcal_rounds=[0, 1],
-             full_dd_selfcal_rounds=[1, 1], partial_dd_selfcal_rounds=[0, 1], do_final_imaging=True):
+             full_dd_selfcal_rounds=[1, 1], partial_dd_selfcal_rounds=[0, 1], do_final_imaging=True, overwrite=False):
     """
     Pipeline to calibrate and imaging a solar visibility
     :param solar_ms: input solar measurement set
@@ -1526,8 +1527,11 @@ def image_ms(solar_ms, calib_ms=None, bcal=None, selfcal=False, imagename='sun_o
 
     if not os.path.isdir(caltable_fold):
         os.mkdir(caltable_fold)
-    if os.path.isfile(imagename + "-image.fits"):
-        return
+
+    if os.path.isfile(imagename + "-image.helio.fits"):
+        if not overwrite:
+            return None, imagename + "-image.helio.fits"
+
 
     solar_ms_cal = do_bandpass_correction(solar_ms, calib_ms=calib_ms, bcal=bcal, caltable_fold=caltable_fold)
 
@@ -1563,7 +1567,7 @@ def image_ms(solar_ms, calib_ms=None, bcal=None, selfcal=False, imagename='sun_o
         logging.info('Imaging completed for ' + solar_ms)
         return outms, helio_image
     else:
-        return outms
+        return outms, None
 
 
 def solar_pipeline(time_duration, calib_time_duration, freqstr, filepath, time_integration=8, time_cadence=100,
@@ -1621,14 +1625,14 @@ def solar_pipeline(time_duration, calib_time_duration, freqstr, filepath, time_i
     filename = fp.get_current_file_for_selfcal(freqstr[0])
     while filename is not None:
         imagename = "sun_only_" + filename[:-3]
-        outms, helio_image = image_ms(filename, calib_ms=calib_ms, bcal=bcal, selfcal=True,
+        outms, helio_image = image_ms(filename, calib_ms=calib_filename, bcal=bcal, selfcal=True,
                                     imagename=imagename, do_final_imaging=True)
         filename = fp.get_current_file_for_imaging(freqstr[0])
 
 
 def apply_solutions_and_image(msname, bcal, imagename):
     logging.info('Analysing ' + msname)
-    apply_calibration(msname, gaintable=bcal, doantflag=True, doflag=True, do_solar_imaging=False)
+    apply_calibration(msname, gaintable=bcal, doantflag=True, dorflag=True, do_solar_imaging=False)
     split(vis=msname, outputvis=msname[:-3] + "_calibrated.ms")
     msname = msname[:-3] + "_calibrated.ms"
     selfcal_time = utils.get_selfcal_time_to_apply(msname)
