@@ -1507,7 +1507,7 @@ def DD_selfcal(solar_ms, solint_full_selfcal=1800, solint_partial_selfcal=600,
 def image_ms(solar_ms, calib_ms=None, bcal=None, selfcal=False, imagename='sun_only',
              imsize=1024, cell='1arcmin', logfile='analysis.log', logging_level='info',
              caltable_fold='caltables', full_di_selfcal_rounds=[2, 2], partial_di_selfcal_rounds=[0, 1],
-             full_dd_selfcal_rounds=[1, 1], partial_dd_selfcal_rounds=[0, 1], do_final_imaging=True):
+             full_dd_selfcal_rounds=[1, 1], partial_dd_selfcal_rounds=[0, 1], do_final_imaging=True, overwrite=False):
     """
     Pipeline to calibrate and imaging a solar visibility
     :param solar_ms: input solar measurement set
@@ -1527,8 +1527,9 @@ def image_ms(solar_ms, calib_ms=None, bcal=None, selfcal=False, imagename='sun_o
 
     if not os.path.isdir(caltable_fold):
         os.mkdir(caltable_fold)
-    #if os.path.isfile(imagename + "-image.fits"):
-    #    return
+    if os.path.isfile(imagename + "-image.helio.fits"):
+        if not overwrite:
+            return None, imagename + "-image.helio.fits"
 
     solar_ms_cal = do_bandpass_correction(solar_ms, calib_ms=calib_ms, bcal=bcal, caltable_fold=caltable_fold)
 
@@ -1564,7 +1565,7 @@ def image_ms(solar_ms, calib_ms=None, bcal=None, selfcal=False, imagename='sun_o
         logging.info('Imaging completed for ' + solar_ms)
         return outms, helio_image
     else:
-        return outms
+        return outms, None
 
 
 def solar_pipeline(time_duration, calib_time_duration, freqstr, filepath, time_integration=8, time_cadence=100,
@@ -1622,7 +1623,7 @@ def solar_pipeline(time_duration, calib_time_duration, freqstr, filepath, time_i
     filename = fp.get_current_file_for_selfcal(freqstr[0])
     while filename is not None:
         imagename = "sun_only_" + filename[:-3]
-        outms, helio_image = image_ms(filename, calib_ms=calib_ms, bcal=bcal, selfcal=True,
+        outms, helio_image = image_ms(filename, calib_ms=calib_filename, bcal=bcal, selfcal=True,
                                     imagename=imagename, do_final_imaging=True)
         filename = fp.get_current_file_for_imaging(freqstr[0])
 
