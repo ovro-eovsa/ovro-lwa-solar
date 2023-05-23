@@ -1209,7 +1209,13 @@ def correct_flux_scaling(msfile, src_area=100, min_beam_val=0.1, caltable_suffix
         final_image = msfile[:-3] + "_self" + str(num_image - 1) + "-image.fits"
         os.system("rm -rf calibrator-model.fits")
         srcs_with_scaling = get_flux_scaling_factor(msfile, final_image)
-        scaling_factor = [s['scaling_factor'] for s in srcs_with_scaling]
+        #scaling_factor = [s['scaling_factor'] for s in srcs_with_scaling]
+        scaling_factor=[]
+        for s in srcs_with_scaling:
+            try:
+                scaling_factor.append(s['scaling_factor'])
+            except KeyError:
+                pass
         if len(scaling_factor) > 0:
             mean_factor = np.mean(np.array(scaling_factor))
             print(scaling_factor)
@@ -1220,6 +1226,10 @@ def correct_flux_scaling(msfile, src_area=100, min_beam_val=0.1, caltable_suffix
             caltable = msfile[:-3] + "." + caltable_suffix
             gencal(vis=msfile, caltable=caltable, caltype='amp', parameter=np.sqrt(1. / mean_factor))
 
+            os.system("cp -r " + caltable + " caltables/")
+        else:
+            gencal(vis=msfile, caltable=caltable, caltype='amp', parameter=1.0)
+            logging.warning("Could not find appropriate flux scaling factor. No correction will be done.")
             os.system("cp -r " + caltable + " caltables/")
     elif success == True:
         caltable = glob.glob("caltables/" + di_selfcal_str + "*.fluxscale")[0]
