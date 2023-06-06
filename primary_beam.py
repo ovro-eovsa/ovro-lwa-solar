@@ -233,7 +233,7 @@ class jones_beam:
         """
         
         
-        
+        el=90-el
         self.ctrl_freq()
         
         if len(self.gain_theta)<2:
@@ -270,7 +270,7 @@ class jones_beam:
                                     [sources_gain_theta_y[i],sources_gain_phi_y[i]]]
         
         self.jones_matrices=jones_matrices
-        
+     
         return
         
 

@@ -23,7 +23,7 @@ def conv_deg(dec):
     return '%fdeg' % deg
 
 class model_generation():
-    def __init__(self,vis=None,filename='calibrator_source_list.txt',pol='I,Q,U,V',separate_pol=True):
+    def __init__(self,vis=None,filename='calibrator_source_list.txt',pol='I,Q,U,V',separate_pol=True,model=True):
         self.vis=vis
         self.min_beam_val=0.01
         self.separate_pol=separate_pol
@@ -42,6 +42,7 @@ class model_generation():
         self.verbose=True
         self.overwrite=True
         self.predict=True
+        self.model=model
         self.point_source_model_needed=False
         if (self.separate_pol==True and self.num_pol==1) or \
             (self.separate_pol==False and self.num_pol!=1):
@@ -104,61 +105,31 @@ class model_generation():
         :return: N/A
         """
 
-        srcs = utils.get_strong_source_list()
 
-        print("generating model file")
+        srcs,az,el=self.get_risen_source_list()                  
 
-        tb=table()
-        tb.open(self.vis)
-        t0 = tb.getcell('TIME', 0)
-        tb.close()
-        
-        me = measures()
-        ovro = me.observatory('OVRO_MMA')
-        time = me.epoch('UTC', '%fs' % t0)
-        me.doframe(ovro)
-        me.doframe(time)
-        
         pb=beam(msfile=self.vis)
+        pb.srcjones(np.array(az),np.array(el))
         
-
         self.file_handle = [open(self.filename[i], 'w') for i in range(self.num_pol)]
-        num_source = 0
-        for s in range(len(srcs) - 1, -1, -1):
-            coord = srcs[s]['position'].split()
-            d0 = None
-            if len(coord) == 1:
-                d0 = me.direction(coord[0])
-                d0_j2000 = me.measure(d0, 'J2000')
-                srcs[s]['position'] = 'J2000 %frad %frad' % (d0_j2000['m0']['value'], d0_j2000['m1']['value'])
-            elif len(coord) == 3:
-                coord[2] = conv_deg(coord[2])
-                d0 = me.direction(coord[0], coord[1], coord[2])
-            else:
-                raise Exception("Unknown direction")
-            d = me.measure(d0, 'AZEL')
-            elev = d['m1']['value']*180/np.pi
-            az=d['m0']['value']*180/np.pi
-            if elev<0:
-                del srcs[s]
-            else:
-                jones_matrix=pb.srcIQUV(az=az,el=elev)#math.sin(elev) ** 1.6
-                if jones_matrix[0,0]**2 < self.min_beam_val or jones_matrix[1,1]**2< self.min_beam_val:
-                    del srcs[s]
-                else:
-                    print(srcs[s]['label'])
-                    
-                    for i in range(self.num_pol):
-                        self.write_source_file(i,srcs[s]['label'], jones_matrix, num_source)
-                    num_source += 1
-
+        
+        s=0    
+        for azev,elev in zip(az,el):
+            matrix=pb.get_source_pol_factors(pb.jones_matrices[s,:,:])
+            if matrix[0,0] > self.min_beam_val and matrix[1,1] > self.min_beam_val:
+                for i in range(self.num_pol):
+                    self.write_source_file(i,srcs[s]['label'], matrix, s)
+            s+=1
+            
         return    
 
     
     def write_source_file(self,current_pol_index,source_name, jones_matrix, source_num):  #### works only if logarithimicSI is false
 
+        
+        primary_beam_value=self.primary_beam_value(current_pol_index,jones_matrix)
         try:
-            f1 = open(self.calfilepath + source_name[:-1]+ "-sources.txt", "r")
+            f1 = open(self.calfilepath + source_name+ ".txt", "r")
             j = 0
 
             while True:
@@ -171,7 +142,7 @@ class model_generation():
                     try:
                         splitted = line.split(',')
                         I_flux = float(splitted[4])
-                        primary_beam_value=self.primary_beam_value(current_pol_index,jones_matrix)
+                        
                         beam_corrected_I_flux = I_flux * primary_beam_value
                         splitted[4] = str(beam_corrected_I_flux)
 
@@ -199,13 +170,21 @@ class model_generation():
 
     def primary_beam_value(self,current_pol_index,jones_matrix):  
         
-        if self.polarisations[current_pol_index]=='XX':
-            return primary_beam.primary_beam_correction_val('XX',jones_matrix)
-        if self.polarisations[current_pol_index]=='YY':
-            return primary_beam.primary_beam_correction_val('YY',jones_matrix)
-            
-        if self.polarisations[current_pol_index]=='I':
-            return primary_beam.primary_beam_correction_val('I',jones_matrix)
+        XX_factor=jones_matrix[0,0]
+        YY_factor=jones_matrix[1,1]
+        XY_factor=jones_matrix[0,1]
+        I_factor=0.5*(XX_factor+YY_factor)
+        Q_factor=0.5*(XX_factor-YY_factor)
+        U_factor=np.real(XY_factor)
+        V_factor=-np.imag(XY_factor)
+        if current_pol_index==0:
+            return I_factor
+        elif current_pol_index==1:
+            return Q_factor
+        elif current_pol_index==2:
+            return U_factor
+        else:
+            return V_factor
     
 
     def ctrl_freq(self):
@@ -230,20 +209,15 @@ class model_generation():
         
         freq_I=flux_hi * 10 ** (sp * math.log(self.output_freq / self.ref_freq, 10))
         
-        #print (jones_matrix)
-        XX=freq_I*jones_matrix[0,0]
-        YY=freq_I*jones_matrix[1,1]
-        XY=freq_I*jones_matrix[0,1]
-        I_flux=0.5*(XX+YY)
-        Q_flux=0.5*(XX-YY)
-        U_flux=np.real(XY)
-        V_flux=-np.imag(XY)
+        I_flux=self.primary_beam_value(0,jones_matrix)*freq_I
+        Q_flux=self.primary_beam_value(1,jones_matrix)*freq_I
+        U_flux=self.primary_beam_value(2,jones_matrix)*freq_I
+        V_flux=self.primary_beam_value(3,jones_matrix)*freq_I
         print (I_flux,Q_flux,U_flux,V_flux)    
         return [I_flux,Q_flux, U_flux, V_flux]
     
     
-    def point_source_model(self):
-                           
+    def get_risen_source_list(self):
         srcs = utils.get_strong_source_list()
         az=[]
         el=[]
@@ -263,10 +237,6 @@ class model_generation():
         me.doframe(ovro)
         me.doframe(time)
 
-        cl = componentlist()        
-                
-        pb=beam(msfile=self.vis)
-        
 
         for s in range(len(srcs) - 1, -1, -1):
             coord = srcs[s]['position'].split()
@@ -290,8 +260,12 @@ class model_generation():
             else:
                 el.append(elev)
                 az.append(azev)
-        
-            
+        return srcs,az,el
+     
+    def point_source_model(self):
+        srcs,az,el=self.get_risen_source_list()                  
+
+        pb=beam(msfile=self.vis)
         pb.srcjones(np.array(az),np.array(el))
         
         
@@ -299,10 +273,11 @@ class model_generation():
         for azev,elev in zip(az,el):
             matrix=pb.get_source_pol_factors(pb.jones_matrices[s,:,:])
            
-            if matrix[0,0] > self.min_beam_val and matrix[1,1]**2 > self.min_beam_val:
+            if matrix[0,0] > self.min_beam_val and matrix[1,1] > self.min_beam_val:
                 srcs[s]['flux'] = self.flux80_47(float(srcs[s]['flux']), srcs[s]['alpha'], matrix) 
             s+=1
-
+        
+        cl = componentlist()  
         cl.done()
 
         
@@ -347,11 +322,32 @@ class model_generation():
                       imagename +"-"+pola+ "-residual.fits " + self.filename[i] + " "+self.outpath+"calibrator-"+pola+"-model.fits " + self.vis)
         
         if os.path.isfile("calibrator-model.fits") == False and \
-                (os.path.isfile("calibrator-XX-model.fits")==False or \
-                    os.path.isfile("calibrator-YY-model.fits")==False):
+                (os.path.isfile("calibrator-I-model.fits")==False or \
+                    os.path.isfile("calibrator-Q-model.fits")==False or \
+                    os.path.isfile("calibrator-U-model.fits")==False or \
+                    os.path.isfile("calibrator-V-model.fits")==False):
                     
                 logging.warning("Calibrator model not generated. Proceeding with point source model")
                 raise RuntimeError("WSClean version 3.3 or above. Proceeding with point source model")
+        
+        if self.model==True:
+            for i,pola in enumerate(self.polarisations):
+                self.correct_for_restoring_beam("calibrator-"+pola+"-model.fits")
+                
+    def correct_for_restoring_beam(self,image):
+        from casatasks import imhead
+        a=imhead(image)
+        major=a['restoringbeam']['major']['value']
+        minor=a['restoringbeam']['minor']['value']
+        cell=abs(a['incr'][0])*180/3.14159*3600
+        major_pix=major/cell
+        minor_pix=minor/cell
+        area=np.pi*major_pix*minor_pix/(4*np.log(2))
+        hdu=fits.open(image,mode='update')
+        hdu[0].data/=area
+        hdu.flush()
+        hdu.close()
+
     
     def check_negative_in_model(self):
         if self.pol=='I':
@@ -384,8 +380,8 @@ class model_generation():
         :return:
         """
         self.ctrl_freq()
-        #if self.avg_freq>75:
-        self.point_source_model_needed=True
+        if self.avg_freq>60:
+            self.point_source_model_needed=True
 
         if self.point_source_model_needed==True:
            modelcl, ft_needed = self.point_source_model()
@@ -404,7 +400,7 @@ class model_generation():
             imagename = self.outpath+"dummy"
             logging.debug("Generating a dummy image")
             
-            
+            print ("Generating dummy image")
             self.gen_dummy_image(imagename)
                       
             self.reset_image(imagename)           
@@ -418,6 +414,7 @@ class model_generation():
             self.do_prediction()
             return None, False
         except:
+            logging.warning("Negative in model. Going for point source model.") 
             modelcl, ft_needed = self.point_source_model()
             return modelcl, ft_needed    
 
