@@ -170,8 +170,8 @@ class model_generation():
 
     def primary_beam_value(self,current_pol_index,jones_matrix):  
         
-        XX_factor=jones_matrix[0,0]
-        YY_factor=jones_matrix[1,1]
+        XX_factor=np.abs(jones_matrix[0,0])
+        YY_factor=np.abs(jones_matrix[1,1])
         XY_factor=jones_matrix[0,1]
         I_factor=0.5*(XX_factor+YY_factor)
         Q_factor=0.5*(XX_factor-YY_factor)

@@ -257,19 +257,24 @@ class jones_beam:
        
         num_sources=len(az)
         
-        jones_matrices=np.zeros((num_sources,2,2))
+        jones_matrices=np.zeros((num_sources,2,2),dtype='complex')
+        
+        max_e1=np.max(np.abs(np.array(e_theta)))
+        max_e2=np.max(np.abs(np.array(e_phi)))
+        max_e=max(max_e1,max_e2)
         
         #print (np.size(P),np.size(grid_el),np.shape(self.gain_theta[0]))
-        sources_gain_theta_x=gd((phi,theta), self.gain_theta[0], (az,el), method='nearest')
-        sources_gain_theta_y=gd((phi,theta), self.gain_theta[1], (az,el), method='nearest')
-        sources_gain_phi_x=gd((phi,theta), self.gain_phi[0], (az,el), method='nearest')
-        sources_gain_phi_y=gd((phi,theta), self.gain_phi[1], (az,el), method='nearest')
+        sources_e_theta_x=gd((phi,theta), self.e_theta[0], (az,el), method='nearest')
+        sources_e_theta_y=gd((phi,theta), self.e_theta[1], (az,el), method='nearest')
+        sources_e_phi_x=gd((phi,theta), self.e_phi[0], (az,el), method='nearest')
+        sources_e_phi_y=gd((phi,theta), self.e_phi[1], (az,el), method='nearest')
         
         for i in range(num_sources):
-            jones_matrices[i,:,:]=[[sources_gain_theta_x[i],sources_gain_phi_x[i]],\
-                                    [sources_gain_theta_y[i],sources_gain_phi_y[i]]]
+            jones_matrices[i,:,:]=[[sources_e_phi_x[i],sources_e_theta_x[i]],\
+                                    [sources_e_phi_y[i],sources_e_theta_y[i]]] #### interchanging theta and phi
+                                    						  ### as it seems phi values are larger
         
-        self.jones_matrices=jones_matrices
+        self.jones_matrices=jones_matrices/max_e  ### normalising
      
         return
         
@@ -288,5 +293,5 @@ class jones_beam:
         J2[1,1]=np.conj(J1[1,1])
         
         J3=np.matmul(J1,J2)  
-        J3=J3/np.sum(np.abs(J3))*2 #### check normalisation
+        #J3=J3/np.sum(np.abs(J3))*2 #### check normalisation
         return  J3          
