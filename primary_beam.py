@@ -124,29 +124,35 @@ class woody_beam():
                 
 class jones_beam:
     """
-    For loading and returning LWA dipole beam values (derived from DW beam simulations) on the ASTM.
-    Last edit: 11 September 2020
+    For loading and returning LWA dipole beam values (derived from simulations made by Nivedita)
     """
     
-    def __init__(self,msfile=None,beam_file_path='/opt/beam',freq=None):
+    def __init__(self,msfile=None,beam_file_path='/data07/msurajit/primary_beam_files/',freq=None):
         try:
             self.beam_file_path=beam_file_path
         except:
             self._beam_file_path=None
-        self.beamIQUV=None
-        self.Ibeam=None
-        self.Ubeam=None
-        self.Qbeam=None
-        self.Vbeam=None
         self.freq=None
         self.msfile=msfile
+        self.num_theta=181
+        self.num_phi=361
+        self.start_freq=10
+        self.freq_step=1
+        self.num_freqs=91
+        self.num_header=10
+        self.beam_files=['LWA_x_10to100.ffe','LWA_y_10to100.ffe']  ### assume order [X,Y]
+        self.e_theta=[]
+        self.e_phi=[]
+        self.gain_theta=[]
+        self.gain_phi=[]
+        
         
     def ctrl_freq(self):
         msmd=msmetadata()
         msmd.open(self.msfile)
-        chan_freqs = msmd.chanfreqs(0)
+        self.freq = msmd.meanfreq(0) * 1e-6
         msmd.done()
-        self.freq = 0.5 * (chan_freqs[0] + chan_freqs[-1]) * 1e-6
+        
     
     @property
     def beam_file_path(self):
@@ -154,8 +160,7 @@ class jones_beam:
         
     @beam_file_path.setter
     def beam_file_path(self,value):
-        files=glob.glob(value+"*.npy")
-        if len(files)!=0:
+        if value and os.path.isdir(value):
             self._beam_file_path=value
         else:
             logging.warning("Beam file does not exist in give path."+\
@@ -171,55 +176,117 @@ class jones_beam:
         if os.path.isdir(value):
             self._msfile=value
         else:
-            raise RuntimeError         
+            raise RuntimeError  
+    
+    def read_beam_file(self,datafile):  ### freq in MHz
+        freq_index=(int(self.freq)-self.start_freq)
+        tot_params=self.num_theta*self.num_phi
         
-    def read_beam_file(self):
-        try:
-            self.ctrl_freq()
-            self.beamjonesfile = self.beam_file_path+'/beamLudwig3rd.npz'
-            if os.path.exists(self.beamjonesfile):
-                self.beamjones = np.load(self.beamjonesfile)
-                self.Co = self.beamjones['cofull']
-                self.Cx = self.beamjones['cxfull']
-                self.Corot90 = self.beamjones['cofull_rot90']
-                self.Cxnrot90 = self.beamjones['cxfull_nrot90']
-                self.l = self.beamjones['lfull']
-                self.m = self.beamjones['mfull']
-                self.freqs = self.beamjones['frqvals']#self.beamjones['freqfull']
-                num_freqs=self.freqs.size
-                num_l=self.l.size
-                self.freqs=np.repeat(self.freqs,num_l) #### This works only if Co shape is (num_freqs x num_l)
-                self.l=np.tile(self.l,num_freqs)
-                self.m=np.tile(self.m,num_freqs)
-            else:
-                raise RuntimeError    
-        except:
-            logging.warning("Beam file does not exist in give path."+\
-                    "Switching to analytical beam.")   
+
+        tot_lines=(tot_params+self.num_header)*self.num_freqs
+        header=(tot_params+self.num_header)*freq_index
+       
+  
+        data=np.genfromtxt(datafile,skip_header=int(header),max_rows=int(tot_params))
+
+        e_theta=data[:,2]+1j*data[:,3]
+        e_phi=data[:,4]+1j*data[:,5]
+        theta=data[:,0]
+        phi=data[:,1]
+        gain_total=10**(data[:,8]/10)
+        gain_theta=10**(data[:,6]/10)
+        gain_phi=10**(data[:,7]/10)
+        
+        
+        e_theta=e_theta.reshape(self.num_phi,self.num_theta)
+        e_phi=e_phi.reshape(self.num_phi,self.num_theta)
+        gain_theta=gain_theta.reshape(self.num_phi,self.num_theta)
+        gain_phi=gain_phi.reshape(self.num_phi,self.num_theta)
+        gain_total=gain_total.reshape(self.num_phi,self.num_theta)
+
+        theta=theta.reshape(self.num_phi,self.num_theta)
+        theta=theta[:,:91].flatten()
+    
+        phi=phi.reshape(self.num_phi,self.num_theta)
+        
+        phi=phi[:,:91].flatten()
+        
+        
+        e_theta=e_theta[:,:91].flatten()
+        e_phi=e_phi[:,:91].flatten()
+        gain_theta=gain_theta[:,:91].flatten()
+        gain_phi=gain_phi[:,:91].flatten()
+        gain_total=gain_total[:,:91].flatten()
+       
+    
+        return  theta,phi,e_theta,e_phi, gain_theta, gain_phi, gain_total 
+        
             
 
-    def srcjones(self,l,m):
+    def srcjones(self,az,el):
         """Compute beam scaling factor
         Args:
-            (l,m) coordinates
+            (az,el) coordinates
 
-        Returns: Jones matrix at coordinates (l,m)
+        Returns: Jones matrix at coordinates (az,el)
 
         """
-        try:
+        
+        
+        
+        self.ctrl_freq()
+        
+        if len(self.gain_theta)<2:
+            print (self.beam_file_path)
             if self.beam_file_path is not None:
-                coval = gd( (self.l, self.m, self.freqs), \
-                        self.Co.ravel(), (l, m, self.freq), method='linear')
-                cxval = gd( (self.l, self.m, self.freqs), \
-                        self.Cx.ravel(), (l, m, self.freq), method='linear')
-                corot90val  = gd( (self.l, self.m, self.freqs), \
-                          self.Corot90.ravel(), (l, m, self.freq), method='linear')
-                cxnrot90val = gd( (self.l, self.m, self.freqs), \
-                          self.Cxnrot90.ravel(), (l, m, self.freq), method='linear')
-                Jonesmat = np.array([ [coval,       cxval     ], 
-                                  [cxnrot90val, corot90val] ])
-                return Jonesmat
+                for file1 in self.beam_files:
+                    datafile=self.beam_file_path+"/"+file1
+                   
+                    if os.path.isfile(datafile):
+                        theta,phi,e_theta,e_phi,gain_theta,gain_phi,gain_total=self.read_beam_file(datafile)
+                        self.e_theta.append(e_theta)
+                        self.e_phi.append(e_phi)
+                        self.gain_theta.append(gain_theta)
+                        self.gain_phi.append(gain_phi)
+                    else:
+                        raise RuntimeError("Beam file does not exist. Switching to analytical beam")  
+            
             else:
-                raise RuntimeError
-        except OSError:
-            return np.nan
+                raise RuntimeError("Beam file does not exist. Switching to analytical beam")
+        
+       
+        num_sources=len(az)
+        
+        jones_matrices=np.zeros((num_sources,2,2))
+        
+        #print (np.size(P),np.size(grid_el),np.shape(self.gain_theta[0]))
+        sources_gain_theta_x=gd((phi,theta), self.gain_theta[0], (az,el), method='nearest')
+        sources_gain_theta_y=gd((phi,theta), self.gain_theta[1], (az,el), method='nearest')
+        sources_gain_phi_x=gd((phi,theta), self.gain_phi[0], (az,el), method='nearest')
+        sources_gain_phi_y=gd((phi,theta), self.gain_phi[1], (az,el), method='nearest')
+        
+        for i in range(num_sources):
+            jones_matrices[i,:,:]=[[sources_gain_theta_x[i],sources_gain_phi_x[i]],\
+                                    [sources_gain_theta_y[i],sources_gain_phi_y[i]]]
+        
+        self.jones_matrices=jones_matrices
+        
+        return
+        
+
+    @staticmethod
+    def get_source_pol_factors(jones_matrix):  ### in [[XX,XY],[YX,YY]] format
+        '''
+        I am assuming that the source is unpolarised. At these low frequencies this is a good assumption.
+        '''
+        J1=jones_matrix
+        J2=np.zeros_like(J1)
+        
+        J2[0,0]=np.conj(J1[0,0])
+        J2[0,1]=np.conj(J1[1,0])
+        J2[1,0]=np.conj(J1[0,1])
+        J2[1,1]=np.conj(J1[1,1])
+        
+        J3=np.matmul(J1,J2)  
+        J3=J3/np.sum(np.abs(J3))*2 #### check normalisation
+        return  J3          

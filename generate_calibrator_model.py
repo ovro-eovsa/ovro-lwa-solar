@@ -2,7 +2,7 @@ import numpy as np
 import math,os,logging
 from casatasks import clearcal, ft
 from casatools import table, measures, componentlist, msmetadata
-from primary_beam import woody_beam as beam
+from primary_beam import jones_beam as beam
 import utils
 from astropy.io import fits
 import primary_beam
@@ -23,7 +23,7 @@ def conv_deg(dec):
     return '%fdeg' % deg
 
 class model_generation():
-    def __init__(self,vis=None,filename='calibrator_source_list.txt',pol='XX,YY',separate_pol=True):
+    def __init__(self,vis=None,filename='calibrator_source_list.txt',pol='I,Q,U,V',separate_pol=True):
         self.vis=vis
         self.min_beam_val=0.01
         self.separate_pol=separate_pol
@@ -91,8 +91,8 @@ class model_generation():
     def pol(self,value):
         temp=value.split(',')
         for i in temp:
-            if i not in ['XX','YY','I']:
-                raise RuntimeError("Only XX,YY,I recognised now.")
+            if i not in ['I','Q','U','V','XX','YY','XY','YX']:
+                raise RuntimeError("Only XX,YY,XY,YX,I,Q,U,V recognised now.")
         self._pol=value
         
 
@@ -210,6 +210,7 @@ class model_generation():
 
     def ctrl_freq(self):
         msmd=msmetadata()
+        msmd.open(self.vis)
         self.avg_freq=msmd.meanfreq(0)*1e-6
         msmd.done()
         if not self.output_freq:
@@ -226,21 +227,26 @@ class model_generation():
         :param output_freq: output frequency in MHz
         :return: flux caliculated at the output frequency
         """
-        if self.polarisations[0]=='I':
-            pb_val=primary_beam.primary_beam_correction_val('I',jones_matrix)
-            return flux_hi * 10 ** (sp * math.log(self.output_freq / self.ref_freq, 10))*pb_val
-        else:
-            xx_pb_val=primary_beam.primary_beam_correction_val('XX',jones_matrix)
-            yy_pb_val=primary_beam.primary_beam_correction_val('YY',jones_matrix)
-            flux_val=flux_hi * 10 ** (sp * math.log(self.output_freq / self.ref_freq, 10))
-            I_flux=0.5*(xx_pb_val*flux_val+yy_pb_val*flux_val)
-            Q_flux=0.5*(xx_pb_val*flux_val-yy_pb_val*flux_val)
-            return [I_flux,Q_flux, 0, 0]
+        
+        freq_I=flux_hi * 10 ** (sp * math.log(self.output_freq / self.ref_freq, 10))
+        
+        #print (jones_matrix)
+        XX=freq_I*jones_matrix[0,0]
+        YY=freq_I*jones_matrix[1,1]
+        XY=freq_I*jones_matrix[0,1]
+        I_flux=0.5*(XX+YY)
+        Q_flux=0.5*(XX-YY)
+        U_flux=np.real(XY)
+        V_flux=-np.imag(XY)
+        print (I_flux,Q_flux,U_flux,V_flux)    
+        return [I_flux,Q_flux, U_flux, V_flux]
     
     
     def point_source_model(self):
                            
         srcs = utils.get_strong_source_list()
+        az=[]
+        el=[]
         
         if self.includesun:
             srcs.append({'label': 'Sun', 'flux': str(solar_flux), 'alpha': solar_alpha,
@@ -276,27 +282,37 @@ class model_generation():
                 raise Exception("Unknown direction")
             d = me.measure(d0, 'AZEL')
             elev = d['m1']['value']*180/np.pi
-            az=d['m0']['value']*180/np.pi
+            azev=d['m0']['value']*180/np.pi
+            if azev<0:
+                azev=360+azev
             if elev<0:
                 del srcs[s]
             else:
-                jones_matrix=pb.srcIQUV(az=az,el=elev)
-                if jones_matrix[0,0]**2 < self.min_beam_val or jones_matrix[1,1]**2< self.min_beam_val:
-                    del srcs[s]
-                else:
-                    print (srcs[s]['label'])
-                    srcs[s]['flux'] = self.flux80_47(float(srcs[s]['flux']), srcs[s]['alpha'], jones_matrix) 
+                el.append(elev)
+                az.append(azev)
+        
+            
+        pb.srcjones(np.array(az),np.array(el))
+        
+        
+        s=0    
+        for azev,elev in zip(az,el):
+            matrix=pb.get_source_pol_factors(pb.jones_matrices[s,:,:])
+           
+            if matrix[0,0] > self.min_beam_val and matrix[1,1]**2 > self.min_beam_val:
+                srcs[s]['flux'] = self.flux80_47(float(srcs[s]['flux']), srcs[s]['alpha'], matrix) 
+            s+=1
 
         cl.done()
 
         
         modelcl = self.vis.replace('.ms', '.cl')
         for s in srcs:
-            cl.addcomponent(flux=s['flux'], dir=s['position'], index=s['alpha'],
+            cl.addcomponent(flux=s['flux'], dir=s['position'], index=s['alpha'], polarization='Stokes', 
                             spectrumtype='spectral index', freq='{0:f}MHz'.format(self.output_freq), label=s['label'])
             
             logging.debug(
-                    "cl.addcomponent(flux=%s, dir='%s', index=%s, spectrumtype='spectral index', freq='47MHz', label='%s', polarization='Stokes')" % (
+                    "cl.addcomponent(flux=%s, dir='%s', index=%s, spectrumtype='spectral index', label='%s', polarization='Stokes')" % (
                         s['flux'], s['position'], s['alpha'], s['label']))
         if os.path.exists(modelcl) and self.overwrite:
             os.system('rm -rf ' + modelcl)
@@ -368,8 +384,8 @@ class model_generation():
         :return:
         """
         self.ctrl_freq()
-        if self.avg_freq>75:
-            self.point_source_model_needed=True
+        #if self.avg_freq>75:
+        self.point_source_model_needed=True
 
         if self.point_source_model_needed==True:
            modelcl, ft_needed = self.point_source_model()
