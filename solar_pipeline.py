@@ -399,7 +399,7 @@ def flag_bad_ants(msfile, antflagfile=None, datacolumn='DATA', thresh_core=1.0, 
     return antflagfile
 
 
-def gen_calibration(msfile, modelcl=None, uvrange='>20lambda', bcaltb=None, logging_level='info', caltable_fold='caltables',pol='I'):
+def gen_calibration(msfile, modelcl=None, uvrange='>20lambda', bcaltb=None, logging_level='info', caltable_fold='caltables'):
     """
     This function is for doing initial self-calibrations using strong sources that are above the horizon
     It is recommended to use a dataset observed at night when the Sun is not in the field of view
@@ -411,10 +411,9 @@ def gen_calibration(msfile, modelcl=None, uvrange='>20lambda', bcaltb=None, logg
     if not modelcl or not (os.path.exists(modelcl)):
         print('Model component list does not exist. Generating one from scratch.')
         logging.info('Model component list does not exist. Generating one from scratch.')
-        if pol=='I':
-            md=model_generation(vis=msfile,pol=pol,separate_pol=False)
-        else:
-            md=model_generation(vis=msfile,pol=pol,separate_pol=True)
+       
+       
+        md=model_generation(vis=msfile,separate_pol=True)
         #md.point_source_model_needed=True  	    
         modelcl, ft_needed = md.gen_model_cl()
     else:
@@ -468,7 +467,7 @@ def apply_calibration(msfile, gaintable=None, doantflag=False, doflag=False, ant
 
 
 def make_fullsky_image(msfile, imagename="allsky", imsize=4096, cell='2arcmin',
-                       minuv=10):  ### minuv: minimum uv in lambda
+                       minuv=10,pol='I'):  ### minuv: minimum uv in lambda
     """
     Make all sky image with wsclean
     :param msfile: path to CASA measurement set
@@ -480,7 +479,7 @@ def make_fullsky_image(msfile, imagename="allsky", imsize=4096, cell='2arcmin',
     """
     os.system("wsclean -no-update-model-required -weight uniform" +
               " -name " + imagename + " -size " + str(imsize) + " " + str(imsize) + " -scale " + cell +
-              " -minuv-l " + str(minuv) + " -niter 1000 " + msfile)
+              " -minuv-l " + str(minuv) + " -niter 1000 -pol "+pol+' '+ msfile)
 
 
 def get_solar_loc_pix(msfile, image="allsky"):
@@ -540,11 +539,7 @@ def get_nonsolar_sources_loc_pix(msfile, image="allsky", verbose=False, min_beam
         d = me.measure(d0, 'AZEL')
         elev = d['m1']['value']*180/np.pi
         az=d['m0']['value']*180/np.pi
-        pb=beam(msfile=msfile)
-        jones_matrix=pb.srcIQUV(az=az,el=elev)
-        
-        
-        scale=primary_beam.primary_beam_correction_val('I',jones_matrix)
+        scale=np.sin(elev*np.pi/180)**1.6  ### sufficient for doing this check
         if elev > 0 and scale > min_beam_val:
             ra = d0_j2000['m0']['value']
             dec = d0_j2000['m1']['value']
@@ -588,6 +583,8 @@ def gen_nonsolar_source_model(msfile, imagename="allsky", outimage=None, sol_are
         imagename=imagename+"-image.fits"
     else:
         imagename=imagename+"-XX-image.fits"
+    if os.path.isfile(imagename)==False:
+        imagename=imagename+"-I-image.fits"
     solx, soly = get_solar_loc_pix(msfile, imagename)
     srcs = get_nonsolar_sources_loc_pix(msfile, imagename)
     
@@ -927,13 +924,14 @@ def correct_flux_scaling(msfile, src_area=100, min_beam_val=0.1, caltable_suffix
         else:
             md=model_generation(vis=msfile,pol=pol,separate_pol=True)
         md.predict=False
+        md.model=False
         md.min_beam_val=min_beam_val
         modelcl, ft_needed = md.gen_model_cl()
         if pol=='I':
             images = glob.glob(msfile[:-3] + "_self*-image.fits")
         else:
             images= glob.glob(msfile[:-3] + "_self*XX-image.fits")
-        num_image = 12#len(images)
+        num_image = len(images)
         
         
         mean_factor=[]
@@ -1088,7 +1086,7 @@ def do_bandpass_correction(solar_ms, calib_ms=None, bcal=None, caltable_fold='ca
             flagdata(vis=calib_ms, mode='clip', clipzeros=True)
             logging.debug('Flagging antennas before calibration.')
             flag_bad_ants(calib_ms)
-            bcal = gen_calibration(calib_ms, logging_level=logging_level, caltable_fold=caltable_fold,pol=pol)
+            bcal = gen_calibration(calib_ms, logging_level=logging_level, caltable_fold=caltable_fold)
             logging.info('Bandpass calibration table generated using ' + calib_ms)
         else:
             print('Neither calib_ms nor bcal exists. Need to provide calibrations to continue. Abort..')
