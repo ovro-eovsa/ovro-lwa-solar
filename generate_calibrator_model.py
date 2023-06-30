@@ -260,6 +260,7 @@ class model_generation():
             else:
                 el.append(elev)
                 az.append(azev)
+        print (el)
         return srcs,az,el
      
     def point_source_model(self):

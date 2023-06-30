@@ -1086,7 +1086,7 @@ def do_bandpass_correction(solar_ms, calib_ms=None, bcal=None, caltable_fold='ca
             flagdata(vis=calib_ms, mode='clip', clipzeros=True)
             logging.debug('Flagging antennas before calibration.')
             flag_bad_ants(calib_ms)
-            bcal = gen_calibration(calib_ms, logging_level=logging_level, caltable_fold=caltable_fold)
+            bcal = gen_calibration(calib_ms, logging_level=logging_level, caltable_fold=caltable_fold,pol=pol)
             logging.info('Bandpass calibration table generated using ' + calib_ms)
         else:
             print('Neither calib_ms nor bcal exists. Need to provide calibrations to continue. Abort..')

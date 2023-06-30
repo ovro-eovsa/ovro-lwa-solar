@@ -1,7 +1,7 @@
 import os, sys
 from astropy.time import Time
 from astropy.io import fits
-from casatools import image, table, msmetadata
+from casatools import image, table, msmetadata, quanta
 import numpy as np
 import logging, glob
 
@@ -36,39 +36,13 @@ def get_image_maxmin(imagename, local=True):
 
 
 def check_image_quality(imagename, max1, min1, reorder=True):
-    len1=len(max1)
     if max1[0] == 0:
-        try:
-            imagename1=imagename+"-image.fits"
-            print (imagename1)
-            max1[0], min1[0] = get_image_maxmin(imagename1)
-            print(max1, min1)
-        except:
-            imagename1=imagename+"-XX-image.fits"
-            print (imagename1)
-            max1[0], min1[0] = get_image_maxmin(imagename1)
-            imagename1=imagename+"-YY-image.fits"
-            print (imagename1)
-            max1[2], min1[2] = get_image_maxmin(imagename1)
+        max1[0], min1[0] = get_image_maxmin(imagename)
+        print(max1, min1)
     else:
         if reorder and max1[1] > 0.001:
             max1[0], min1[0] = max1[1], min1[1]
-            if len1==4:
-                max1[2], min1[2] = max1[3], min1[3]
-        try:
-            imagename1=imagename+"-image.fits"
-            print (imagename1)
-            max1[1], min1[1] = get_image_maxmin(imagename1)
-            print(max1, min1)
-        except:
-            imagename1=imagename+"-XX-image.fits"
-            print (imagename1)
-            max1[1], min1[1] = get_image_maxmin(imagename1)
-            imagename1=imagename+"-YY-image.fits"
-            print (imagename1)
-            max1[3], min1[3] = get_image_maxmin(imagename1)
-            
-        
+        max1[1], min1[1] = get_image_maxmin(imagename)
 
         DR1 = max1[0] / abs(min1[0])
         DR2 = max1[1] / abs(min1[1])
@@ -78,15 +52,6 @@ def check_image_quality(imagename, max1, min1, reorder=True):
             ## absolute value of minimum increases by more than 20 percent
             if min1[1] < 0:
                 return False
-        if len1==4:
-            DR1 = max1[2] / abs(min1[2])
-            DR2 = max1[3] / abs(min1[3])
-            print(DR1, DR2)
-            if (DR1 - DR2) / DR2 > 0.2:
-                ### if max decreases by more than 20 percent
-                ## absolute value of minimum increases by more than 20 percent
-                if min1[3] < 0:
-                    return False    
     return True
 
 
@@ -125,7 +90,7 @@ def get_strong_source_list():
 
 
 def get_time_from_name(msname):
-    pieces = msname.split('_')
+    pieces = os.path.basename(msname).split('_')
     ymd = pieces[0]
     hms = pieces[1]
     mstime = Time(ymd[0:4] + "-" + ymd[4:6] + "-" + ymd[6:] +
@@ -135,8 +100,12 @@ def get_time_from_name(msname):
 
 
 def get_timestr_from_name(msname):
-    pieces = msname.split('_')
+    pieces = os.path.basename(msname).split('_')
     return '_'.join(pieces[0:2])
+
+
+def get_freqstr_from_name(msname):
+    return os.path.basename(msname)[16:21]
 
 
 def get_selfcal_time_to_apply(msname, caltables):
@@ -191,22 +160,18 @@ def convert_to_heliocentric_coords(msname, imagename, helio_imagename=None, reft
     import datetime as dt
     from suncasa.utils import helioimage2fits as hf
     from casatasks import importfits
+    msmd = msmetadata()
+    qa = quanta()
 
     if reftime == '':
-        msmd = msmetadata()
         msmd.open(msname)
-        times = msmd.timesforfield(0)
-        msmd.done()
-        time = Time(times[0] / 86400, scale='utc', format='mjd')
-        time.format = 'datetime'
-
-        tdt = dt.timedelta(seconds=3)
-
-        t1 = time - tdt
-        t2 = time + tdt
-        print(t1.strftime("%Y/%m/%d/%H:%M:%S"))
-        reftime = t1.strftime('%Y/%m/%d/%H:%M:%S') + "~" + t2.strftime('%Y/%m/%d/%H:%M:%S')
-    print(reftime)
+        trange = msmd.timerangeforobs(0)
+        btime = qa.time(trange['begin']['m0'], form='fits')[0]
+        etime = qa.time(trange['end']['m0'], form='fits')[0]
+        msmd.close()
+        reftime = btime+'~'+etime
+    print('Use this reference time for registration: ', reftime)
+    logging.debug('Use this reference time for registration: ', reftime)
     temp_image = imagename + ".tmp"
     if helio_imagename is None:
         helio_imagename = imagename.replace('.fits', '.helio.fits')
@@ -218,11 +183,7 @@ def convert_to_heliocentric_coords(msname, imagename, helio_imagename=None, reft
     try:
         hf.imreg(vis=msname, imagefile=temp_image, timerange=reftime,
                  fitsfile=helio_imagename, usephacenter=True, verbose=True, toTb=True)
-        return helio_imagename 
+        return helio_imagename
     except:
         logging.warning("Could not convert to helicentric coordinates")
-        
-    return None
-
-
-
+        return None

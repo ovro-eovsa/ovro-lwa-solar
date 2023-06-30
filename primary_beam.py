@@ -20,7 +20,21 @@ def primary_beam_correction_val(pol,jones_matrix):
                 
     if pol=='I':
         return 0.5*(jones_matrix[1,1]**2+jones_matrix[0,0]**2)
+
+
+class analytic_beam():
+    def __init__(self,msfile=None,beam_file_path='/opt/beam/',freq=None):
+        return
+    def srcjones(self,az,el): ### az, el in degrees
+        num_sources=np.size(el)
+        self.jones_matrices=np.zeros((num_sources,2,2))
+        for i in range(num_sources):
+            self.jones_matrices[i,:,:]=np.sqrt(np.sin(el[i]*np.pi/180)**1.6*np.identity(2))
+        return 
     
+    @staticmethod    
+    def get_source_pol_factors(jones_matrix):
+        return jones_matrix**2
             
 class woody_beam():
     def __init__(self,msfile=None,beam_file_path='/opt/beam/',freq=None):
@@ -185,7 +199,7 @@ class jones_beam:
 
         tot_lines=(tot_params+self.num_header)*self.num_freqs
         header=(tot_params+self.num_header)*freq_index
-       
+        
   
         data=np.genfromtxt(datafile,skip_header=int(header),max_rows=int(tot_params))
 
@@ -232,8 +246,9 @@ class jones_beam:
 
         """
         
-        
+        print (az,el)
         el=90-el
+        
         self.ctrl_freq()
         
         if len(self.gain_theta)<2:
@@ -270,12 +285,13 @@ class jones_beam:
         sources_e_phi_y=gd((phi,theta), self.e_phi[1], (az,el), method='nearest')
         
         for i in range(num_sources):
-            jones_matrices[i,:,:]=[[sources_e_phi_x[i],sources_e_theta_x[i]],\
-                                    [sources_e_phi_y[i],sources_e_theta_y[i]]] #### interchanging theta and phi
+            jones_matrices[i,:,:]=[[sources_e_theta_x[i],sources_e_phi_x[i]],\
+                                    [sources_e_theta_y[i],sources_e_phi_y[i]]] #### interchanging theta and phi
                                     						  ### as it seems phi values are larger
         
         self.jones_matrices=jones_matrices/max_e  ### normalising
-     
+        print (self.jones_matrices)
+        
         return
         
 
