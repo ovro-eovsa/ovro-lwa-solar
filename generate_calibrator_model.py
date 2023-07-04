@@ -2,7 +2,7 @@ import numpy as np
 import math,os,logging
 from casatasks import clearcal, ft
 from casatools import table, measures, componentlist, msmetadata
-from primary_beam import jones_beam as beam
+from primary_beam import analytic_beam as beam
 import utils
 from astropy.io import fits
 import primary_beam
@@ -168,8 +168,8 @@ class model_generation():
         finally:
             f1.close()
 
-    def primary_beam_value(self,current_pol_index,jones_matrix):  
-        
+    @staticmethod
+    def primary_beam_value(current_pol_index,jones_matrix):  
         XX_factor=np.abs(jones_matrix[0,0])
         YY_factor=np.abs(jones_matrix[1,1])
         XY_factor=jones_matrix[0,1]
