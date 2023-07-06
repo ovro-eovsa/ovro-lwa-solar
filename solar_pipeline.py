@@ -124,7 +124,7 @@ def get_antids(msfile):
 def write_source_file(file_handle, source_name, primary_beam, source_num):  #### works only if logarithimicSI is false
 
     try:
-        calfilepath = '/data07/msurajit/ovro-lwa-solar/defaults/'
+        calfilepath = '/opt/devel/bin.chen/ovro-lwa-solar/defaults/'
         f1 = open(calfilepath + source_name + ".txt", "r")
         j = 0
 
