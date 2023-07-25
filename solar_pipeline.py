@@ -161,7 +161,7 @@ def correct_primary_beam(msfile, imagename,pol='I'):
 def image_ms(solar_ms, calib_ms=None, bcal=None, do_selfcal=False, imagename='sun_only',
              imsize=1024, cell='1arcmin', logfile='analysis.log', logging_level='info',
              caltable_fold='caltables', full_di_selfcal_rounds=[2,3], partial_di_selfcal_rounds=[0, 1],
-             full_dd_selfcal_rounds=[2, 1], partial_dd_selfcal_rounds=[0, 1], do_final_imaging=True,pol='I'):
+             full_dd_selfcal_rounds=[2, 1], partial_dd_selfcal_rounds=[0, 1], do_final_imaging=True,pol='I',overwrite=False):
     """
     Pipeline to calibrate and imaging a solar visibility
     :param solar_ms: input solar measurement set
@@ -176,11 +176,16 @@ def image_ms(solar_ms, calib_ms=None, bcal=None, do_selfcal=False, imagename='su
     :param partial_dd_selfcal_rounds: [rounds of phase-only selfcal, rounds of amp-phase selfcal]
             for directional-dependent partial selfcalibration runs
     """
-
+    
+    
+    if logging_level.lower() == 'info':
+        logging.basicConfig(filename=logfile, level=logging.INFO)
+        
     if not os.path.isdir(caltable_fold):
         os.mkdir(caltable_fold)
     if os.path.isfile(imagename + "-image.fits"):
-        return
+        if not overwrite:
+            return None, imagename + "-image.helio.fits"
 
     solar_ms = calibration.do_bandpass_correction(solar_ms, calib_ms=calib_ms, bcal=bcal, caltable_fold=caltable_fold)
 
@@ -227,7 +232,7 @@ def image_ms(solar_ms, calib_ms=None, bcal=None, do_selfcal=False, imagename='su
         logging.info('Imaging completed for ' + solar_ms)
         return outms, helio_image
     else:
-        return outms
+        return outms, None
 
 
 def solar_pipeline(time_duration, calib_time_duration, freqstr, filepath, time_integration=8, time_cadence=100,

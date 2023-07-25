@@ -298,10 +298,12 @@ def DD_selfcal(solar_ms, solint_full_selfcal=1800, solint_partial_selfcal=600,
     if os.path.isdir(solar_ms1):
         return solar_ms1
 
-    selfcal_time = utils.get_selfcal_time_to_apply(solar_ms, glob.glob("caltables/*.gcal"))
+    
     mstime = utils.get_time_from_name(solar_ms)
     mstime_str = utils.get_timestr_from_name(solar_ms)
     msfreq_str = utils.get_freqstr_from_name(solar_ms)
+    
+    selfcal_time = utils.get_selfcal_time_to_apply(solar_ms, glob.glob("caltables/*"+msfreq_str+"*.gcal"))
     
     sep = 100000000
     prior_selfcal = False
