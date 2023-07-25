@@ -31,8 +31,7 @@ def gen_calibration(msfile, modelcl=None, uvrange='', bcaltb=None, logging_level
         logging.info('Model component list does not exist. Generating one from scratch.')
        
        
-        md=model_generation(vis=msfile,separate_pol=True)
-        #md.point_source_model_needed=True  	    
+        md=model_generation(vis=msfile,separate_pol=True) 	    
         modelcl, ft_needed = md.gen_model_cl()
     else:
         ft_needed = True
