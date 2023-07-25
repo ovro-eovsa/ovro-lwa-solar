@@ -160,7 +160,7 @@ def correct_primary_beam(msfile, imagename,pol='I'):
 
 def image_ms(solar_ms, calib_ms=None, bcal=None, do_selfcal=False, imagename='sun_only',
              imsize=1024, cell='1arcmin', logfile='analysis.log', logging_level='info',
-             caltable_fold='caltables', full_di_selfcal_rounds=[4, 8], partial_di_selfcal_rounds=[0, 1],
+             caltable_fold='caltables', full_di_selfcal_rounds=[2,3], partial_di_selfcal_rounds=[0, 1],
              full_dd_selfcal_rounds=[2, 1], partial_dd_selfcal_rounds=[0, 1], do_final_imaging=True,pol='I'):
     """
     Pipeline to calibrate and imaging a solar visibility

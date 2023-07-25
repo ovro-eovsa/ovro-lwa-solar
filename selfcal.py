@@ -9,7 +9,8 @@ import astropy.units as u
 from astropy.wcs import WCS
 from astropy.io import fits
 import matplotlib.pyplot as plt
-import utils,flagging,calibration,flux_scaling,deconvolve
+import utils,flagging,calibration,deconvolve
+import flux_scaling
 import logging, glob
 from file_handler import File_Handler
 from primary_beam import analytic_beam as beam 
@@ -144,7 +145,8 @@ def do_selfcal(msfile, num_phase_cal=3, num_apcal=5, applymode='calflag', loggin
             flagdata(vis=msfile, mode='rflag', datacolumn='corrected')
     logging.debug('Flagging on the residual')
     flagdata(vis=msfile, mode='rflag', datacolumn='residual')
-    os.system("cp -r " + caltable + " caltables/")
+    if num_apcal>0:
+    	os.system("cp -r " + caltable + " caltables/")
     os.system("cp -r " + final_phase_caltable + " caltables/")
     return True
 
@@ -193,20 +195,21 @@ def DI_selfcal(solar_ms, solint_full_selfcal=14400, solint_partial_selfcal=3600,
 
     mstime = utils.get_time_from_name(solar_ms)
     mstime_str = utils.get_timestr_from_name(solar_ms)
+    msfreq_str = utils.get_freqstr_from_name(solar_ms)
 
-    caltables = glob.glob("caltables/*.gcal")
+    caltables = glob.glob("caltables/*"+msfreq_str+"*.gcal")
     if len(caltables) != 0:
         prior_selfcal = True
 
     if prior_selfcal:
-        dd_cal = glob.glob("caltables/*sun_only*.gcal")
+        dd_cal = glob.glob("caltables/*"+msfreq_str+"*sun_only*.gcal")
         di_cal = [cal for cal in caltables if cal not in dd_cal]
         print(di_cal)
         selfcal_time = utils.get_selfcal_time_to_apply(solar_ms, di_cal)
         print(selfcal_time)
 
-        caltables = glob.glob("caltables/" + selfcal_time + "*.gcal")
-        dd_cal = glob.glob("caltables/" + selfcal_time + "*sun_only*.gcal")
+        caltables = glob.glob("caltables/" + selfcal_time + "*"+msfreq_str+"*.gcal")
+        dd_cal = glob.glob("caltables/" + selfcal_time + + "*"+msfreq_str+"*sun_only*.gcal")
         di_cal = [cal for cal in caltables if cal not in dd_cal]
 
         if len(di_cal) != 0:
@@ -264,7 +267,9 @@ def DI_selfcal(solar_ms, solint_full_selfcal=14400, solint_partial_selfcal=3600,
                          num_apcal=full_di_selfcal_rounds[1], logging_level=logging_level,pol=pol)
     
     logging.info('Doing a flux scaling using background strong sources')
-    flux_scaling.correct_flux_scaling(solar_ms, min_beam_val=0.1,pol=pol)
+    fc=flux_scaling.flux_scaling(vis=solar_ms,min_beam_val=0.1,pol=pol)
+    fc.correct_flux_scaling()
+
 
     logging.info('Splitted the selfcalibrated MS into a file named ' + solar_ms[:-3] + "_selfcalibrated.ms")
 
@@ -296,11 +301,12 @@ def DD_selfcal(solar_ms, solint_full_selfcal=1800, solint_partial_selfcal=600,
     selfcal_time = utils.get_selfcal_time_to_apply(solar_ms, glob.glob("caltables/*.gcal"))
     mstime = utils.get_time_from_name(solar_ms)
     mstime_str = utils.get_timestr_from_name(solar_ms)
-
+    msfreq_str = utils.get_freqstr_from_name(solar_ms)
+    
     sep = 100000000
     prior_selfcal = False
 
-    caltables = glob.glob("caltables/" + selfcal_time + "*sun_only*.gcal")
+    caltables = glob.glob("caltables/" + selfcal_time + "*" + msfreq_str + "*sun_only*.gcal")
 
     if len(caltables) != 0:
         prior_selfcal = True

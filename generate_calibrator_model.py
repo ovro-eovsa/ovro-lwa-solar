@@ -43,7 +43,7 @@ class model_generation():
         self.overwrite=True
         self.predict=True
         self.model=model
-        self.point_source_model_needed=False
+        self.point_source_model_needed=True
         if (self.separate_pol==True and self.num_pol==1) or \
             (self.separate_pol==False and self.num_pol!=1):
             raise RuntimeError("The two keywords \'separate_pol\' and \'pol\' are inconsistent")
@@ -253,43 +253,50 @@ class model_generation():
             d = me.measure(d0, 'AZEL')
             elev = d['m1']['value']*180/np.pi
             azev=d['m0']['value']*180/np.pi
+
             if azev<0:
                 azev=360+azev
             if elev<0:
                 del srcs[s]
+            elif np.sin(d['m0']['value'])**1.6<self.min_beam_val:
+                del srcs[s]
             else:
-                el.append(elev)
-                az.append(azev)
-        print (el)
-        return srcs,az,el
+                srcs[s]['el']=elev
+                srcs[s]['az']=azev
+        
+        return srcs
      
     def point_source_model(self):
-        srcs,az,el=self.get_risen_source_list()                  
-
-        pb=beam(msfile=self.vis)
-        pb.srcjones(np.array(az),np.array(el))
+        srcs=self.get_risen_source_list()                  
         
         
-        s=0    
-        for azev,elev in zip(az,el):
-            matrix=pb.get_source_pol_factors(pb.jones_matrices[s,:,:])
-           
-            if matrix[0,0] > self.min_beam_val and matrix[1,1] > self.min_beam_val:
-                srcs[s]['flux'] = self.flux80_47(float(srcs[s]['flux']), srcs[s]['alpha'], matrix) 
-            s+=1
         
         cl = componentlist()  
         cl.done()
 
         
         modelcl = self.vis.replace('.ms', '.cl')
+        
+         
         for s in srcs:
-            cl.addcomponent(flux=s['flux'], dir=s['position'], index=s['alpha'], polarization='Stokes', 
+            pb=beam(msfile=self.vis)
+            pb.srcjones(np.array([s['az']]),np.array([s['el']]))
+            matrix=pb.get_source_pol_factors(pb.jones_matrices[0,:,:])
+
+            if matrix[0,0] > self.min_beam_val and matrix[1,1] > self.min_beam_val:
+                
+                s['flux'] = self.flux80_47(float(s['flux']), s['alpha'], matrix) 
+                
+                cl.addcomponent(flux=s['flux'], dir=s['position'], index=s['alpha'], polarization='Stokes', 
                             spectrumtype='spectral index', freq='{0:f}MHz'.format(self.output_freq), label=s['label'])
             
-            logging.debug(
-                    "cl.addcomponent(flux=%s, dir='%s', index=%s, spectrumtype='spectral index', label='%s', polarization='Stokes')" % (
-                        s['flux'], s['position'], s['alpha'], s['label']))
+                logging.debug(
+                        "cl.addcomponent(flux=%s, dir='%s', index=%s, spectrumtype='spectral index', label='%s', polarization='Stokes')" % (
+                            s['flux'], s['position'], s['alpha'], s['label']))
+            
+        
+        
+            
         if os.path.exists(modelcl) and self.overwrite:
             os.system('rm -rf ' + modelcl)
         cl.rename(modelcl)
