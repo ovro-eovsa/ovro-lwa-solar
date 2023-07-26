@@ -27,6 +27,8 @@ from primary_beam import analytic_beam as beam
 import primary_beam
 from generate_calibrator_model import model_generation
 import generate_calibrator_model
+import timeit
+
 tb = table()
 me = measures()
 cl = componentlist()
@@ -187,23 +189,39 @@ def image_ms(solar_ms, calib_ms=None, bcal=None, do_selfcal=False, imagename='su
         if not overwrite:
             return None, imagename + "-image.helio.fits"
 
+    time1=timeit.default_timer()
     solar_ms = calibration.do_bandpass_correction(solar_ms, calib_ms=calib_ms, bcal=bcal, caltable_fold=caltable_fold)
-
+    time2=timeit.default_timer()
+    logging.info('Time taken to do the bandpass correction is: '+str(time2-time1)+"seconds")
+    time1=time2
     logging.info('Analysing ' + solar_ms)
     if selfcal:
         outms_di = selfcal.DI_selfcal(solar_ms, logging_level=logging_level, full_di_selfcal_rounds=full_di_selfcal_rounds,
                               partial_di_selfcal_rounds=partial_di_selfcal_rounds,pol=pol)
+        time2=timeit.default_timer()
+        logging.info('Time taken for DI selfcal and fluxscaling is: '+str(time2-time1)+"seconds")
+        time1=time2
         print (outms_di)
         logging.info('Removing the strong sources in the sky')
         outms_di_ = source_subtraction.remove_nonsolar_sources(outms_di,pol=pol)
+        time2=timeit.default_timer()
+        logging.info('Time taken for strong source removal is: '+str(time2-time1)+"seconds")
+        time1=time2
         logging.info('The strong source subtracted MS is ' + outms_di_)
         logging.info('Starting to do Stokes I selfcal towards direction of sun')
+        
         outms_dd = selfcal.DD_selfcal(outms_di_, logging_level=logging_level, full_dd_selfcal_rounds=full_dd_selfcal_rounds,
                               partial_dd_selfcal_rounds=partial_dd_selfcal_rounds,pol=pol)
+        time2=timeit.default_timer()
+        logging.info('Time taken for DD selfcal is: '+str(time2-time1)+"seconds")
+        time1=time2
         logging.info('Removing almost all sources in the sky except Sun')
         print ('Removing almost all sources in the sky except Sun')
         outms = source_subtraction.remove_nonsolar_sources(outms_dd, imagename='for_weak_source_subtraction',
                                         remove_strong_sources_only=False,pol=pol)
+        time2=timeit.default_timer()
+        logging.info('Time taken for weak source removal is: '+str(time2-time1)+"seconds")
+        time1=time2
         logging.info('The source subtracted MS is ' + outms)
     else:
         logging.info('Removing almost all sources in the sky except Sun')
@@ -212,23 +230,30 @@ def image_ms(solar_ms, calib_ms=None, bcal=None, do_selfcal=False, imagename='su
 
     logging.info('Changing the phasecenter to position of Sun')
     change_phasecenter(outms)
-    
+    time2=timeit.default_timer()
+    logging.info('Time taken for changing phasecenter: '+str(time2-time1)+"seconds")
+    time1=time2
     if do_final_imaging:
         logging.info('Generating final solar centered image')
-        
         deconvolve.run_wsclean(outms, imagename=imagename, automask_thresh=5, uvrange='0', predict=False, imsize=imsize, cell=cell,pol=pol)
+        time2=timeit.default_timer()
         logging.info('Correcting for the primary beam at the location of Sun')
-      
+        logging.info('Time taken for producing final image: '+str(time2-time1)+"seconds")
+        time1=time2
         correct_primary_beam(outms, imagename,pol=pol)
-        
+        time2=timeit.default_timer()
+        logging.info('Time taken for primary beam correction: '+str(time2-time1)+"seconds")
+        time1=time2
         # make_solar_image(outms, imagename=imagename, imsize=imsize, cell=cell)
+        
         for n,pola in enumerate(['I','Q','U','V','XX','YY']):
             
             if os.path.isfile(imagename+ "-"+pola+"-image.fits"):
                 helio_image = utils.convert_to_heliocentric_coords(outms, imagename+ "-"+pola+"-image.fits")
             elif pola=='I' and os.path.isfile(imagename+"-image.fits"):
                 helio_image = utils.convert_to_heliocentric_coords(outms, imagename+"-image.fits")
-        
+        time2=timeit.default_timer()
+        logging.info('Time taken for converting to heliocentric image: '+str(time2-time1)+"seconds")
         logging.info('Imaging completed for ' + solar_ms)
         return outms, helio_image
     else:

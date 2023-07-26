@@ -11,6 +11,7 @@ from primary_beam import analytic_beam as beam
 import primary_beam
 from generate_calibrator_model import model_generation
 import generate_calibrator_model
+import timeit
 tb = table()
 me = measures()
 cl = componentlist()
@@ -25,7 +26,8 @@ def gen_calibration(msfile, modelcl=None, uvrange='', bcaltb=None, logging_level
     :param msfile: input CASA ms visibility for calibration
     :param modelcl: input model of strong sources as a component list, produced from gen_model_cl()
     """
-
+	
+    time1=timeit.default_timer()
     if not modelcl or not (os.path.exists(modelcl)):
         print('Model component list does not exist. Generating one from scratch.')
         logging.info('Model component list does not exist. Generating one from scratch.')
@@ -56,6 +58,8 @@ def gen_calibration(msfile, modelcl=None, uvrange='', bcaltb=None, logging_level
 
     if logging_level == 'debug':
         utils.get_flagged_solution_num(bcaltb)
+    time2=timeit.default_timer()
+    logging.info("Time for producing bandpass table: "+str(time2-time1)+"seconds")
     return bcaltb
 
 
@@ -71,8 +75,11 @@ def apply_calibration(msfile, gaintable=None, doantflag=False, doflag=False, ant
         if type(gaintable) == str:
             gaintable = [gaintable]
     # Apply the calibration
+    time1=timeit.default_timer()
     clearcal(msfile)
     applycal(msfile, gaintable=gaintable, flagbackup=True, applymode='calflag')
+    time2=timeit.default_timer()
+    logging.info("Time for applying bandpass table: "+str(time2-time1)+"seconds")
     if doflag == True:
         logging.debug("Running rflag on corrected data")
         flagdata(vis=msfile, mode='rflag', datacolumn='corrected')

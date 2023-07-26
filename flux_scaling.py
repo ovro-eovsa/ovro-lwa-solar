@@ -61,7 +61,7 @@ class flux_scaling():
     def correct_flux_scaling(self):
         os.system("rm -rf calibrator-model.fits calibrator-XX-model.fits calibrator-YY-model.fits")
         mstime_str = utils.get_timestr_from_name(self.msfile)
-        di_selfcal_str, success = mstime_str,True#utils.get_keyword(self.msfile, 'di_selfcal_time', return_status=True)
+        di_selfcal_str, success = utils.get_keyword(self.msfile, 'di_selfcal_time', return_status=True)
         
         if di_selfcal_str == mstime_str and success:
             self.get_flux_scaling_factor()

@@ -17,6 +17,7 @@ from primary_beam import analytic_beam as beam
 import primary_beam
 from generate_calibrator_model import model_generation
 import generate_calibrator_model
+import timeit
 tb = table()
 me = measures()
 cl = componentlist()
@@ -25,6 +26,8 @@ msmd = msmetadata()
 
 def do_selfcal(msfile, num_phase_cal=3, num_apcal=5, applymode='calflag', logging_level='info',
                ms_keyword='di_selfcal_time',pol='I'):
+    
+    time1=timeit.default_timer()          
     logging.info('The plan is to do ' + str(num_phase_cal) + " rounds of phase selfcal")
     logging.info('The plan is to do ' + str(num_apcal) + " rounds of amplitude-phase selfcal")
     
@@ -148,6 +151,8 @@ def do_selfcal(msfile, num_phase_cal=3, num_apcal=5, applymode='calflag', loggin
     if num_apcal>0:
     	os.system("cp -r " + caltable + " caltables/")
     os.system("cp -r " + final_phase_caltable + " caltables/")
+    time2=timeit.default_timer()
+    logging.info("Time taken for selfcal: "+str(time2-time1)+"seconds")
     return True
 
 
@@ -209,7 +214,7 @@ def DI_selfcal(solar_ms, solint_full_selfcal=14400, solint_partial_selfcal=3600,
         print(selfcal_time)
 
         caltables = glob.glob("caltables/" + selfcal_time + "*"+msfreq_str+"*.gcal")
-        dd_cal = glob.glob("caltables/" + selfcal_time + + "*"+msfreq_str+"*sun_only*.gcal")
+        dd_cal = glob.glob("caltables/" + selfcal_time +  "*"+msfreq_str+"*sun_only*.gcal")
         di_cal = [cal for cal in caltables if cal not in dd_cal]
 
         if len(di_cal) != 0:
@@ -266,10 +271,12 @@ def DI_selfcal(solar_ms, solint_full_selfcal=14400, solint_partial_selfcal=3600,
         do_fresh_selfcal(solar_ms, num_phase_cal=full_di_selfcal_rounds[0],
                          num_apcal=full_di_selfcal_rounds[1], logging_level=logging_level,pol=pol)
     
+    time1=timeit.default_timer()
     logging.info('Doing a flux scaling using background strong sources')
     fc=flux_scaling.flux_scaling(vis=solar_ms,min_beam_val=0.1,pol=pol)
     fc.correct_flux_scaling()
-
+    time2=timeit.default_timer()
+    logging.info("Time taken for fluxscaling: "+str(time2-time1)+"seconds") 
 
     logging.info('Splitted the selfcalibrated MS into a file named ' + solar_ms[:-3] + "_selfcalibrated.ms")
 
