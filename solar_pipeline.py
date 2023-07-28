@@ -35,12 +35,6 @@ cl = componentlist()
 msmd = msmetadata()
 
 
-
-
-
-
-
-
 def correct_ms_bug(msfile):
     """
     Temporary fix for the visibility files produced by the current pipeline.
@@ -54,11 +48,6 @@ def correct_ms_bug(msfile):
     tb.putcol('MEAS_FREQ_REF', meas_freq_ref)
     tb.flush()
     tb.close()
-
-
-
-
-
 
 
 def change_phasecenter(msfile):
@@ -105,9 +94,6 @@ def change_phasecenter(msfile):
     os.system("chgcentre " + msfile + " " + ra1 + " " + dec1)
 
 
-
-
-
 def correct_primary_beam(msfile, imagename,pol='I'):
     m = utils.get_sun_pos(msfile, str_output=False)
     logging.debug('Solar ra: ' + str(m['m0']['value']))
@@ -152,12 +138,6 @@ def correct_primary_beam(msfile, imagename,pol='I'):
                 hdu.flush()
                 hdu.close()
     return
-
-
-
-
-
-
 
 
 def image_ms(solar_ms, calib_ms=None, bcal=None, do_selfcal=False, imagename='sun_only',
