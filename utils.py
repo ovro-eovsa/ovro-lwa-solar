@@ -1,10 +1,49 @@
 import os, sys
 from astropy.time import Time
 from astropy.io import fits
-from casatools import image, table, msmetadata, quanta
+from casatools import image, table, msmetadata, quanta, measures
 import numpy as np
 import logging, glob
 
+
+def get_sun_pos(msfile, str_output=True):
+    """
+    Return J2000 RA and DEC coordinates of the solar disk center
+    :param msfile: input CASA measurement set
+    :param str_output: if True, return coordinate in string form acceptable by CASA tclean
+        if False, return a dictionary in CASA measures format: https://casa.nrao.edu/docs/casaref/measures.measure.html
+    :return: solar disk center coordinate in string or dictionary format
+    """
+    tb=table()
+    me=measures()
+    tb.open(msfile)
+    t0 = tb.getcell('TIME', 0)
+    tb.close()
+    ovro = me.observatory('OVRO_MMA')
+    timeutc = me.epoch('UTC', '%fs' % t0)
+    me.doframe(ovro)
+    me.doframe(timeutc)
+    d0 = me.direction('SUN')
+    d0_j2000 = me.measure(d0, 'J2000')
+    if str_output:
+        d0_j2000_str = 'J2000 %frad %frad' % (d0_j2000['m0']['value'], d0_j2000['m1']['value'])
+        return d0_j2000_str
+    return d0_j2000
+
+
+def get_msinfo(msfile):
+    """
+    Return some basic information of an OVRO-LWA measurement set
+    :param msfile: path to CASA measurement set
+    :return: number of antennas, number of spectral windows, number of channels
+    """
+    msmd = msmetadata()
+    msmd.open(msfile)
+    nant = msmd.nantennas()  # number of antennas
+    nspw = msmd.nspw()  # number of spectral windows
+    nchan = msmd.nchan(0)  # number of channels of the first spw
+    msmd.close()
+    return nant, nspw, nchan
 
 def get_image_data(imagename):
     if os.path.isfile(imagename):
@@ -36,22 +75,50 @@ def get_image_maxmin(imagename, local=True):
 
 
 def check_image_quality(imagename, max1, min1, reorder=True):
+        
     if max1[0] == 0:
-        max1[0], min1[0] = get_image_maxmin(imagename)
+        if len(max1)==2:
+            max1[0], min1[0] = get_image_maxmin(imagename+"-image.fits")
+        else:
+            max1[0], min1[0] = get_image_maxmin(imagename+"-XX-image.fits")
+            max1[1], min1[1] = get_image_maxmin(imagename+"-YY-image.fits")
         print(max1, min1)
     else:
-        if reorder and max1[1] > 0.001:
-            max1[0], min1[0] = max1[1], min1[1]
-        max1[1], min1[1] = get_image_maxmin(imagename)
+        if reorder:
+            if len(max1)==2 and max1[1]>0.00001:
+                max1[0], min1[0] = max1[1], min1[1]
+            elif len(max1)==4 and max1[2]>0.00001:
+                max1[0], min1[0] = max1[2], min1[2]
+                max1[1], min1[1] = max1[3], min1[3]
+        if len(max1)==2:
+            max1[1], min1[1] = get_image_maxmin(imagename+"-image.fits")
+        else:
+            max1[2], min1[2] = get_image_maxmin(imagename+"-XX-image.fits")
+            max1[3], min1[3] = get_image_maxmin(imagename+"-YY-image.fits")
 
-        DR1 = max1[0] / abs(min1[0])
-        DR2 = max1[1] / abs(min1[1])
-        print(DR1, DR2)
-        if (DR1 - DR2) / DR2 > 0.2:
-            ### if max decreases by more than 20 percent
-            ## absolute value of minimum increases by more than 20 percent
-            if min1[1] < 0:
-                return False
+        if len(max1)==2:
+            DR1 = max1[0] / abs(min1[0])
+            DR2 = max1[1] / abs(min1[1])
+            print(DR1, DR2)
+            if (DR1 - DR2) / DR2 > 0.2:
+                ### if max decreases by more than 20 percent
+                ## absolute value of minimum increases by more than 20 percent
+                if min1[1] < 0:
+                    return False
+        else:
+            DR1 = max1[0] / abs(min1[0])
+            DR2 = max1[2] / abs(min1[2])
+            DR3 = max1[1] / abs(min1[1])
+            DR4 = max1[3] / abs(min1[3])
+            print (DR1,DR2,DR3,DR4)
+            if (DR1 - DR2) / DR2 > 0.2 :
+                ### if max decreases by more than 20 percent
+                ## absolute value of minimum increases by more than 20 percent
+                if min1[2] < 0:
+                    return False
+            if (DR3-DR4)/DR4>0.2:
+                if min1[3]<0:
+                    return False 
     return True
 
 
@@ -187,3 +254,6 @@ def convert_to_heliocentric_coords(msname, imagename, helio_imagename=None, reft
     except:
         logging.warning("Could not convert to helicentric coordinates")
         return None
+        
+        
+        

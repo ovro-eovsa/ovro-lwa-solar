@@ -13,7 +13,7 @@ def list_msfiles(file_path):
     """
     print (file_path)
     msfiles = []
-    for i in range(1, 8):
+    for i in range(1, 9):
         out = os.popen('ssh lwacalim0{0:d} ls /data0{1:d}/{2:s}/'.format(i, i, file_path)).read()
         names = out.split('\n')[:-1]
         
@@ -83,6 +83,7 @@ def file_downloader(file_list,path,freq):
         if os.path.isdir(filename)==False:
             filepath=path+"/"+filename
             cmd_str="scp -r {0:s} ./".format(filepath)
+           # print (cmd_str)
             os.system(cmd_str)
             logging.info('Downloading {0:s}'.format(filename))
         vis.append(filename)
@@ -158,8 +159,11 @@ class File_Handler:
        
         
     def get_selfcal_times_paths(self):
-        msfiles=list_msfiles(self.file_path)    
+        msfiles=list_msfiles(self.file_path)   
         filtered_msfiles=self.filter_msfiles(msfiles,self._start,self._end,self.freqstr)  ### contain file list for first frequency
+         
+        if len(filtered_msfiles)==0:
+        	return
         
         self.image_times=self.get_image_times(filtered_msfiles)  ### this is sorted
         del filtered_msfiles
@@ -172,14 +176,13 @@ class File_Handler:
     def get_unique_file_locs(self,msfiles):
          
          unique_paths=[]
-         
+          
          for freq in self.freqstr:
             for f1 in msfiles:
                 path=f1['path']
                 if f1['freq']==freq:
                     unique_paths.append('/'.join(path.split('/')[:-1]))
                     break
-         
          return unique_paths           
                     
     def get_current_path(self,current_freq):
@@ -304,16 +307,20 @@ class File_Handler:
         
         filtered=[]
         
-            
+        current_freq=''    
         for j,f1 in enumerate(msfiles):
             timestr=f1['time']
             t1=Time(timestr,scale='utc',format='isot')
             start_diff=(t1-tstart).value
             end_diff=(tend-t1).value
             
-            
-            if start_diff>=0 and end_diff>=0 and f1['freq']==freqstr[0]:
+            if len(current_freq)==0: 
+                if start_diff>=0 and end_diff>=0 and f1['freq'] in freqstr:
                     filtered.append(f1)
+                    current_freq=f1['freq']
+            else:
+                if start_diff>=0 and end_diff>=0 and f1['freq']==current_freq:
+                    filtered.append(f1)    
                     
         return filtered   
 
