@@ -91,7 +91,7 @@ def apply_calibration(msfile, gaintable=None, doantflag=False, doflag=False, ant
         
         
         
-def do_bandpass_correction(solar_ms, calib_ms=None, bcal=None, caltable_fold='caltables', logging_level='info'):
+def do_bandpass_correction(solar_ms, calib_ms=None, bcal=None, caltable_fold='caltables', freqbin=1, logging_level='info'):
     solar_ms1 = solar_ms[:-3] + "_calibrated.ms"
     if os.path.isdir(solar_ms1):
         return solar_ms1
@@ -111,7 +111,7 @@ def do_bandpass_correction(solar_ms, calib_ms=None, bcal=None, caltable_fold='ca
     # correct_ms_bug(solar_ms)
 
     apply_calibration(solar_ms, gaintable=bcal, doantflag=True, doflag=True, do_solar_imaging=False)
-    split(vis=solar_ms, outputvis=solar_ms[:-3] + "_calibrated.ms")
+    split(vis=solar_ms, outputvis=solar_ms[:-3] + "_calibrated.ms", width=int(freqbin))
     logging.info('Splitted the input solar MS into a file named ' + solar_ms[:-3] + "_calibrated.ms")
     solar_ms = solar_ms[:-3] + "_calibrated.ms"
     return solar_ms

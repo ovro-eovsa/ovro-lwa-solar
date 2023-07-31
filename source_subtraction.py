@@ -122,7 +122,7 @@ def get_nonsolar_sources_loc_pix(msfile, image="allsky", verbose=False, min_beam
 
 
 def gen_nonsolar_source_model(msfile, imagename="allsky", outimage=None, sol_area=400., src_area=200.,
-                              remove_strong_sources_only=True, verbose=True,pol='I'):
+                              remove_strong_sources_only=True, verbose=True, pol='I'):
     """
     Take the full sky image, remove non-solar sources from the image
     :param msfile: path to CASA measurement set
@@ -197,7 +197,7 @@ def gen_nonsolar_source_model(msfile, imagename="allsky", outimage=None, sol_are
     
     
 def remove_nonsolar_sources(msfile, imagename='allsky', imsize=4096, cell='2arcmin', minuv=0,
-                            remove_strong_sources_only=True,pol='I'):
+                            remove_strong_sources_only=True, pol='I', niter=50000):
     """
     Wrapping for removing the nonsolar sources from the solar measurement set
     :param msfile: input CASA measurement set
@@ -211,10 +211,10 @@ def remove_nonsolar_sources(msfile, imagename='allsky', imsize=4096, cell='2arcm
     if os.path.isdir(outms):
         return outms
     deconvolve.run_wsclean(msfile=msfile, imagename=imagename, imsize=imsize, cell=cell, uvrange=minuv, predict=False,
-                automask_thresh=5,pol=pol)
+                automask_thresh=5, pol=pol, niter=niter)
     image_nosun = gen_nonsolar_source_model(msfile, imagename=imagename,
-                                            remove_strong_sources_only=remove_strong_sources_only,pol=pol)
-    deconvolve.predict_model(msfile, outms="temp.ms", image=image_nosun,pol=pol)
+                                            remove_strong_sources_only=remove_strong_sources_only, pol=pol)
+    deconvolve.predict_model(msfile, outms="temp.ms", image=image_nosun, pol=pol)
     uvsub("temp.ms")
     split(vis="temp.ms", outputvis=outms, datacolumn='corrected')
     os.system("rm -rf temp.ms")

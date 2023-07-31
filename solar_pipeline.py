@@ -143,7 +143,8 @@ def correct_primary_beam(msfile, imagename,pol='I'):
 def image_ms(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagename='sun_only',
              imsize=1024, cell='1arcmin', logfile='analysis.log', logging_level='info',
              caltable_fold='caltables', full_di_selfcal_rounds=[2,1], partial_di_selfcal_rounds=[0, 1],
-             full_dd_selfcal_rounds=[1, 1], partial_dd_selfcal_rounds=[0, 1], do_final_imaging=True,pol='I',overwrite=False):
+             full_dd_selfcal_rounds=[1, 1], partial_dd_selfcal_rounds=[0, 1], do_final_imaging=True, pol='I', 
+             refant='202', overwrite=False):
     """
     Pipeline to calibrate and imaging a solar visibility
     :param solar_ms: input solar measurement set
@@ -162,9 +163,14 @@ def image_ms(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagename='sun
     if logging_level.lower() == 'info':
         logging.basicConfig(filename=logfile,
             format='%(asctime)s %(levelname)-8s %(message)s',
-            level=logging.INFO,
+            filemode='w', level=logging.INFO,
             datefmt='%Y-%m-%d %H:%M:%S')
 
+    if logging_level.lower() == 'debug':
+        logging.basicConfig(filename=logfile,
+            format='%(asctime)s %(levelname)-8s %(message)s',
+            filemode='w', level=logging.DEBUG,
+            datefmt='%Y-%m-%d %H:%M:%S')
         
     if not os.path.isdir(caltable_fold):
         os.mkdir(caltable_fold)
@@ -180,7 +186,7 @@ def image_ms(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagename='sun
     logging.info('Analysing ' + solar_ms)
     if do_selfcal:
         outms_di = selfcal.DI_selfcal(solar_ms, logging_level=logging_level, full_di_selfcal_rounds=full_di_selfcal_rounds,
-                              partial_di_selfcal_rounds=partial_di_selfcal_rounds,pol=pol)
+                              partial_di_selfcal_rounds=partial_di_selfcal_rounds, pol=pol, refant=refant)
         time2=timeit.default_timer()
         logging.info('Time taken for DI selfcal and fluxscaling is: '+str(time2-time1)+"seconds")
         time1=time2
@@ -194,7 +200,7 @@ def image_ms(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagename='sun
         logging.info('Starting to do Stokes I selfcal towards direction of sun')
         
         outms_dd = selfcal.DD_selfcal(outms_di_, logging_level=logging_level, full_dd_selfcal_rounds=full_dd_selfcal_rounds,
-                              partial_dd_selfcal_rounds=partial_dd_selfcal_rounds,pol=pol)
+                              partial_dd_selfcal_rounds=partial_dd_selfcal_rounds, pol=pol, refant=refant)
         time2=timeit.default_timer()
         logging.info('Time taken for DD selfcal is: '+str(time2-time1)+"seconds")
         time1=time2
@@ -242,6 +248,95 @@ def image_ms(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagename='sun
     else:
         return outms, None
 
+def image_ms_fast(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagename='sun_only',
+             imsize=1024, cell='1arcmin', logfile='analysis.log', logging_level='info',
+             caltable_fold='caltables', full_di_selfcal_rounds=[1,1], do_final_imaging=True, pol='I', 
+             refant='202', overwrite=False, freqbin=16):
+    """
+    Pipeline to calibrate and imaging a solar visibility
+    :param solar_ms: input solar measurement set
+    :param calib_ms: (optional) input measurement set for generating the calibrations, usually is one observed at night
+    :param bcal: (optional) bandpass calibration table. If not provided, use calib_ms to generate one.
+    :param full_di_selfcal_rounds: [rounds of phase-only selfcal, rounds of amp-phase selfcal]
+            for directional independent (full sky) full selfcalibration runs
+    :param partial_di_selfcal_rounds: [rounds of phase-only selfcal, rounds of amp-phase selfcal]
+            for directional independent (full sky) partial selfcalibration runs
+    :param full_dd_selfcal_rounds: [rounds of phase-only selfcal, rounds of amp-phase selfcal]
+            for directional-dependent full selfcalibration runs
+    :param partial_dd_selfcal_rounds: [rounds of phase-only selfcal, rounds of amp-phase selfcal]
+            for directional-dependent partial selfcalibration runs
+    """
+    
+    if logging_level.lower() == 'info':
+        logging.basicConfig(filename=logfile,
+            format='%(asctime)s %(levelname)-8s %(message)s',
+            level=logging.INFO,
+            datefmt='%Y-%m-%d %H:%M:%S')
+
+        
+    if not os.path.isdir(caltable_fold):
+        os.mkdir(caltable_fold)
+    if os.path.isfile(imagename + "-image.fits"):
+        if not overwrite:
+            return None, imagename + "-image.helio.fits"
+
+    time1=timeit.default_timer()
+    solar_ms = calibration.do_bandpass_correction(solar_ms, calib_ms=calib_ms, bcal=bcal, caltable_fold=caltable_fold, freqbin=freqbin)
+    time2=timeit.default_timer()
+    logging.info('Time taken to do the bandpass correction is: '+str(time2-time1)+"seconds")
+    time1=time2
+    logging.info('Analysing ' + solar_ms)
+    if do_selfcal:
+        outms_di = selfcal.DI_selfcal(solar_ms, logging_level=logging_level, full_di_selfcal_rounds=full_di_selfcal_rounds,
+                              partial_di_selfcal_rounds=[0, 0], pol=pol, refant=refant)
+        time2=timeit.default_timer()
+        logging.info('Time taken for DI selfcal and fluxscaling is: '+str(time2-time1)+"seconds")
+        time1=time2
+        print (outms_di)
+        print ('Removing all strong sources in the sky except Sun')
+        #outms = source_subtraction.remove_nonsolar_sources(outms_di, imagename='for_weak_source_subtraction',
+        #                                remove_strong_sources_only=False, niter=10000, pol=pol)
+        outms = source_subtraction.remove_nonsolar_sources(outms_di, imagename='tmp_strong_source_subtraction',
+                                        remove_strong_sources_only=True, niter=1000, pol=pol)
+        time2=timeit.default_timer()
+        logging.info('Time taken for weak source removal is: '+str(time2-time1)+"seconds")
+        time1=time2
+        logging.info('The source subtracted MS is ' + outms)
+    else:
+        logging.info('Removing almost all sources in the sky except Sun')
+        outms = source_subtraction.remove_nonsolar_sources(solar_ms, pol=pol)
+        logging.info('The source subtracted MS is ' + outms)
+
+    logging.info('Changing the phasecenter to position of Sun')
+    change_phasecenter(outms)
+    time2=timeit.default_timer()
+    logging.info('Time taken for changing phasecenter: '+str(time2-time1)+"seconds")
+    time1=time2
+    if do_final_imaging:
+        logging.info('Generating final solar centered image')
+        deconvolve.run_wsclean(outms, imagename=imagename, automask_thresh=5, uvrange='0', predict=False, imsize=imsize, cell=cell,pol=pol)
+        time2=timeit.default_timer()
+        logging.info('Correcting for the primary beam at the location of Sun')
+        logging.info('Time taken for producing final image: '+str(time2-time1)+"seconds")
+        time1=time2
+        correct_primary_beam(outms, imagename,pol=pol)
+        time2=timeit.default_timer()
+        logging.info('Time taken for primary beam correction: '+str(time2-time1)+"seconds")
+        time1=time2
+        # make_solar_image(outms, imagename=imagename, imsize=imsize, cell=cell)
+        
+        for n,pola in enumerate(['I','Q','U','V','XX','YY']):
+            
+            if os.path.isfile(imagename+ "-"+pola+"-image.fits"):
+                helio_image = utils.convert_to_heliocentric_coords(outms, imagename+ "-"+pola+"-image.fits")
+            elif pola=='I' and os.path.isfile(imagename+"-image.fits"):
+                helio_image = utils.convert_to_heliocentric_coords(outms, imagename+"-image.fits")
+        time2=timeit.default_timer()
+        logging.info('Time taken for converting to heliocentric image: '+str(time2-time1)+"seconds")
+        logging.info('Imaging completed for ' + solar_ms)
+        return outms, helio_image
+    else:
+        return outms, None
 
 def solar_pipeline(time_duration, calib_time_duration, freqstr, filepath, time_integration=8, time_cadence=100,
                    observation_integration=8,
@@ -292,14 +387,14 @@ def solar_pipeline(time_duration, calib_time_duration, freqstr, filepath, time_i
             bcal = calib_file[0]
         imagename = "sun_only_" + filename[:-3]
         outms, helio_image = image_ms(filename, calib_ms=calib_filename, bcal=bcal, selfcal=True,
-                                    imagename=imagename, do_final_imaging=True,pol=pol)
+                                    imagename=imagename, do_final_imaging=True, pol=pol, refant=refant)
         filename = fp.get_current_file_for_selfcal(freqstr[0])
 
     filename = fp.get_current_file_for_selfcal(freqstr[0])
     while filename is not None:
         imagename = "sun_only_" + filename[:-3]
         outms, helio_image = image_ms(filename, calib_ms=calib_ms, bcal=bcal, selfcal=True,
-                                    imagename=imagename, do_final_imaging=True,pol=pol)
+                                    imagename=imagename, do_final_imaging=True, pol=pol, refant=refant)
         filename = fp.get_current_file_for_imaging(freqstr[0])
 
 
