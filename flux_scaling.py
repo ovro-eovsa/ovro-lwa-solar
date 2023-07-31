@@ -111,7 +111,7 @@ class flux_scaling():
                     mean_factor=np.mean(scaling_factor)                
                     logging.info('Scaling factor is for :' + str(mean_factor))
                 
-                print (mean_factor)
+                print(mean_factor)
                 
 
                 logging.debug("Generating caltable for fluxscaling. Filename is " + self.msfile[:-3] + "." + self.caltable_suffix)
@@ -137,7 +137,7 @@ class flux_scaling():
         DI_val = utils.get_keyword(self.msfile, 'di_selfcal_time')
 
         logging.debug('Correcting the DATA with the scaling factor')
-        temp_file = 'temp_' + self.msfile
+        temp_file = 'temp_' + os.path.basename(self.msfile)
 
         split(vis=self.msfile, outputvis=temp_file)
 
@@ -173,7 +173,7 @@ class flux_scaling():
         self.src_area_xpix = self.src_area / dx
         self.src_area_ypix = self.src_area / dy          
             
-    def get_flux_scaling_factor(self):
+    def get_flux_scaling_factor(self, use_cascyg_only=True):
         if self.pol=='I':
             md=model_generation(vis=self.msfile,pol=self.pol,separate_pol=False)
         else:
@@ -191,6 +191,17 @@ class flux_scaling():
             
         srcs = source_subtraction.get_nonsolar_sources_loc_pix(self.msfile, final_image, min_beam_val=self.min_beam_val)
 
+        if use_cascyg_only:
+            srcs_name = [s['label'] for s in srcs]
+            if 'CasA' in srcs_name or 'CygA' in srcs_name:
+                for i, s in enumerate(srcs):
+                    if s['label'] != 'CasA' and s['label'] != 'CygA':
+                        del(srcs[i])
+            else:
+                print('I did not find either CasA or CygA in the image. Use all sources available')
+                print(srcs_name)
+
+
         self.get_image_props(final_image)
 
         if self.pol=='I':
@@ -199,11 +210,8 @@ class flux_scaling():
             pols=['-XX','-YY']
         
         
-        #mean_factor=[]
-        #pol_prefix=[]
-        #scaling_factor = []
-        
         self.srcs_with_scaling = []
+
         
         for s in srcs:
             s['scaling_factor']={}

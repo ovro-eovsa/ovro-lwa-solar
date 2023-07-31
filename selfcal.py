@@ -247,7 +247,7 @@ def DI_selfcal(solar_ms, solint_full_selfcal=14400, solint_partial_selfcal=3600,
                     success = utils.put_keyword(solar_ms, 'di_selfcal_time', mstime_str, return_status=True)
                     logging.info(
                         'Starting to do direction independent Stokes I selfcal after applying ' + di_selfcal_time_str)
-                    success = do_selfcal(solar_ms, num_phase_cal=0,
+                    success = do_selfcal(solar_ms, num_phase_cal=full_di_selfcal_rounds[0],
                                          num_apcal=full_di_selfcal_rounds[1], logging_level=logging_level,pol=pol)
                     datacolumn = 'corrected'
                     if success == False:

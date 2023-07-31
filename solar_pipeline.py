@@ -140,10 +140,10 @@ def correct_primary_beam(msfile, imagename,pol='I'):
     return
 
 
-def image_ms(solar_ms, calib_ms=None, bcal=None, do_selfcal=False, imagename='sun_only',
+def image_ms(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagename='sun_only',
              imsize=1024, cell='1arcmin', logfile='analysis.log', logging_level='info',
-             caltable_fold='caltables', full_di_selfcal_rounds=[2,3], partial_di_selfcal_rounds=[0, 1],
-             full_dd_selfcal_rounds=[2, 1], partial_dd_selfcal_rounds=[0, 1], do_final_imaging=True,pol='I',overwrite=False):
+             caltable_fold='caltables', full_di_selfcal_rounds=[2,1], partial_di_selfcal_rounds=[0, 1],
+             full_dd_selfcal_rounds=[1, 1], partial_dd_selfcal_rounds=[0, 1], do_final_imaging=True,pol='I',overwrite=False):
     """
     Pipeline to calibrate and imaging a solar visibility
     :param solar_ms: input solar measurement set
@@ -159,9 +159,12 @@ def image_ms(solar_ms, calib_ms=None, bcal=None, do_selfcal=False, imagename='su
             for directional-dependent partial selfcalibration runs
     """
     
-    
     if logging_level.lower() == 'info':
-        logging.basicConfig(filename=logfile, level=logging.INFO)
+        logging.basicConfig(filename=logfile,
+            format='%(asctime)s %(levelname)-8s %(message)s',
+            level=logging.INFO,
+            datefmt='%Y-%m-%d %H:%M:%S')
+
         
     if not os.path.isdir(caltable_fold):
         os.mkdir(caltable_fold)
@@ -175,7 +178,7 @@ def image_ms(solar_ms, calib_ms=None, bcal=None, do_selfcal=False, imagename='su
     logging.info('Time taken to do the bandpass correction is: '+str(time2-time1)+"seconds")
     time1=time2
     logging.info('Analysing ' + solar_ms)
-    if selfcal:
+    if do_selfcal:
         outms_di = selfcal.DI_selfcal(solar_ms, logging_level=logging_level, full_di_selfcal_rounds=full_di_selfcal_rounds,
                               partial_di_selfcal_rounds=partial_di_selfcal_rounds,pol=pol)
         time2=timeit.default_timer()
