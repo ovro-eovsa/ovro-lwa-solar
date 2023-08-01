@@ -239,23 +239,18 @@ def image_ms(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagename='sun
     else:
         return outms, None
 
-def image_ms_fast(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagename='sun_only',
+def image_ms_speed(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagename='sun_only',
              imsize=1024, cell='1arcmin', logfile='analysis.log', logging_level='info',
              caltable_fold='caltables', full_di_selfcal_rounds=[1,1], do_final_imaging=True, pol='I', 
              refant='202', overwrite=False, freqbin=4):
     """
-    Pipeline to calibrate and imaging a solar visibility
+    Pipeline to calibrate and imaging a solar visibility. 
+    This is the version that optimizes the speed with a somewhat reduced image dynamic range.
     :param solar_ms: input solar measurement set
     :param calib_ms: (optional) input measurement set for generating the calibrations, usually is one observed at night
     :param bcal: (optional) bandpass calibration table. If not provided, use calib_ms to generate one.
     :param full_di_selfcal_rounds: [rounds of phase-only selfcal, rounds of amp-phase selfcal]
             for directional independent (full sky) full selfcalibration runs
-    :param partial_di_selfcal_rounds: [rounds of phase-only selfcal, rounds of amp-phase selfcal]
-            for directional independent (full sky) partial selfcalibration runs
-    :param full_dd_selfcal_rounds: [rounds of phase-only selfcal, rounds of amp-phase selfcal]
-            for directional-dependent full selfcalibration runs
-    :param partial_dd_selfcal_rounds: [rounds of phase-only selfcal, rounds of amp-phase selfcal]
-            for directional-dependent partial selfcalibration runs
     """
     
     if logging_level.lower() == 'info':
