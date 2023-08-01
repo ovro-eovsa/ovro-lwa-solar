@@ -24,8 +24,8 @@ cl = componentlist()
 msmd = msmetadata()
 
 
-def do_selfcal(msfile, num_phase_cal=2, num_apcal=2, applymode='calflag', logging_level='info',
-               ms_keyword='di_selfcal_time',pol='I', refant='202', niter0=600, niter_incr=200):
+def do_selfcal(msfile, num_phase_cal=2, num_apcal=2, applymode='calflag', logging_level='info', caltable_folder='caltables/',
+               ms_keyword='di_selfcal_time',pol='I', refant='202', niter0=1000, niter_incr=500):
     
     time1=timeit.default_timer()          
     logging.info('The plan is to do ' + str(num_phase_cal) + " rounds of phase selfcal")
@@ -70,7 +70,7 @@ def do_selfcal(msfile, num_phase_cal=2, num_apcal=2, applymode='calflag', loggin
                 if os.path.isdir(caltable):
                     logging.info("Applying " + caltable)
                     applycal(vis=msfile, gaintable=caltable, calwt=[False], applymode=applymode)
-                    os.system("cp -r " + caltable + " caltables/")
+                    os.system("cp -r " + caltable + " " + caltable_folder)
                 else:
                     logging.warning("No caltable found. Setting corrected data to DATA")
                     clearcal(msfile)
@@ -125,17 +125,17 @@ def do_selfcal(msfile, num_phase_cal=2, num_apcal=2, applymode='calflag', loggin
                     if num_phase_cal > 0:
                         applycal(vis=msfile, gaintable=[caltable, final_phase_caltable], calwt=[False, False],
                                  applymode=applymode)
-                        os.system("cp -r " + final_phase_caltable + " caltables/")
+                        os.system("cp -r " + final_phase_caltable + " " + caltable_folder)
                     else:
                         applycal(vis=msfile, gaintable=[caltable], calwt=[False, False], applymode=applymode)
-                    os.system("cp -r " + caltable + " caltables/")
+                    os.system("cp -r " + caltable + " " + caltable_folder)
 
                 else:
                     logging.warning("No good aplitude-phase selfcal solution found.")
                     if num_phase_cal > 0:
                         logging.info("Applying " + final_phase_caltable)
                         applycal(vis=msfile, gaintable=[final_phase_caltable], calwt=[False], applymode=applymode)
-                        os.system("cp -r " + final_phase_caltable + " caltables/")
+                        os.system("cp -r " + final_phase_caltable + " " + caltable_folder)
                     else:
                         logging.warning("No caltable found. Setting corrected data to DATA")
                         clearcal(msfile)
@@ -154,8 +154,8 @@ def do_selfcal(msfile, num_phase_cal=2, num_apcal=2, applymode='calflag', loggin
     logging.debug('Flagging on the residual')
     flagdata(vis=msfile, mode='rflag', datacolumn='residual')
     if num_apcal>0:
-    	os.system("cp -r " + caltable + " caltables/")
-    os.system("cp -r " + final_phase_caltable + " caltables/")
+    	os.system("cp -r " + caltable + " " + caltable_folder)
+    os.system("cp -r " + final_phase_caltable + " " + caltable_folder)
     time2=timeit.default_timer()
     logging.debug("Time taken for selfcal: "+str(time2-time1)+"seconds")
     return True
@@ -182,9 +182,9 @@ def do_fresh_selfcal(solar_ms, num_phase_cal=3, num_apcal=5, logging_level='info
     return
 
 
-def DI_selfcal(solar_ms, solint_full_selfcal=14400, solint_partial_selfcal=3600,
+def DI_selfcal(solar_ms, solint_full_selfcal=14400, solint_partial_selfcal=3600, caltable_folder = 'caltables/',
                full_di_selfcal_rounds=[1,1], partial_di_selfcal_rounds=[1, 1], logging_level='info', pol='I', refant='202',
-               niter0=600, niter_incr=200):
+               niter0=1000, niter_incr=500):
     """
     Directional-independent self-calibration (full sky)
     :param solar_ms: input solar visibility
@@ -210,19 +210,19 @@ def DI_selfcal(solar_ms, solint_full_selfcal=14400, solint_partial_selfcal=3600,
     mstime_str = utils.get_timestr_from_name(solar_ms)
     msfreq_str = utils.get_freqstr_from_name(solar_ms)
 
-    caltables = glob.glob("caltables/*"+msfreq_str+"*.gcal")
+    caltables = glob.glob(caltable_folder + "/*" + msfreq_str + "*.gcal")
     if len(caltables) != 0:
         prior_selfcal = True
 
     if prior_selfcal:
-        dd_cal = glob.glob("caltables/*"+msfreq_str+"*sun_only*.gcal")
+        dd_cal = glob.glob(caltable_folder + "/*" + msfreq_str + "*sun_only*.gcal")
         di_cal = [cal for cal in caltables if cal not in dd_cal]
         print(di_cal)
         selfcal_time = utils.get_selfcal_time_to_apply(solar_ms, di_cal)
         print(selfcal_time)
 
-        caltables = glob.glob("caltables/" + selfcal_time + "*"+msfreq_str+"*.gcal")
-        dd_cal = glob.glob("caltables/" + selfcal_time +  "*"+msfreq_str+"*sun_only*.gcal")
+        caltables = glob.glob(caltable_folder + "/" + selfcal_time + "*" + msfreq_str + "*.gcal")
+        dd_cal = glob.glob(caltable_folder + "/" + selfcal_time +  "*" + msfreq_str + "*sun_only*.gcal")
         di_cal = [cal for cal in caltables if cal not in dd_cal]
 
         if len(di_cal) != 0:
@@ -294,9 +294,9 @@ def DI_selfcal(solar_ms, solint_full_selfcal=14400, solint_partial_selfcal=3600,
     return solar_ms_slfcaled
 
 
-def DD_selfcal(solar_ms, solint_full_selfcal=1800, solint_partial_selfcal=600,
+def DD_selfcal(solar_ms, solint_full_selfcal=1800, solint_partial_selfcal=600, caltable_folder='caltables/',
                full_dd_selfcal_rounds=[3, 5], partial_dd_selfcal_rounds=[1, 1],
-               logging_level='info', pol='I', refant='202', niter0=600, niter_incr=200):
+               logging_level='info', pol='I', refant='202', niter0=1000, niter_incr=500):
     """
     Directional-dependent self-calibration on the Sun only
     :param solar_ms: input solar visibility
@@ -319,12 +319,12 @@ def DD_selfcal(solar_ms, solint_full_selfcal=1800, solint_partial_selfcal=600,
     mstime_str = utils.get_timestr_from_name(solar_ms)
     msfreq_str = utils.get_freqstr_from_name(solar_ms)
     
-    selfcal_time = utils.get_selfcal_time_to_apply(solar_ms, glob.glob("caltables/*"+msfreq_str+"*.gcal"))
+    selfcal_time = utils.get_selfcal_time_to_apply(solar_ms, glob.glob(caltable_folder + "/*" + msfreq_str + "*.gcal"))
     
     sep = 100000000
     prior_selfcal = False
 
-    caltables = glob.glob("caltables/" + selfcal_time + "*" + msfreq_str + "*sun_only*.gcal")
+    caltables = glob.glob(caltable_folder + selfcal_time + "*" + msfreq_str + "*sun_only*.gcal")
 
     if len(caltables) != 0:
         prior_selfcal = True

@@ -18,7 +18,7 @@ cl = componentlist()
 msmd = msmetadata()
 
 
-def gen_calibration(msfile, modelcl=None, uvrange='', bcaltb=None, logging_level='info', caltable_fold='caltables'):
+def gen_calibration(msfile, modelcl=None, uvrange='', bcaltb=None, logging_level='info', caltable_folder='caltables/'):
     """
     This function is for doing initial self-calibrations using strong sources that are above the horizon
     It is recommended to use a dataset observed at night when the Sun is not in the field of view
@@ -45,7 +45,7 @@ def gen_calibration(msfile, modelcl=None, uvrange='', bcaltb=None, logging_level
     # Now do a bandpass calibration using the model component list
 
     if not bcaltb:
-        bcaltb = caltable_fold + "/" + os.path.basename(msfile).replace('.ms', '.bcal')
+        bcaltb = caltable_folder + "/" + os.path.basename(msfile).replace('.ms', '.bcal')
 
     logging.info("Generating bandpass solution")
     bandpass(msfile, caltable=bcaltb, uvrange=uvrange, combine='scan,field,obs', fillgaps=0)
@@ -75,11 +75,11 @@ def apply_calibration(msfile, gaintable=None, doantflag=False, doflag=False, ant
         if type(gaintable) == str:
             gaintable = [gaintable]
     # Apply the calibration
-    time1=timeit.default_timer()
+    #time1=timeit.default_timer()
     clearcal(msfile)
     applycal(msfile, gaintable=gaintable, flagbackup=True, applymode='calflag')
-    time2=timeit.default_timer()
-    logging.info("Time for applying bandpass table: "+str(time2-time1)+"seconds")
+    #time2=timeit.default_timer()
+    #logging.info("Time for applying bandpass table: "+str(time2-time1)+"seconds")
     if doflag == True:
         logging.debug("Running rflag on corrected data")
         flagdata(vis=msfile, mode='rflag', datacolumn='corrected')
@@ -91,23 +91,35 @@ def apply_calibration(msfile, gaintable=None, doantflag=False, doflag=False, ant
         
         
         
-def do_bandpass_correction(solar_ms, calib_ms=None, bcal=None, caltable_fold='caltables', freqbin=1, logging_level='info'):
+def do_bandpass_correction(solar_ms, calib_ms=None, bcal=None, caltable_folder='caltables/', freqbin=1, logging_level='info', overwrite=False):
     solar_ms1 = solar_ms[:-3] + "_calibrated.ms"
     if os.path.isdir(solar_ms1):
-        return solar_ms1
-    if not bcal or os.path.isdir(bcal) == False:
-        logging.debug('Bandpass table not supplied or is not present on disc. Creating one' + \
-                      ' from the supplied MS')
-        if os.path.exists(calib_ms):
+        logging.info('Found existing calibrated dataset on disk.')
+        if not overwrite:
+            logging.info('I am told to not overwrite it. No bandpass correction is done.')
+            return solar_ms1
+        else:
+            logging.info('I am told to overwrite it. Proceed with bandpass correction.')
+            os.system('rm -rf '+solar_ms1)
+    if os.path.exists(calib_ms):
+        # check if bandpass table already exists
+        bcal_ = caltable_folder + "/" + os.path.basename(calib_ms).replace('.ms', '.bcal')
+        if not overwrite:
+            if os.path.isdir(bcal_):
+                logging.info('I found an existing bandpass table. Will reuse it to calibrate.')
+                bcal = bcal_
+        else:
             logging.debug('Flagging all data which are zero')
             flagdata(vis=calib_ms, mode='clip', clipzeros=True)
             logging.debug('Flagging antennas before calibration.')
             flagging.flag_bad_ants(calib_ms)
-            bcal = gen_calibration(calib_ms, logging_level=logging_level, caltable_fold=caltable_fold)
+            bcal = gen_calibration(calib_ms, logging_level=logging_level, caltable_folder=caltable_folder)
             logging.info('Bandpass calibration table generated using ' + calib_ms)
-        else:
+    else:
+        if not bcal or not os.path.isdir(bcal):
             print('Neither calib_ms nor bcal exists. Need to provide calibrations to continue. Abort..')
             logging.error('Neither calib_ms nor bcal exists. Need to provide calibrations to continue. Abort..')
+
     # correct_ms_bug(solar_ms)
 
     apply_calibration(solar_ms, gaintable=bcal, doantflag=True, doflag=True, do_solar_imaging=False)
