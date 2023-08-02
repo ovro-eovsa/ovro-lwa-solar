@@ -142,9 +142,9 @@ def correct_primary_beam(msfile, imagename, pol='I'):
 
 def image_ms(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagename='sun_only',
              imsize=1024, cell='1arcmin', logfile='analysis.log', logging_level='info',
-             caltable_fold='caltables', full_di_selfcal_rounds=[2,1], partial_di_selfcal_rounds=[0, 1],
+             caltable_folder='caltables', full_di_selfcal_rounds=[3,2], partial_di_selfcal_rounds=[0, 1],
              full_dd_selfcal_rounds=[1, 1], partial_dd_selfcal_rounds=[0, 1], do_final_imaging=True, pol='I', 
-             refant='202', overwrite=False):
+             refant='202', overwrite=False, do_fluxscaling=False):
     """
     Pipeline to calibrate and imaging a solar visibility
     :param solar_ms: input solar measurement set
@@ -172,21 +172,23 @@ def image_ms(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagename='sun
             filemode='w', level=logging.DEBUG,
             datefmt='%Y-%m-%d %H:%M:%S')
         
-    if not os.path.isdir(caltable_fold):
-        os.mkdir(caltable_fold)
+    if not os.path.isdir(caltable_folder):
+        os.mkdir(caltable_folder)
     if os.path.isfile(imagename + "-image.fits"):
         if not overwrite:
             return None, imagename + "-image.helio.fits"
 
+    logging.info('==========Working on a new solar ms file {0:s}============='.format(solar_ms))
+    time_begin=timeit.default_timer()
     time1=timeit.default_timer()
-    solar_ms = calibration.do_bandpass_correction(solar_ms, calib_ms=calib_ms, bcal=bcal, caltable_fold=caltable_fold)
+    solar_ms = calibration.do_bandpass_correction(solar_ms, calib_ms=calib_ms, bcal=bcal, caltable_folder=caltable_folder)
     time2=timeit.default_timer()
     logging.info('Time taken to do the bandpass correction is: {0:.1f} s'.format(time2-time1))
     time1=time2
     logging.info('Analysing ' + solar_ms)
     if do_selfcal:
         outms_di = selfcal.DI_selfcal(solar_ms, logging_level=logging_level, full_di_selfcal_rounds=full_di_selfcal_rounds,
-                              partial_di_selfcal_rounds=partial_di_selfcal_rounds, pol=pol, refant=refant)
+                              partial_di_selfcal_rounds=partial_di_selfcal_rounds, pol=pol, refant=refant, do_fluxscaling=do_fluxscaling)
         time2=timeit.default_timer()
         logging.info('Time taken for DI selfcal and fluxscaling is: {0:.1f} s'.format(time2-time1))
         time1=time2
@@ -224,10 +226,8 @@ def image_ms(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagename='sun
         logging.info('Generating final solar centered image')
         deconvolve.run_wsclean(outms, imagename=imagename, automask_thresh=5, uvrange='0', predict=False, imsize=imsize, cell=cell,pol=pol)
         correct_primary_beam(outms, imagename,pol=pol)
-        # make_solar_image(outms, imagename=imagename, imsize=imsize, cell=cell)
         
         for n,pola in enumerate(['I','Q','U','V','XX','YY']):
-            
             if os.path.isfile(imagename+ "-"+pola+"-image.fits"):
                 helio_image = utils.convert_to_heliocentric_coords(outms, imagename+ "-"+pola+"-image.fits")
             elif pola=='I' and os.path.isfile(imagename+"-image.fits"):
@@ -235,8 +235,12 @@ def image_ms(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagename='sun
         logging.info('Imaging completed for ' + solar_ms)
         time2=timeit.default_timer()
         logging.info('Time taken for producing final image: {0:.1f} s'.format(time2-time1))
+        time_end=timeit.default_timer()
+        logging.info('Time taken to complete all processing: {0:.1f} s'.format(time_end-time_begin)) 
         return outms, helio_image
     else:
+        time_end=timeit.default_timer()
+        logging.info('Time taken to complete all processing: {0:.1f} s'.format(time_end-time_begin)) 
         return outms, None
 
 def image_ms_speed(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagename='sun_only',
@@ -262,7 +266,7 @@ def image_ms_speed(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagenam
 
         
     if not os.path.isdir(caltable_folder):
-        os.mkdir(caltable_fold)
+        os.mkdir(caltable_folder)
     if os.path.isfile(imagename + "-image.fits"):
         if not overwrite:
             return None, imagename + "-image.helio.fits"
@@ -338,7 +342,7 @@ def solar_pipeline(time_duration, calib_time_duration, freqstr, filepath, time_i
                    observation_integration=8,
                    calib_ms=None, bcal=None, selfcal=False, imagename='sun_only',
                    imsize=512, cell='1arcmin', logfile='analysis.log', logging_level='info',
-                   caltable_fold='caltables',pol='I'):
+                   caltable_folder='caltables',pol='I'):
     if logging_level == 'info' or logging_level == 'INFO':
         logging.basicConfig(filename=logfile, level=logging.INFO)
     elif logging_level == 'warning' or logging_level == 'WARNING':
@@ -378,7 +382,7 @@ def solar_pipeline(time_duration, calib_time_duration, freqstr, filepath, time_i
 
     filename = fp.get_current_file_for_selfcal(freqstr[0])
     while filename is not None:
-        calib_file = glob.glob(caltable_fold + '/*.bcal')
+        calib_file = glob.glob(caltable_folder + '/*.bcal')
         if len(calib_file) != 0:
             bcal = calib_file[0]
         imagename = "sun_only_" + filename[:-3]

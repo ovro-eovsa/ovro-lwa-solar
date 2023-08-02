@@ -184,7 +184,7 @@ def do_fresh_selfcal(solar_ms, num_phase_cal=3, num_apcal=5, logging_level='info
 
 def DI_selfcal(solar_ms, solint_full_selfcal=14400, solint_partial_selfcal=3600, caltable_folder = 'caltables/',
                full_di_selfcal_rounds=[1,1], partial_di_selfcal_rounds=[1, 1], logging_level='info', pol='I', refant='202',
-               niter0=1000, niter_incr=500):
+               niter0=1000, niter_incr=500, do_fluxscaling=False):
     """
     Directional-independent self-calibration (full sky)
     :param solar_ms: input solar visibility
@@ -280,17 +280,17 @@ def DI_selfcal(solar_ms, solint_full_selfcal=14400, solint_partial_selfcal=3600,
         do_fresh_selfcal(solar_ms, num_phase_cal=full_di_selfcal_rounds[0],
                          num_apcal=full_di_selfcal_rounds[1], logging_level=logging_level, pol=pol, refant=refant)
     
-    time1=timeit.default_timer()
-    logging.info('Doing a flux scaling using background strong sources')
-    fc=flux_scaling.flux_scaling(vis=solar_ms,min_beam_val=0.1,pol=pol)
-    fc.correct_flux_scaling()
-    time2=timeit.default_timer()
-    logging.debug("Time taken for fluxscaling: "+str(time2-time1)+"seconds") 
-
-    logging.info('Splitted the selfcalibrated MS into a file named ' + solar_ms[:-3] + "_selfcalibrated.ms")
-
     solar_ms_slfcaled = solar_ms[:-3] + "_selfcalibrated.ms"
-    split(vis=solar_ms, outputvis=solar_ms_slfcaled, datacolumn='data')
+    if do_fluxscaling:
+        logging.info('Doing a flux scaling using background strong sources')
+        fc=flux_scaling.flux_scaling(vis=solar_ms, min_beam_val=0.1, pol=pol)
+        fc.correct_flux_scaling()
+        logging.info('Splitted the selfcalibrated MS into a file named ' + solar_ms[:-3] + "_selfcalibrated.ms")
+        split(vis=solar_ms, outputvis=solar_ms_slfcaled, datacolumn='data')
+    else:
+        logging.info('Splitted the selfcalibrated MS into a file named ' + solar_ms[:-3] + "_selfcalibrated.ms")
+        split(vis=solar_ms, outputvis=solar_ms_slfcaled, datacolumn='corrected')
+
     return solar_ms_slfcaled
 
 
