@@ -103,11 +103,18 @@ def do_bandpass_correction(solar_ms, calib_ms=None, bcal=None, caltable_folder='
             os.system('rm -rf '+solar_ms1)
     if os.path.exists(calib_ms):
         # check if bandpass table already exists
-        bcal_ = caltable_folder + "/" + os.path.basename(calib_ms).replace('.ms', '.bcal')
-        if not overwrite:
+        if not overwrite or not os.path.isdir(bcal):
+            bcal_ = caltable_folder + "/" + os.path.basename(calib_ms).replace('.ms', '.bcal')
             if os.path.isdir(bcal_):
                 logging.info('I found an existing bandpass table. Will reuse it to calibrate.')
                 bcal = bcal_
+            else:
+                logging.debug('Flagging all data which are zero')
+                flagdata(vis=calib_ms, mode='clip', clipzeros=True)
+                logging.debug('Flagging antennas before calibration.')
+                flagging.flag_bad_ants(calib_ms)
+                bcal = gen_calibration(calib_ms, logging_level=logging_level, caltable_folder=caltable_folder)
+                logging.info('Bandpass calibration table generated using ' + calib_ms)
         else:
             logging.debug('Flagging all data which are zero')
             flagdata(vis=calib_ms, mode='clip', clipzeros=True)
