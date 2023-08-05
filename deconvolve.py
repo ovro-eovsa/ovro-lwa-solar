@@ -23,12 +23,17 @@ msmd = msmetadata()
 
 
 def run_wsclean(msfile, imagename, automask_thresh=8, imsize=4096, cell='2arcmin', uvrange='10',
-                predict=True,pol='I'):  ### uvrange is in lambda units
+                predict=True,pol='I',fast_vis=False):  ### uvrange is in lambda units
     logging.debug("Running WSCLEAN")
+    if fast_vis==True:
+        intervals_out=10
+    else:
+        intervals_out=1
     os.system("wsclean -no-dirty -no-update-model-required -no-negative -size " + str(imsize) + " " + \
               str(imsize) + " -scale " + cell + " -weight uniform -minuv-l " + str(uvrange) + " -auto-mask " + str(
         automask_thresh) + \
-              " -niter 100000 -name " + imagename + " -mgain 0.75 -beam-fitting-size 2 -pol "+pol+' ' + msfile)
+              " -niter 100000 -name " + imagename + " -mgain 0.75 -beam-fitting-size 2 -pol "+pol+' ' + "-intervals-out "+\
+                str(intervals_out)+" "+msfile)
     if predict:
         logging.debug("Predicting model visibilities from " + imagename + " in " + msfile)
         os.system("wsclean -predict -pol "+pol+" "+ "-name " + imagename + " " + msfile)

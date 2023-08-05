@@ -174,9 +174,16 @@ def do_fresh_selfcal(solar_ms, num_phase_cal=3, num_apcal=5, logging_level='info
         success = do_selfcal(solar_ms, num_phase_cal=num_phase_cal, num_apcal=num_apcal, logging_level=logging_level,pol=pol)
     return
 
+def convert_caltables_for_fast_vis(solar_ms,calib_ms,caltables):
+    fast_caltables=[]
+    for caltb in caltables:
+        fast_caltables.append(calibration.make_fast_caltb_from_slow(calib_ms, solar_ms, caltb))
+    return fast_caltables
+    
 
 def DI_selfcal(solar_ms, solint_full_selfcal=14400, solint_partial_selfcal=3600,
-               full_di_selfcal_rounds=[1,1], partial_di_selfcal_rounds=[1, 1], logging_level='info',pol='I'):
+               full_di_selfcal_rounds=[1,1], partial_di_selfcal_rounds=[1, 1], logging_level='info',pol='I',\
+               fast_vis=False,calib_ms=None):
     """
     Directional-independent self-calibration (full sky)
     :param solar_ms: input solar visibility
@@ -224,6 +231,12 @@ def DI_selfcal(solar_ms, solint_full_selfcal=14400, solint_partial_selfcal=3600,
                 di_selfcal_time = utils.get_time_from_name(di_selfcal_time_str)
 
                 sep = abs((di_selfcal_time - mstime).value * 86400)  ### in seconds
+                
+                if fast_vis==True:
+                    if calib_ms:
+                        di_cal=convert_caltables_for_fast_vis(solar_ms,calib_ms,di_cal)
+                    else:
+                        raise RuntimeError("Supplying a calibration MS is mandatory for imaging fast visibilities")
 
                 applycal(solar_ms, gaintable=di_cal, calwt=[False] * len(di_cal))
                 flagdata(vis=solar_ms, mode='rflag', datacolumn='corrected')
@@ -273,7 +286,7 @@ def DI_selfcal(solar_ms, solint_full_selfcal=14400, solint_partial_selfcal=3600,
     
     time1=timeit.default_timer()
     logging.info('Doing a flux scaling using background strong sources')
-    fc=flux_scaling.flux_scaling(vis=solar_ms,min_beam_val=0.1,pol=pol)
+    fc=flux_scaling.flux_scaling(vis=solar_ms,min_beam_val=0.1,pol=pol,fast_vis=fast_vis,calib_ms=calib_ms)
     fc.correct_flux_scaling()
     time2=timeit.default_timer()
     logging.info("Time taken for fluxscaling: "+str(time2-time1)+"seconds") 
@@ -287,7 +300,7 @@ def DI_selfcal(solar_ms, solint_full_selfcal=14400, solint_partial_selfcal=3600,
 
 def DD_selfcal(solar_ms, solint_full_selfcal=1800, solint_partial_selfcal=600,
                full_dd_selfcal_rounds=[3, 5], partial_dd_selfcal_rounds=[1, 1],
-               logging_level='info',pol='I'):
+               logging_level='info',pol='I', fast_vis=False,calib_ms=None):
     """
     Directional-dependent self-calibration on the Sun only
     :param solar_ms: input solar visibility
@@ -327,6 +340,12 @@ def DD_selfcal(solar_ms, solint_full_selfcal=1800, solint_partial_selfcal=600,
             dd_selfcal_time = utils.get_time_from_name(dd_selfcal_time_str)
 
             sep = abs((dd_selfcal_time - mstime).value * 86400)  ### in seconds
+            
+            if fast_vis==True:
+                    if calib_ms:
+                        caltables=convert_caltables_for_fast_vis(solar_ms,calib_ms,caltables)
+                    else:
+                        raise RuntimeError("Supplying a calibration MS is mandatory for imaging fast visibilities")
 
             applycal(solar_ms, gaintable=caltables, calwt=[False] * len(caltables), applymode='calonly')
             flagdata(vis=solar_ms, mode='rflag', datacolumn='corrected')

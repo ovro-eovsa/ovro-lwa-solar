@@ -17,7 +17,120 @@ me = measures()
 cl = componentlist()
 msmd = msmetadata()
 
+def make_fast_caltb_from_slow(calib_ms, solar_ms, caltb, \
+                            delayfile='/home/pipeline/proj/lwa-shell/mnc_python/data/cable_delays.csv',\
+                            caltable_fold='caltables', overwrite=False):
+    use_ant_names = True
 
+    NSTAND = 366
+
+    
+    caltb_fast = caltb+'.fast'
+    if os.path.isdir(caltb_fast) and overwrite==False:
+        return caltb_fast  #### No need to generate again if exists
+        
+    os.system('cp -r '+ caltb + ' ' + caltb_fast)
+
+
+    # The following is to overwrite the antenna list from the ms visibility (if necessary)
+    # fast_ants_inp = 'LWA-015, LWA-018, LWA-038, LWA-067, LWA-085, LWA-096, LWA-131, LWA-151, LWA-180, LWA-191, LWA-260, LWA-263, LWA-264, LWA-272, LWA-274, LWA-275, LWA-277, LWA-278, LWA-281, LWA-284, LWA-285, LWA-285, LWA-286, LWA-287, LWA-289, LWA-290, LWA-295, LWA-301, LWA-304, LWA-305, LWA-307, LWA-313, LWA-314, LWA-320, LWA-321, LWA-326, LWA-327, LWA-328, LWA-329, LWA-330, LWA-334, LWA-335, LWA-336, LWA-337, LWA-338, LWA-339, LWA-340, LWA-347'.split(', ')
+
+    # fast_ants_inp  = [i.replace('-','') for i in fast_ants_inp]
+    
+    tb.open(caltb+"/SPECTRAL_WINDOW")
+    chan_freqs=tb.getcol("CHAN_FREQ")
+    if chan_freqs.size==1:
+        gcaltb=True
+    else:
+        gcaltb=False
+    tb.close()
+    
+    
+
+    msmd.open(solar_ms)
+    fast_antids = msmd.antennaids()
+    fast_ants = msmd.antennanames()
+    nant_fast = len(fast_antids)
+    nchan_fast = msmd.nchan(0)
+    msmd.done()
+
+    msmd.open(calib_ms)
+    slow_antids = msmd.antennaids()
+    slow_ants = msmd.antennanames()
+    nchan_slow = msmd.nchan(0)
+    nant_slow = len(slow_antids)
+
+    print('Channel binning factor is ', nchan_slow/nchan_fast)
+    nch_bin = nchan_slow // nchan_fast
+
+    tb0 = table()
+    tb0.open(caltb)
+    bcal_antids = tb0.getcol('ANTENNA1')
+    cols = tb0.colnames()
+
+    tb1 = table()
+    tb1.open(caltb_fast, nomodify=False)
+    
+    for i in range(nant_slow-nant_fast):
+        tb1.removerows(0)
+
+    if use_ant_names:
+        antids = []
+        for i, fast_ant in enumerate(fast_ants):
+        #for i, fast_ant in enumerate(fast_ants_inp):
+            for slow_ant in slow_ants:
+                if fast_ant == slow_ant:
+                    antid = msmd.antennaids(fast_ant)
+                    print('found antid ', antid[0], 'for antenna', fast_ant)
+                    antids.append(antid[0])
+
+    delays_ns = np.zeros([NSTAND, 2]) # stand x pol
+    with open(delayfile, 'r') as fh:
+        for line in fh.readlines():
+            if line.startswith('#'):
+                continue
+            else:
+                v = line.split()
+                delays_ns[int(v[0])] = [float(v[1]), float(v[1])]
+
+    fast_ants_name_wolwa = [int(i.replace('LWA','')) for i in fast_ants]
+    slow_ants_name_wolwa = [int(i.replace('LWA','')) for i in slow_ants][:48]
+
+#    plt.plot(np.arange(nant_fast), delays_ns[fast_ants_name_wolwa,0], 'bo')
+ #   plt.plot(np.arange(nant_fast), delays_ns[fast_ants_name_wolwa,0]-delays_ns[slow_ants_name_wolwa,0], 'ro')
+    
+    
+
+    for col in cols:
+        if col != 'WEIGHT':
+            data = tb0.getcol(col)
+            ndim = data.ndim
+            
+            print('This column {0:s} has {1:d} dimensions'.format(col, ndim))
+            if ndim == 1:
+                tb1.putcol(col, data[antids])
+            else:
+                npol, nchan, nant= data.shape
+                if gcaltb:
+                    data_new = data
+                else:
+                    data_new=np.nanmean(data.reshape(npol, nchan_fast, nch_bin, nant), axis=2)
+                print('shape of data_new', data_new.shape)
+                tb1.putcol(col, data_new[:, :, antids])
+
+    # now reset the antenna ids to 0 to 47
+    tb1.putcol('ANTENNA1', np.arange(nant_fast))
+
+    tb0.close()
+    tb1.close()
+
+    if gcaltb==False:
+        # Finally, overwrite the SPECTRAL_WINDOW table in the calibration table using that from the fast visibility ms
+        os.system('cp -r '+ solar_ms + '/SPECTRAL_WINDOW ' + caltb_fast + '/')
+
+    msmd.done()
+    return caltb_fast
+    
 def gen_calibration(msfile, modelcl=None, uvrange='', bcaltb=None, logging_level='info', caltable_fold='caltables'):
     """
     This function is for doing initial self-calibrations using strong sources that are above the horizon
@@ -91,7 +204,7 @@ def apply_calibration(msfile, gaintable=None, doantflag=False, doflag=False, ant
         
         
         
-def do_bandpass_correction(solar_ms, calib_ms=None, bcal=None, caltable_fold='caltables', logging_level='info'):
+def do_bandpass_correction(solar_ms, calib_ms=None, bcal=None, caltable_fold='caltables', logging_level='info', fast_vis=False):
     solar_ms1 = solar_ms[:-3] + "_calibrated.ms"
     if os.path.isdir(solar_ms1):
         return solar_ms1
@@ -109,7 +222,10 @@ def do_bandpass_correction(solar_ms, calib_ms=None, bcal=None, caltable_fold='ca
             print('Neither calib_ms nor bcal exists. Need to provide calibrations to continue. Abort..')
             logging.error('Neither calib_ms nor bcal exists. Need to provide calibrations to continue. Abort..')
     # correct_ms_bug(solar_ms)
-
+    
+    if bcal and fast_vis==True:
+        bcal=make_fast_caltb_from_slow(calib_ms, solar_ms, bcal)
+        
     apply_calibration(solar_ms, gaintable=bcal, doantflag=True, doflag=True, do_solar_imaging=False)
     split(vis=solar_ms, outputvis=solar_ms[:-3] + "_calibrated.ms")
     logging.info('Splitted the input solar MS into a file named ' + solar_ms[:-3] + "_calibrated.ms")
