@@ -94,7 +94,7 @@ def change_phasecenter(msfile):
     os.system("chgcentre " + msfile + " " + ra1 + " " + dec1)
 
 
-def correct_primary_beam(msfile, imagename,pol='I'):
+def correct_primary_beam(msfile, imagename,pol='I',fast_vis=False):
     m = utils.get_sun_pos(msfile, str_output=False)
     logging.debug('Solar ra: ' + str(m['m0']['value']))
     logging.debug('Solar dec: ' + str(m['m1']['value']))
@@ -108,32 +108,54 @@ def correct_primary_beam(msfile, imagename,pol='I'):
     jones_matrices=pb.get_source_pol_factors(pb.jones_matrices[0,:,:])
 
     md=generate_calibrator_model.model_generation(vis=msfile)
-    if pol=='I':
-        scale=md.primary_beam_value(0,jones_matrices)
-        logging.info('The Stokes I beam correction factor is ' + str(round(scale, 4)))
-        hdu = fits.open(imagename+ "-image.fits", mode='update')
-        hdu[0].data /= scale
-        hdu.flush()
-        hdu.close()
+    if fast_vis==False:
+        if pol=='I':
+            scale=md.primary_beam_value(0,jones_matrices)
+            logging.info('The Stokes I beam correction factor is ' + str(round(scale, 4)))
+            hdu = fits.open(imagename+ "-image.fits", mode='update')
+            hdu[0].data /= scale
+            hdu.flush()
+            hdu.close()
+        else:
+            for pola in ['I','Q','U','V','XX','YY']:
+                if pola=='I' or pola=='XX' or pola=='YY':
+                    n=0
+                elif pola=='Q':
+                    n=1
+                elif pola=='U':
+                    n=2
+                else:
+                    n==3
+                scale=md.primary_beam_value(n,jones_matrices)
+                logging.info('The Stokes '+pola+' beam correction factor is ' + str(round(scale, 4)))
+                if os.path.isfile(imagename+ "-"+pola+"-image.fits"):
+                    hdu = fits.open(imagename+ "-"+pola+"-image.fits", mode='update')
+                    hdu[0].data /= scale
+                    hdu.flush()
+                    hdu.close()
+                elif pola=='I' and os.path.isfile(imagename+"-image.fits"):
+                    hdu = fits.open(imagename+"-image.fits", mode='update')
+                    hdu[0].data /= scale
+                    hdu.flush()
+                    hdu.close()
     else:
-        for pola in ['I','Q','U','V','XX','YY']:
-            if pola=='I' or pola=='XX' or pola=='YY':
-                n=0
-            elif pola=='Q':
-                n=1
-            elif pola=='U':
-                n=2
-            else:
-                n==3
-            scale=md.primary_beam_value(n,jones_matrices)
-            logging.info('The Stokes '+pola+' beam correction factor is ' + str(round(scale, 4)))
-            if os.path.isfile(imagename+ "-"+pola+"-image.fits"):
-                hdu = fits.open(imagename+ "-"+pola+"-image.fits", mode='update')
-                hdu[0].data /= scale
-                hdu.flush()
-                hdu.close()
-            elif pola=='I' and os.path.isfile(imagename+"-image.fits"):
-                hdu = fits.open(imagename+"-image.fits", mode='update')
+        image_names=utils.get_fast_vis_imagenames(msfile,imagename,pol)
+        for name in image_names:
+            if os.path.isfile(name[1]):
+                if pol=='I':
+                    scale=md.primary_beam_value(0,jones_matrices)
+                else:
+                    pola=name[1].split('-')[-1]
+                    if pola=='I' or pola=='XX' or pola=='YY':
+                        n=0
+                    elif pola=='Q':
+                        n=1
+                    elif pola=='U':
+                        n=2
+                    else:
+                        n==3
+                    scale=md.primary_beam_value(n,jones_matrices)
+                hdu = fits.open(name[1], mode='update')
                 hdu[0].data /= scale
                 hdu.flush()
                 hdu.close()
@@ -183,6 +205,8 @@ def image_ms(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagename='sun
     if os.path.isfile(imagename + "-image.fits"):
         if not overwrite:
             return None, imagename + "-image.helio.fits"
+            
+    utils.make_wsclean_compatible(solar_ms)
 
     time1=timeit.default_timer()
     solar_ms = calibration.do_bandpass_correction(solar_ms, calib_ms=calib_ms, bcal=bcal, caltable_fold=caltable_fold, fast_vis=fast_vis)
@@ -232,32 +256,44 @@ def image_ms(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagename='sun
         outms = source_subtraction.remove_nonsolar_sources(solar_ms,pol=pol)
         logging.info('The source subtracted MS is ' + outms)
 
-#    logging.info('Changing the phasecenter to position of Sun')
-#    change_phasecenter(outms)
-#    time2=timeit.default_timer()
-#    logging.info('Time taken for changing phasecenter: '+str(time2-time1)+"seconds")
-#    time1=time2
+    logging.info('Changing the phasecenter to position of Sun')
+    change_phasecenter(outms)
+    time2=timeit.default_timer()
+    logging.info('Time taken for changing phasecenter: '+str(time2-time1)+"seconds")
+    time1=time2
     if do_final_imaging:
         logging.info('Generating final solar centered image')
-        deconvolve.run_wsclean(outms, imagename=imagename, automask_thresh=5, uvrange='0', predict=False, \
+        if fast_vis==False:
+            deconvolve.run_wsclean(outms, imagename=imagename, automask_thresh=5, uvrange='0', predict=False, \
                                 imsize=imsize, cell=cell,pol=pol, fast_vis=fast_vis)
+        else:
+            num_fields=utils.get_total_fields(outms)
+            deconvolve.run_wsclean(outms, imagename=imagename, automask_thresh=5, uvrange='0', predict=False, \
+                                imsize=imsize, cell=cell,pol=pol, fast_vis=fast_vis,field=','.join([str(i) for i in range(num_fields)]))
+            
         time2=timeit.default_timer()
         logging.info('Correcting for the primary beam at the location of Sun')
         logging.info('Time taken for producing final image: '+str(time2-time1)+"seconds")
         time1=time2
-##TODO        correct_primary_beam(outms, imagename,pol=pol)  ### suport fast_vis images
+        correct_primary_beam(outms, imagename,pol=pol,fast_vis=fast_vis)  ### suport fast_vis images
         
         time2=timeit.default_timer()
         logging.info('Time taken for primary beam correction: '+str(time2-time1)+"seconds")
         time1=time2
         # make_solar_image(outms, imagename=imagename, imsize=imsize, cell=cell)
         
-        for n,pola in enumerate(['I','Q','U','V','XX','YY']):
+        if fast_vis==False:
+            for n,pola in enumerate(['I','Q','U','V','XX','YY']):
+                if os.path.isfile(imagename+ "-"+pola+"-image.fits"):
+                    helio_image = utils.convert_to_heliocentric_coords(outms, imagename+ "-"+pola+"-image.fits")
+                elif pola=='I' and os.path.isfile(imagename+"-image.fits"):
+                    helio_image = utils.convert_to_heliocentric_coords(outms, imagename+"-image.fits")
+        else:
+            image_names=utils.get_fast_vis_imagenames(outms,imagename,pol)
+            for name in image_names:
+                if os.path.isfile(name[1]):
+                    helio_image = utils.convert_to_heliocentric_coords(outms, name[1])    
             
-            if os.path.isfile(imagename+ "-"+pola+"-image.fits"):
-                helio_image = utils.convert_to_heliocentric_coords(outms, imagename+ "-"+pola+"-image.fits")
-            elif pola=='I' and os.path.isfile(imagename+"-image.fits"):
-                helio_image = utils.convert_to_heliocentric_coords(outms, imagename+"-image.fits") ## support fast vis images
         time2=timeit.default_timer()
         logging.info('Time taken for converting to heliocentric image: '+str(time2-time1)+"seconds")
         logging.info('Imaging completed for ' + solar_ms)
