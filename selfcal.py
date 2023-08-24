@@ -404,7 +404,7 @@ def DD_selfcal(solar_ms, solint_full_selfcal=1800, solint_partial_selfcal=600,
             logging.warning("DD selfcal caltable not found. Proceed with caution.")
             os.system("cp -r "+solar_ms+" "+solar_ms[:-3] + "_sun_selfcalibrated.ms")
     
-    if fast_vis==False:      
+    if fast_vis==False or prior_selfcal:      
         logging.info('Splitted the selfcalibrated MS into a file named ' + solar_ms[:-3] + "_sun_selfcalibrated.ms")
         split(vis=solar_ms, outputvis=solar_ms[:-3] + "_sun_selfcalibrated.ms")
         

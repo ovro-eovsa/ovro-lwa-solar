@@ -223,10 +223,11 @@ def do_bandpass_correction(solar_ms, calib_ms=None, bcal=None, caltable_fold='ca
             logging.error('Neither calib_ms nor bcal exists. Need to provide calibrations to continue. Abort..')
     # correct_ms_bug(solar_ms)
     
+    doantflag=True
     if bcal and fast_vis==True:
         bcal=make_fast_caltb_from_slow(calib_ms, solar_ms, bcal)
-        
-    apply_calibration(solar_ms, gaintable=bcal, doantflag=True, doflag=True, do_solar_imaging=False)
+        doantflag=False  ### The antenna flag calculation will be wrong for the fast ms.
+    apply_calibration(solar_ms, gaintable=bcal, doantflag=doantflag, doflag=True, do_solar_imaging=False)
     split(vis=solar_ms, outputvis=solar_ms[:-3] + "_calibrated.ms")
     logging.info('Splitted the input solar MS into a file named ' + solar_ms[:-3] + "_calibrated.ms")
     solar_ms = solar_ms[:-3] + "_calibrated.ms"
