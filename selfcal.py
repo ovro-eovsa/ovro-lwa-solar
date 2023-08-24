@@ -203,6 +203,8 @@ def DI_selfcal(solar_ms, solint_full_selfcal=14400, solint_partial_selfcal=3600,
     
     if fast_vis==True:
         applymode='calonly'
+        solint_full_selfcal=1e8   ### putting a insanely high value so that
+        solint_partial_selfcal=1e8 ### selfcal is not done for fast visibilities
     else:
         applymode='calflag'
         
@@ -329,7 +331,10 @@ def DD_selfcal(solar_ms, solint_full_selfcal=1800, solint_partial_selfcal=600,
     if os.path.isdir(solar_ms1):
         return solar_ms1
 
-    
+    if fast_vis==True:
+        solint_full_selfcal=1e8   ### putting a insanely high value so that
+        solint_partial_selfcal=1e8 ### selfcal is not done for fast visibilities
+        
     mstime = utils.get_time_from_name(solar_ms)
     mstime_str = utils.get_timestr_from_name(solar_ms)
     msfreq_str = utils.get_freqstr_from_name(solar_ms)
