@@ -94,7 +94,7 @@ def change_phasecenter(msfile):
     os.system("chgcentre " + msfile + " " + ra1 + " " + dec1)
 
 
-def correct_primary_beam(msfile, imagename,pol='I'):
+def correct_primary_beam(msfile, imagename,pol='I',fast_vis=False):
     m = utils.get_sun_pos(msfile, str_output=False)
     logging.debug('Solar ra: ' + str(m['m0']['value']))
     logging.debug('Solar dec: ' + str(m['m1']['value']))
@@ -108,32 +108,54 @@ def correct_primary_beam(msfile, imagename,pol='I'):
     jones_matrices=pb.get_source_pol_factors(pb.jones_matrices[0,:,:])
 
     md=generate_calibrator_model.model_generation(vis=msfile)
-    if pol=='I':
-        scale=md.primary_beam_value(0,jones_matrices)
-        logging.info('The Stokes I beam correction factor is ' + str(round(scale, 4)))
-        hdu = fits.open(imagename+ "-image.fits", mode='update')
-        hdu[0].data /= scale
-        hdu.flush()
-        hdu.close()
+    if fast_vis==False:
+        if pol=='I':
+            scale=md.primary_beam_value(0,jones_matrices)
+            logging.info('The Stokes I beam correction factor is ' + str(round(scale, 4)))
+            hdu = fits.open(imagename+ "-image.fits", mode='update')
+            hdu[0].data /= scale
+            hdu.flush()
+            hdu.close()
+        else:
+            for pola in ['I','Q','U','V','XX','YY']:
+                if pola=='I' or pola=='XX' or pola=='YY':
+                    n=0
+                elif pola=='Q':
+                    n=1
+                elif pola=='U':
+                    n=2
+                else:
+                    n==3
+                scale=md.primary_beam_value(n,jones_matrices)
+                logging.info('The Stokes '+pola+' beam correction factor is ' + str(round(scale, 4)))
+                if os.path.isfile(imagename+ "-"+pola+"-image.fits"):
+                    hdu = fits.open(imagename+ "-"+pola+"-image.fits", mode='update')
+                    hdu[0].data /= scale
+                    hdu.flush()
+                    hdu.close()
+                elif pola=='I' and os.path.isfile(imagename+"-image.fits"):
+                    hdu = fits.open(imagename+"-image.fits", mode='update')
+                    hdu[0].data /= scale
+                    hdu.flush()
+                    hdu.close()
     else:
-        for pola in ['I','Q','U','V','XX','YY']:
-            if pola=='I' or pola=='XX' or pola=='YY':
-                n=0
-            elif pola=='Q':
-                n=1
-            elif pola=='U':
-                n=2
-            else:
-                n==3
-            scale=md.primary_beam_value(n,jones_matrices)
-            logging.info('The Stokes '+pola+' beam correction factor is ' + str(round(scale, 4)))
-            if os.path.isfile(imagename+ "-"+pola+"-image.fits"):
-                hdu = fits.open(imagename+ "-"+pola+"-image.fits", mode='update')
-                hdu[0].data /= scale
-                hdu.flush()
-                hdu.close()
-            elif pola=='I' and os.path.isfile(imagename+"-image.fits"):
-                hdu = fits.open(imagename+"-image.fits", mode='update')
+        image_names=utils.get_fast_vis_imagenames(msfile,imagename,pol)
+        for name in image_names:
+            if os.path.isfile(name[1]):
+                if pol=='I':
+                    scale=md.primary_beam_value(0,jones_matrices)
+                else:
+                    pola=name[1].split('-')[-1]
+                    if pola=='I' or pola=='XX' or pola=='YY':
+                        n=0
+                    elif pola=='Q':
+                        n=1
+                    elif pola=='U':
+                        n=2
+                    else:
+                        n==3
+                    scale=md.primary_beam_value(n,jones_matrices)
+                hdu = fits.open(name[1], mode='update')
                 hdu[0].data /= scale
                 hdu.flush()
                 hdu.close()
@@ -143,7 +165,9 @@ def correct_primary_beam(msfile, imagename,pol='I'):
 def image_ms(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagename='sun_only',
              imsize=1024, cell='1arcmin', logfile='analysis.log', logging_level='info',
              caltable_fold='caltables', full_di_selfcal_rounds=[2,1], partial_di_selfcal_rounds=[0, 1],
-             full_dd_selfcal_rounds=[1, 1], partial_dd_selfcal_rounds=[0, 1], do_final_imaging=True,pol='I',overwrite=False):
+             full_dd_selfcal_rounds=[1, 1], partial_dd_selfcal_rounds=[0, 1], do_final_imaging=True,pol='I',overwrite=False,\
+             solint_full_DI_selfcal=14400, solint_partial_DI_selfcal=3600, solint_full_DD_selfcal=1800, solint_partial_DD_selfcal=600,\
+             fast_vis=False, fast_vis_image_model_subtraction=False):
     """
     Pipeline to calibrate and imaging a solar visibility
     :param solar_ms: input solar measurement set
@@ -157,6 +181,13 @@ def image_ms(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagename='sun
             for directional-dependent full selfcalibration runs
     :param partial_dd_selfcal_rounds: [rounds of phase-only selfcal, rounds of amp-phase selfcal]
             for directional-dependent partial selfcalibration runs
+    :param solint_full_DI_selfcal: Time after which a full direction independent selfcal will be done
+    :param solint_partial_DI_selfcal: Time after which a partial direction independent selfcal will
+            be done
+    :param solint_full_DD_selfcal: same as DI_selfcal but for direction dependent one
+    :param fast_vis: Do special analysis for fast visibility imaging   
+    :param fast_vis_image_model_subtraction: If False, the strong source model will be subtracted.
+            Otherwise WSClean will be run using the full MS and the average sky model will be subtracted.    
     """
     
     if logging_level.lower() == 'info':
@@ -164,48 +195,62 @@ def image_ms(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagename='sun
             format='%(asctime)s %(levelname)-8s %(message)s',
             level=logging.INFO,
             datefmt='%Y-%m-%d %H:%M:%S')
-
+    
+    if fast_vis==True:
+        solint_partial_DD_selfcal=1800
+    
         
     if not os.path.isdir(caltable_fold):
         os.mkdir(caltable_fold)
     if os.path.isfile(imagename + "-image.fits"):
         if not overwrite:
             return None, imagename + "-image.helio.fits"
+            
+    utils.make_wsclean_compatible(solar_ms)
 
     time1=timeit.default_timer()
-    solar_ms = calibration.do_bandpass_correction(solar_ms, calib_ms=calib_ms, bcal=bcal, caltable_fold=caltable_fold)
+    solar_ms = calibration.do_bandpass_correction(solar_ms, calib_ms=calib_ms, bcal=bcal, caltable_fold=caltable_fold, fast_vis=fast_vis)
     time2=timeit.default_timer()
     logging.info('Time taken to do the bandpass correction is: '+str(time2-time1)+"seconds")
     time1=time2
     logging.info('Analysing ' + solar_ms)
     if do_selfcal:
         outms_di = selfcal.DI_selfcal(solar_ms, logging_level=logging_level, full_di_selfcal_rounds=full_di_selfcal_rounds,
-                              partial_di_selfcal_rounds=partial_di_selfcal_rounds,pol=pol)
+                              partial_di_selfcal_rounds=partial_di_selfcal_rounds,pol=pol,solint_full_selfcal=solint_full_DI_selfcal,\
+                              solint_partial_selfcal=solint_partial_DI_selfcal, fast_vis=fast_vis,calib_ms=calib_ms)
         time2=timeit.default_timer()
         logging.info('Time taken for DI selfcal and fluxscaling is: '+str(time2-time1)+"seconds")
         time1=time2
         print (outms_di)
         logging.info('Removing the strong sources in the sky')
-        outms_di_ = source_subtraction.remove_nonsolar_sources(outms_di,pol=pol)
+        outms_di_ = source_subtraction.remove_nonsolar_sources(outms_di,pol=pol, fast_vis=fast_vis,\
+                                        fast_vis_image_model_subtraction=fast_vis_image_model_subtraction)
         time2=timeit.default_timer()
         logging.info('Time taken for strong source removal is: '+str(time2-time1)+"seconds")
         time1=time2
         logging.info('The strong source subtracted MS is ' + outms_di_)
         logging.info('Starting to do Stokes I selfcal towards direction of sun')
         
-        outms_dd = selfcal.DD_selfcal(outms_di_, logging_level=logging_level, full_dd_selfcal_rounds=full_dd_selfcal_rounds,
-                              partial_dd_selfcal_rounds=partial_dd_selfcal_rounds,pol=pol)
-        time2=timeit.default_timer()
-        logging.info('Time taken for DD selfcal is: '+str(time2-time1)+"seconds")
-        time1=time2
-        logging.info('Removing almost all sources in the sky except Sun')
-        print ('Removing almost all sources in the sky except Sun')
-        outms = source_subtraction.remove_nonsolar_sources(outms_dd, imagename='for_weak_source_subtraction',
-                                        remove_strong_sources_only=False,pol=pol)
-        time2=timeit.default_timer()
-        logging.info('Time taken for weak source removal is: '+str(time2-time1)+"seconds")
-        time1=time2
-        logging.info('The source subtracted MS is ' + outms)
+        if fast_vis==False:
+            outms_dd = selfcal.DD_selfcal(outms_di_, logging_level=logging_level, full_dd_selfcal_rounds=full_dd_selfcal_rounds,
+                                  partial_dd_selfcal_rounds=partial_dd_selfcal_rounds,pol=pol, solint_full_selfcal=solint_full_DD_selfcal,\
+                                  solint_partial_selfcal=solint_partial_DD_selfcal)
+            time2=timeit.default_timer()
+            logging.info('Time taken for DD selfcal is: '+str(time2-time1)+"seconds")
+            time1=time2
+            logging.info('Removing almost all sources in the sky except Sun')
+            print ('Removing almost all sources in the sky except Sun')
+            outms = source_subtraction.remove_nonsolar_sources(outms_dd, imagename='for_weak_source_subtraction',
+                                            remove_strong_sources_only=False,pol=pol)
+            time2=timeit.default_timer()
+            logging.info('Time taken for weak source removal is: '+str(time2-time1)+"seconds")
+            time1=time2
+            logging.info('The source subtracted MS is ' + outms)
+        else:
+            outms = selfcal.DD_selfcal(outms_di_, logging_level=logging_level, full_dd_selfcal_rounds=full_dd_selfcal_rounds,
+                                  partial_dd_selfcal_rounds=partial_dd_selfcal_rounds,pol=pol, solint_full_selfcal=solint_full_DD_selfcal,\
+                                  solint_partial_selfcal=solint_partial_DD_selfcal,fast_vis=fast_vis,calib_ms=calib_ms)
+            
     else:
         logging.info('Removing almost all sources in the sky except Sun')
         outms = source_subtraction.remove_nonsolar_sources(solar_ms,pol=pol)
@@ -218,27 +263,42 @@ def image_ms(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagename='sun
     time1=time2
     if do_final_imaging:
         logging.info('Generating final solar centered image')
-        deconvolve.run_wsclean(outms, imagename=imagename, automask_thresh=5, uvrange='0', predict=False, imsize=imsize, cell=cell,pol=pol)
+        if fast_vis==False:
+            deconvolve.run_wsclean(outms, imagename=imagename, automask_thresh=5, uvrange='0', predict=False, \
+                                imsize=imsize, cell=cell,pol=pol, fast_vis=fast_vis)
+        else:
+            num_fields=utils.get_total_fields(outms)
+            deconvolve.run_wsclean(outms, imagename=imagename, automask_thresh=5, uvrange='0', predict=False, \
+                                imsize=imsize, cell=cell,pol=pol, fast_vis=fast_vis,field=','.join([str(i) for i in range(num_fields)]))
+            
         time2=timeit.default_timer()
         logging.info('Correcting for the primary beam at the location of Sun')
         logging.info('Time taken for producing final image: '+str(time2-time1)+"seconds")
         time1=time2
-        correct_primary_beam(outms, imagename,pol=pol)
+        correct_primary_beam(outms, imagename,pol=pol,fast_vis=fast_vis)  ### suport fast_vis images
+        
         time2=timeit.default_timer()
         logging.info('Time taken for primary beam correction: '+str(time2-time1)+"seconds")
         time1=time2
         # make_solar_image(outms, imagename=imagename, imsize=imsize, cell=cell)
         
-        for n,pola in enumerate(['I','Q','U','V','XX','YY']):
+        if fast_vis==False:
+            for n,pola in enumerate(['I','Q','U','V','XX','YY']):
+                if os.path.isfile(imagename+ "-"+pola+"-image.fits"):
+                    helio_image = utils.convert_to_heliocentric_coords(outms, imagename+ "-"+pola+"-image.fits")
+                elif pola=='I' and os.path.isfile(imagename+"-image.fits"):
+                    helio_image = utils.convert_to_heliocentric_coords(outms, imagename+"-image.fits")
+        else:
+            image_names=utils.get_fast_vis_imagenames(outms,imagename,pol)
+            for name in image_names:
+                if os.path.isfile(name[1]):
+                    helio_image = utils.convert_to_heliocentric_coords(outms, name[1])    
             
-            if os.path.isfile(imagename+ "-"+pola+"-image.fits"):
-                helio_image = utils.convert_to_heliocentric_coords(outms, imagename+ "-"+pola+"-image.fits")
-            elif pola=='I' and os.path.isfile(imagename+"-image.fits"):
-                helio_image = utils.convert_to_heliocentric_coords(outms, imagename+"-image.fits")
         time2=timeit.default_timer()
         logging.info('Time taken for converting to heliocentric image: '+str(time2-time1)+"seconds")
         logging.info('Imaging completed for ' + solar_ms)
         return outms, helio_image
+        
     else:
         return outms, None
 
