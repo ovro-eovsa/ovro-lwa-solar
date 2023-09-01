@@ -20,6 +20,18 @@ msmd = msmetadata()
 def make_fast_caltb_from_slow(calib_ms, solar_ms, caltb, \
                             delayfile='/home/pipeline/proj/lwa-shell/mnc_python/data/cable_delays.csv',\
                             caltable_fold='caltables', overwrite=False):
+    '''
+    calib_ms: This is a essentially a MS which has slow visibilties
+    solar_ms: The fast visibility MS
+    caltb: the caltable generated from slow visibility data
+           which will be converted to fast visibility format
+    delayfile: This file is probably unnecessary.
+    caltable_fold: location of the caltb and the output of this function
+    overwrite: If True, overwrite
+    
+    Writes a caltable in the caltable_fold with name ".fast" appended to caltb
+    '''                         
+                            
     use_ant_names = True
 
     NSTAND = 366
@@ -178,6 +190,12 @@ def gen_calibration(msfile, modelcl=None, uvrange='', bcaltb=None, logging_level
 
 def apply_calibration(msfile, gaintable=None, doantflag=False, doflag=False, antflagfile=None, do_solar_imaging=True,
                       imagename='test'):
+    '''
+    doantflag: If True, flag antennas based on antflagfile
+    antflagfile: filenames containing list of antennas to be flagged.
+    doflag: If true, run rflag on corrected data after applying the gaintable
+    do_solar_imaging: use tclean to do solar imaging.
+    '''
     if doantflag:
         logging.info("Flagging using auro-correlation")
         flagging.flag_bad_ants(msfile, antflagfile=antflagfile)
@@ -205,6 +223,16 @@ def apply_calibration(msfile, gaintable=None, doantflag=False, doflag=False, ant
         
         
 def do_bandpass_correction(solar_ms, calib_ms=None, bcal=None, caltable_fold='caltables', logging_level='info', fast_vis=False):
+    '''
+    solar_ms: Name of the MS which needs to be calibrated
+    calib_ms: Name of calibration table from which calibration table is to be generated
+    bcal: Name of bandpass table
+    caltable_fold: Name of folder where to keep/search for the caltable. This folder should exist
+    fast_vis: If True, solar_ms is a fast visibility dataset.
+    
+    IMPORTANT: For slow visibility, if bcal is provided, then calib_ms need not be provided. But if fast_vis is set to True,
+               then calib_ms must be a slow visibility dataset.
+    '''
     solar_ms1 = solar_ms[:-3] + "_calibrated.ms"
     if os.path.isdir(solar_ms1):
         return solar_ms1

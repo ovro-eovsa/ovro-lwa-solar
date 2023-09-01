@@ -24,6 +24,18 @@ def conv_deg(dec):
 
 class model_generation():
     def __init__(self,vis=None,filename='calibrator_source_list.txt',pol='I,Q,U,V',separate_pol=True,model=True):
+    	'''
+    	vis: Name of MS
+    	min_beam_val: The minimum primary beam value, below which the source
+    	              will not be considered during calibration
+	separate_pol: If True, separate polarisations will be analysed separately
+		       and the resultant model can be different. This parameter
+		       is only used if WSClean clean components are used for 
+		       generating the source model
+	pol: Polarisations for which model is needed. Can be I,Q,U,V, I, XX,YY
+    	model: This is used only if WSClean components are used. This tells the code
+    	       that we are generating a model (units Jy/pixel) and not an image units Jy/beam).
+    	'''
         self.vis=vis
         self.min_beam_val=0.01
         self.separate_pol=separate_pol

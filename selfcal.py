@@ -292,22 +292,23 @@ def DI_selfcal(solar_ms, solint_full_selfcal=14400, solint_partial_selfcal=3600,
             do_fresh_selfcal(solar_ms, num_phase_cal=full_di_selfcal_rounds[0],
                              num_apcal=full_di_selfcal_rounds[1], logging_level=logging_level,pol=pol)
         else:
-            logging.warning("DD selfcal caltable not found. Proceed with caution.")
+            logging.warning("DI selfcal caltable not found. Proceed with caution.")
             solar_ms_slfcaled = solar_ms[:-3] + "_selfcalibrated.ms"
-            os.system("cp -r "+solar_ms+" "+solar_ms_slfcaled)
+            gencal(vis=solar_ms, caltable="dummy.gencal", caltype='amp', parameter=1.0)
+            applycal(solar_ms,gaintable="dummy.gencal") ### this is needed to ensure flux scaling works fine.
+            os.system("rm -rf dummy.gencal")
     
-    if fast_vis==True:
-        time1=timeit.default_timer()
-        logging.info('Doing a flux scaling using background strong sources')
-        fc=flux_scaling.flux_scaling(vis=solar_ms,min_beam_val=0.1,pol=pol,fast_vis=fast_vis,calib_ms=calib_ms)
-        fc.correct_flux_scaling()
-        time2=timeit.default_timer()
-        logging.info("Time taken for fluxscaling: "+str(time2-time1)+"seconds") 
+    time1=timeit.default_timer()
+    logging.info('Doing a flux scaling using background strong sources')
+    fc=flux_scaling.flux_scaling(vis=solar_ms,min_beam_val=0.1,pol=pol,fast_vis=fast_vis,calib_ms=calib_ms)
+    fc.correct_flux_scaling()
+    time2=timeit.default_timer()
+    logging.info("Time taken for fluxscaling: "+str(time2-time1)+"seconds") 
 
-        logging.info('Splitted the selfcalibrated MS into a file named ' + solar_ms[:-3] + "_selfcalibrated.ms")
+    logging.info('Splitted the selfcalibrated MS into a file named ' + solar_ms[:-3] + "_selfcalibrated.ms")
 
-        solar_ms_slfcaled = solar_ms[:-3] + "_selfcalibrated.ms"
-        split(vis=solar_ms, outputvis=solar_ms_slfcaled, datacolumn='data')
+    solar_ms_slfcaled = solar_ms[:-3] + "_selfcalibrated.ms"
+    split(vis=solar_ms, outputvis=solar_ms_slfcaled, datacolumn='data')
     return solar_ms_slfcaled
 
 
