@@ -39,12 +39,14 @@ def get_point_flux(modelcl, src,pol=''):
     return -1
     
 class flux_scaling():
-    def __init__(self,vis,src_area=100, min_beam_val=0.1, caltable_suffix='fluxscale',pol='I'):
+    def __init__(self,vis,src_area=100, min_beam_val=0.1, caltable_suffix='fluxscale',pol='I', fast_vis=False,calib_ms=None):
         self.msfile=vis
         self.src_area=src_area
         self.min_beam_val=min_beam_val
         self.caltable_suffix=caltable_suffix
         self.pol=pol
+        self.fast_vis=fast_vis
+        self.calib_ms=calib_ms
         
         if self.pol=='I':
             self.num_images=len(glob.glob(self.msfile[:-3] + "_self*-image.fits"))
@@ -63,7 +65,8 @@ class flux_scaling():
         mstime_str = utils.get_timestr_from_name(self.msfile)
         di_selfcal_str, success = utils.get_keyword(self.msfile, 'di_selfcal_time', return_status=True)
         
-        if di_selfcal_str == mstime_str and success:
+        
+        if di_selfcal_str == mstime_str and success and self.fast_vis==False:
             self.get_flux_scaling_factor()
         
             if self.pol=='I':
@@ -127,6 +130,8 @@ class flux_scaling():
         
         elif success == True:
             caltable = glob.glob("caltables/" + di_selfcal_str + "*.fluxscale")[0]
+            if self.fast_vis==True:
+            	caltable=calibration.make_fast_caltb_from_slow(self.calib_ms, self.msfile, caltable)
             logging.info("Applying {0:s} for doing fluxscaling".format(caltable))
         else:
             caltable = self.msfile[:-3] + "." + self.caltable_suffix

@@ -197,7 +197,7 @@ def gen_nonsolar_source_model(msfile, imagename="allsky", outimage=None, sol_are
     
     
 def remove_nonsolar_sources(msfile, imagename='allsky', imsize=4096, cell='2arcmin', minuv=0,
-                            remove_strong_sources_only=True,pol='I'):
+                            remove_strong_sources_only=True,pol='I', fast_vis=False, fast_vis_image_model_subtraction=False):
     """
     Wrapping for removing the nonsolar sources from the solar measurement set
     :param msfile: input CASA measurement set
@@ -210,11 +210,26 @@ def remove_nonsolar_sources(msfile, imagename='allsky', imsize=4096, cell='2arcm
     outms = msfile[:-3] + "_sun_only.ms"
     if os.path.isdir(outms):
         return outms
-    deconvolve.run_wsclean(msfile=msfile, imagename=imagename, imsize=imsize, cell=cell, uvrange=minuv, predict=False,
-                automask_thresh=5,pol=pol)
-    image_nosun = gen_nonsolar_source_model(msfile, imagename=imagename,
-                                            remove_strong_sources_only=remove_strong_sources_only,pol=pol)
-    deconvolve.predict_model(msfile, outms="temp.ms", image=image_nosun,pol=pol)
+    
+    if fast_vis==True:
+        remove_strong_sources_only=False
+        
+        
+    if fast_vis==False or (fast_vis==True and fast_vis_image_model_subtraction==True):
+        deconvolve.run_wsclean(msfile=msfile, imagename=imagename, imsize=imsize, cell=cell, uvrange=minuv, predict=False,
+                    automask_thresh=5,pol=pol)
+        image_nosun = gen_nonsolar_source_model(msfile, imagename=imagename,
+                                                remove_strong_sources_only=remove_strong_sources_only,pol=pol)
+        deconvolve.predict_model(msfile, outms="temp.ms", image=image_nosun,pol=pol)
+        
+    elif fast_vis==True and fast_vis_image_model_subtraction==False:
+        md=model_generation(vis=msfile,separate_pol=True) 	    
+        modelcl, ft_needed = md.gen_model_cl()
+        if ft_needed==True:
+            os.system("cp -r "+msfile+" temp.ms")
+            clearcal("temp.ms", addmodel=True)
+            ft("temp.ms", complist=modelcl, usescratch=True)
+            
     uvsub("temp.ms")
     split(vis="temp.ms", outputvis=outms, datacolumn='corrected')
     os.system("rm -rf temp.ms")

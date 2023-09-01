@@ -174,9 +174,16 @@ def do_fresh_selfcal(solar_ms, num_phase_cal=3, num_apcal=5, logging_level='info
         success = do_selfcal(solar_ms, num_phase_cal=num_phase_cal, num_apcal=num_apcal, logging_level=logging_level,pol=pol)
     return
 
+def convert_caltables_for_fast_vis(solar_ms,calib_ms,caltables):
+    fast_caltables=[]
+    for caltb in caltables:
+        fast_caltables.append(calibration.make_fast_caltb_from_slow(calib_ms, solar_ms, caltb))
+    return fast_caltables
+    
 
 def DI_selfcal(solar_ms, solint_full_selfcal=14400, solint_partial_selfcal=3600,
-               full_di_selfcal_rounds=[1,1], partial_di_selfcal_rounds=[1, 1], logging_level='info',pol='I'):
+               full_di_selfcal_rounds=[1,1], partial_di_selfcal_rounds=[1, 1], logging_level='info',pol='I',\
+               fast_vis=False,calib_ms=None):
     """
     Directional-independent self-calibration (full sky)
     :param solar_ms: input solar visibility
@@ -194,6 +201,11 @@ def DI_selfcal(solar_ms, solint_full_selfcal=14400, solint_partial_selfcal=3600,
     if os.path.isdir(solar_ms1) == True:
         return solar_ms1
     
+    if fast_vis==True:
+        applymode='calonly'
+    else:
+        applymode='calflag'
+        
     sep = 100000000
     prior_selfcal = False
     caltables = []
@@ -224,8 +236,14 @@ def DI_selfcal(solar_ms, solint_full_selfcal=14400, solint_partial_selfcal=3600,
                 di_selfcal_time = utils.get_time_from_name(di_selfcal_time_str)
 
                 sep = abs((di_selfcal_time - mstime).value * 86400)  ### in seconds
+                
+                if fast_vis==True:
+                    if calib_ms:
+                        di_cal=convert_caltables_for_fast_vis(solar_ms,calib_ms,di_cal)
+                    else:
+                        raise RuntimeError("Supplying a calibration MS is mandatory for imaging fast visibilities")
 
-                applycal(solar_ms, gaintable=di_cal, calwt=[False] * len(di_cal))
+                applycal(solar_ms, gaintable=di_cal, calwt=[False] * len(di_cal),applymode=applymode)
                 flagdata(vis=solar_ms, mode='rflag', datacolumn='corrected')
 
                 if sep < solint_partial_selfcal:
@@ -266,28 +284,34 @@ def DI_selfcal(solar_ms, solint_full_selfcal=14400, solint_partial_selfcal=3600,
             do_fresh_selfcal(solar_ms, num_phase_cal=full_di_selfcal_rounds[0],
                              num_apcal=full_di_selfcal_rounds[1], logging_level=logging_level,pol=pol)
     else:
-        success = utils.put_keyword(solar_ms, 'di_selfcal_time', mstime_str, return_status=True)
-        logging.info('Starting to do direction independent Stokes I selfcal')
-        do_fresh_selfcal(solar_ms, num_phase_cal=full_di_selfcal_rounds[0],
-                         num_apcal=full_di_selfcal_rounds[1], logging_level=logging_level,pol=pol)
+        if fast_vis==False:
+            success = utils.put_keyword(solar_ms, 'di_selfcal_time', mstime_str, return_status=True)
+            logging.info('Starting to do direction independent Stokes I selfcal')
+            do_fresh_selfcal(solar_ms, num_phase_cal=full_di_selfcal_rounds[0],
+                             num_apcal=full_di_selfcal_rounds[1], logging_level=logging_level,pol=pol)
+        else:
+            logging.warning("DD selfcal caltable not found. Proceed with caution.")
+            solar_ms_slfcaled = solar_ms[:-3] + "_selfcalibrated.ms"
+            os.system("cp -r "+solar_ms+" "+solar_ms_slfcaled)
     
-    time1=timeit.default_timer()
-    logging.info('Doing a flux scaling using background strong sources')
-    fc=flux_scaling.flux_scaling(vis=solar_ms,min_beam_val=0.1,pol=pol)
-    fc.correct_flux_scaling()
-    time2=timeit.default_timer()
-    logging.info("Time taken for fluxscaling: "+str(time2-time1)+"seconds") 
+    if fast_vis==True:
+        time1=timeit.default_timer()
+        logging.info('Doing a flux scaling using background strong sources')
+        fc=flux_scaling.flux_scaling(vis=solar_ms,min_beam_val=0.1,pol=pol,fast_vis=fast_vis,calib_ms=calib_ms)
+        fc.correct_flux_scaling()
+        time2=timeit.default_timer()
+        logging.info("Time taken for fluxscaling: "+str(time2-time1)+"seconds") 
 
-    logging.info('Splitted the selfcalibrated MS into a file named ' + solar_ms[:-3] + "_selfcalibrated.ms")
+        logging.info('Splitted the selfcalibrated MS into a file named ' + solar_ms[:-3] + "_selfcalibrated.ms")
 
-    solar_ms_slfcaled = solar_ms[:-3] + "_selfcalibrated.ms"
-    split(vis=solar_ms, outputvis=solar_ms_slfcaled, datacolumn='data')
+        solar_ms_slfcaled = solar_ms[:-3] + "_selfcalibrated.ms"
+        split(vis=solar_ms, outputvis=solar_ms_slfcaled, datacolumn='data')
     return solar_ms_slfcaled
 
 
 def DD_selfcal(solar_ms, solint_full_selfcal=1800, solint_partial_selfcal=600,
                full_dd_selfcal_rounds=[3, 5], partial_dd_selfcal_rounds=[1, 1],
-               logging_level='info',pol='I'):
+               logging_level='info',pol='I', fast_vis=False,calib_ms=None):
     """
     Directional-dependent self-calibration on the Sun only
     :param solar_ms: input solar visibility
@@ -327,6 +351,12 @@ def DD_selfcal(solar_ms, solint_full_selfcal=1800, solint_partial_selfcal=600,
             dd_selfcal_time = utils.get_time_from_name(dd_selfcal_time_str)
 
             sep = abs((dd_selfcal_time - mstime).value * 86400)  ### in seconds
+            
+            if fast_vis==True:
+                    if calib_ms:
+                        caltables=convert_caltables_for_fast_vis(solar_ms,calib_ms,caltables)
+                    else:
+                        raise RuntimeError("Supplying a calibration MS is mandatory for imaging fast visibilities")
 
             applycal(solar_ms, gaintable=caltables, calwt=[False] * len(caltables), applymode='calonly')
             flagdata(vis=solar_ms, mode='rflag', datacolumn='corrected')
@@ -364,14 +394,19 @@ def DD_selfcal(solar_ms, solint_full_selfcal=1800, solint_partial_selfcal=600,
 
 
     else:
-        success = utils.put_keyword(solar_ms, 'dd_selfcal_time', mstime_str, return_status=True)
-        logging.info('Starting to do direction dependent Stokes I selfcal')
-        success = do_selfcal(solar_ms, num_phase_cal=full_dd_selfcal_rounds[0], num_apcal=full_dd_selfcal_rounds[1],
-                             applymode='calonly', logging_level=logging_level,
-                             ms_keyword='dd_selfcal_time',pol=pol)
-
-    logging.info('Splitted the selfcalibrated MS into a file named ' + solar_ms[:-3] + "_sun_selfcalibrated.ms")
-
-    split(vis=solar_ms, outputvis=solar_ms[:-3] + "_sun_selfcalibrated.ms")
+        if fast_vis==False:
+            success = utils.put_keyword(solar_ms, 'dd_selfcal_time', mstime_str, return_status=True)
+            logging.info('Starting to do direction dependent Stokes I selfcal')
+            success = do_selfcal(solar_ms, num_phase_cal=full_dd_selfcal_rounds[0], num_apcal=full_dd_selfcal_rounds[1],
+                                 applymode='calonly', logging_level=logging_level,
+                                 ms_keyword='dd_selfcal_time',pol=pol)
+        else:
+            logging.warning("DD selfcal caltable not found. Proceed with caution.")
+            os.system("cp -r "+solar_ms+" "+solar_ms[:-3] + "_sun_selfcalibrated.ms")
+    
+    if fast_vis==False or prior_selfcal:      
+        logging.info('Splitted the selfcalibrated MS into a file named ' + solar_ms[:-3] + "_sun_selfcalibrated.ms")
+        split(vis=solar_ms, outputvis=solar_ms[:-3] + "_sun_selfcalibrated.ms")
+        
     solar_ms = solar_ms[:-3] + "_sun_selfcalibrated.ms"
     return solar_ms

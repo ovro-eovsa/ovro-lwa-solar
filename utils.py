@@ -250,10 +250,45 @@ def convert_to_heliocentric_coords(msname, imagename, helio_imagename=None, reft
     try:
         hf.imreg(vis=msname, imagefile=temp_image, timerange=reftime,
                  fitsfile=helio_imagename, usephacenter=True, verbose=True, toTb=True)
+        os.system("rm -rf "+temp_image)
         return helio_imagename
     except:
         logging.warning("Could not convert to helicentric coordinates")
+        os.system("rm -rf "+temp_image)
         return None
         
-        
-        
+def make_wsclean_compatible(msname):
+    tb=table()
+    tb.open(msname+"/DATA_DESCRIPTION",nomodify=False)   
+    nrows=tb.nrows()
+    if nrows>1:
+        tb.removerows([i for i in range(1,nrows)])
+    tb.close()      
+
+def get_total_fields(msname):
+    msmd=msmetadata()
+    msmd.open(msname)
+    num_field=msmd.nfields()
+    msmd.done()
+    return num_field
+    
+def get_fast_vis_imagenames(msfile,imagename,pol):
+    pols=pol.split(',')
+    num_field=get_total_fields(msfile)
+    msmd=msmetadata()
+    msmd.open(msfile)
+    names=[]
+    for i in range(num_field):
+        time1 = msmd.timesforfield(i)
+        t=Time(time1/86400,format='mjd')
+        t.format='isot'
+        time_str=t.value[0].split('T')[1].replace(':','')
+        for pol1 in pols:
+            if pol1=='I':
+                pol1=''
+            else:
+                pol1='-'+pol1
+            wsclean_imagename=imagename+'-t'+str(i).zfill(4)+pol1+"-image.fits"
+            final_imagename=imagename+"_"+time_str+pol1+"-image.fits"
+            names.append([wsclean_imagename,final_imagename])
+    return names
