@@ -167,7 +167,7 @@ def image_ms(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagename='sun
              caltable_fold='caltables', full_di_selfcal_rounds=[2,1], partial_di_selfcal_rounds=[0, 1],
              full_dd_selfcal_rounds=[1, 1], partial_dd_selfcal_rounds=[0, 1], do_final_imaging=True,pol='I',overwrite=False,\
              solint_full_DI_selfcal=14400, solint_partial_DI_selfcal=3600, solint_full_DD_selfcal=1800, solint_partial_DD_selfcal=600,\
-             fast_vis=False, fast_vis_image_model_subtraction=False):
+             fast_vis=False, fast_vis_image_model_subtraction=False,delete=True):
     """
     Pipeline to calibrate and imaging a solar visibility
     :param solar_ms: input solar measurement set
@@ -296,9 +296,13 @@ def image_ms(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagename='sun
         time2=timeit.default_timer()
         logging.info('Time taken for converting to heliocentric image: '+str(time2-time1)+"seconds")
         logging.info('Imaging completed for ' + solar_ms)
+        if delete==True:
+            os.system("rm -rf *model*")
         return outms, helio_image
         
     else:
+        if delete==True:
+            os.system("rm -rf *model*")
         return outms, None
 
 

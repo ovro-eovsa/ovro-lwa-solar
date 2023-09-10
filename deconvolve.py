@@ -54,7 +54,7 @@ def run_wsclean(msfile, imagename, automask_thresh=8, imsize=4096, cell='2arcmin
     if predict:
         logging.debug("Predicting model visibilities from " + imagename + " in " + msfile)
         os.system("wsclean -predict -pol "+pol+" "+ "-name " + imagename + " " + msfile)
-    os.system("rm -rf "+imagename+"*model*.fits")         
+             
         
 
 def predict_model(msfile, outms, image="_no_sun",pol='I'):
