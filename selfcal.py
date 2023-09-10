@@ -203,6 +203,8 @@ def DI_selfcal(solar_ms, solint_full_selfcal=14400, solint_partial_selfcal=3600,
     
     if fast_vis==True:
         applymode='calonly'
+        solint_full_selfcal=1e8   ### putting a insanely high value so that
+        solint_partial_selfcal=1e8 ### selfcal is not done for fast visibilities
     else:
         applymode='calflag'
         
@@ -290,22 +292,23 @@ def DI_selfcal(solar_ms, solint_full_selfcal=14400, solint_partial_selfcal=3600,
             do_fresh_selfcal(solar_ms, num_phase_cal=full_di_selfcal_rounds[0],
                              num_apcal=full_di_selfcal_rounds[1], logging_level=logging_level,pol=pol)
         else:
-            logging.warning("DD selfcal caltable not found. Proceed with caution.")
+            logging.warning("DI selfcal caltable not found. Proceed with caution.")
             solar_ms_slfcaled = solar_ms[:-3] + "_selfcalibrated.ms"
-            os.system("cp -r "+solar_ms+" "+solar_ms_slfcaled)
+            gencal(vis=solar_ms, caltable="dummy.gencal", caltype='amp', parameter=1.0)
+            applycal(solar_ms,gaintable="dummy.gencal") ### this is needed to ensure flux scaling works fine.
+            os.system("rm -rf dummy.gencal")
     
-    if fast_vis==True:
-        time1=timeit.default_timer()
-        logging.info('Doing a flux scaling using background strong sources')
-        fc=flux_scaling.flux_scaling(vis=solar_ms,min_beam_val=0.1,pol=pol,fast_vis=fast_vis,calib_ms=calib_ms)
-        fc.correct_flux_scaling()
-        time2=timeit.default_timer()
-        logging.info("Time taken for fluxscaling: "+str(time2-time1)+"seconds") 
+    time1=timeit.default_timer()
+    logging.info('Doing a flux scaling using background strong sources')
+    fc=flux_scaling.flux_scaling(vis=solar_ms,min_beam_val=0.1,pol=pol,fast_vis=fast_vis,calib_ms=calib_ms)
+    fc.correct_flux_scaling()
+    time2=timeit.default_timer()
+    logging.info("Time taken for fluxscaling: "+str(time2-time1)+"seconds") 
 
-        logging.info('Splitted the selfcalibrated MS into a file named ' + solar_ms[:-3] + "_selfcalibrated.ms")
+    logging.info('Splitted the selfcalibrated MS into a file named ' + solar_ms[:-3] + "_selfcalibrated.ms")
 
-        solar_ms_slfcaled = solar_ms[:-3] + "_selfcalibrated.ms"
-        split(vis=solar_ms, outputvis=solar_ms_slfcaled, datacolumn='data')
+    solar_ms_slfcaled = solar_ms[:-3] + "_selfcalibrated.ms"
+    split(vis=solar_ms, outputvis=solar_ms_slfcaled, datacolumn='data')
     return solar_ms_slfcaled
 
 
@@ -329,7 +332,10 @@ def DD_selfcal(solar_ms, solint_full_selfcal=1800, solint_partial_selfcal=600,
     if os.path.isdir(solar_ms1):
         return solar_ms1
 
-    
+    if fast_vis==True:
+        solint_full_selfcal=1e8   ### putting a insanely high value so that
+        solint_partial_selfcal=1e8 ### selfcal is not done for fast visibilities
+        
     mstime = utils.get_time_from_name(solar_ms)
     mstime_str = utils.get_timestr_from_name(solar_ms)
     msfreq_str = utils.get_freqstr_from_name(solar_ms)

@@ -196,8 +196,7 @@ def image_ms(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagename='sun
             level=logging.INFO,
             datefmt='%Y-%m-%d %H:%M:%S')
     
-    if fast_vis==True:
-        solint_partial_DD_selfcal=1800
+    
     
         
     if not os.path.isdir(caltable_fold):
