@@ -202,8 +202,7 @@ def image_ms(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagename='sun
             format='%(asctime)s %(levelname)-8s %(message)s',
             filemode='w', level=logging.DEBUG,
             datefmt='%Y-%m-%d %H:%M:%S')
-    if fast_vis:
-        solint_partial_DD_selfcal=1800
+    
         
     if not os.path.isdir(caltable_folder):
         os.mkdir(caltable_folder)
