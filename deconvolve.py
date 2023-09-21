@@ -4,6 +4,7 @@ from casatools import table, measures, componentlist, msmetadata
 import math
 import sys, os, time
 import numpy as np
+from astropy.time import Time
 from astropy.coordinates import SkyCoord
 import astropy.units as u
 from astropy.wcs import WCS
@@ -22,10 +23,9 @@ me = measures()
 cl = componentlist()
 msmd = msmetadata()
 
-
 def run_wsclean(msfile, imagename, imsize=4096, cell='2arcmin', uvrange='10', niter=10000,
                 mgain=0.8, do_automask=True, automask_thresh=8, do_autothresh=False, autothreshold_rms=3, 
-                predict=True,pol='I'):  ### uvrange is in lambda units
+                predict=True, pol='I', fast_vis=False, intervals_out=None, field=None):  ### uvrange is in lambda units
     """
     Wrapper for imaging using wsclean
     :param msfile: input CASA measurement set
@@ -39,6 +39,15 @@ def run_wsclean(msfile, imagename, imsize=4096, cell='2arcmin', uvrange='10', ni
     :param mgain: maximum gain in each major cycle (during every major iteration, the peak is reduced by the given factor)
     """
     logging.debug("Running WSCLEAN")
+    if fast_vis==True:
+        if field is None:
+           intervals_out=1
+           field='all'
+        else: 
+            intervals_out=len(field.split(','))
+    else:
+        intervals_out=1
+        field='all'
     if do_automask:
         automask_handler = " -auto-mask " + str(automask_thresh)
     else:
@@ -54,9 +63,18 @@ def run_wsclean(msfile, imagename, imsize=4096, cell='2arcmin', uvrange='10', ni
               str(imsize) + " -scale " + cell + " -weight uniform -minuv-l " + str(uvrange) + " -name " + imagename + \
               " -niter " + str(niter) + " -mgain " + str(mgain) + \
               automask_handler + autothresh_handler + \
-              " -beam-fitting-size 2 -pol "+pol+' ' + msfile)
+              " -beam-fitting-size 2 -pol " + pol + ' ' + + "-intervals-out "+ \
+              str(intervals_out) + " -field " + field + " " + msfile)
     time2 = timeit.default_timer()
     logging.info('Time taken for all sky imaging is {0:.1f} s'.format(time2-time1))
+    
+    if intervals_out!=1:
+    image_names=utils.get_fast_vis_imagenames(msfile,imagename,pol)
+    for name in image_names:
+        wsclean_imagename=name[0]
+        final_imagename=name[1]
+        os.system("mv "+wsclean_imagename+" "+final_imagename)
+
     if predict:
         logging.debug("Predicting model visibilities from " + imagename + " in " + msfile)
         time1 = timeit.default_timer()

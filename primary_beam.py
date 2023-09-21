@@ -110,8 +110,11 @@ class woody_beam():
         else:
             raise RuntimeError                              
        
-    def srcIQUV(self,az,el):
-        """Compute beam scaling factor
+    def srcjones(self,az,el):
+        """
+        The function name is srcjones to keep naming consistent with Jones_beam class.
+        But this function returns I,Q,U,V beams.
+        Compute beam scaling factor
         Args:
             az: azimuth in degrees
             el: elevation in degrees
@@ -119,21 +122,36 @@ class woody_beam():
         Returns: [I,Q,U,V] flux factors, where for an unpolarized source [I,Q,U,V] = [1,0,0,0]
 
         """
-        try:
-            if self.beam_file_path is not None:
-                # index where grid equals source az el values
-                index = knn_search(np.array([ [az], [el] ]), self.azelgrid.reshape(2,self.gridsize*self.gridsize))
-                Ifctr = self.Ibeam.reshape(self.gridsize*self.gridsize)[index]
-                Qfctr = self.Qbeam.reshape(self.gridsize*self.gridsize)[index]
-                Ufctr = self.Ubeam.reshape(self.gridsize*self.gridsize)[index]
-                Vfctr = self.Vbeam.reshape(self.gridsize*self.gridsize)[index]
-                return np.array([[np.sqrt(Ifctr),0],[0,np.sqrt(Ifctr)]])
-            else:
-                raise RuntimeError
-        except:
-            Ifctr=math.sin(el*np.pi/180)**1.6
-            return np.array([[np.sqrt(Ifctr),0],[0,np.sqrt(Ifctr)]])
-
+        num_sources=len(az)
+        
+        self.jones_matrices=np.zeros((num_sources,2,2),dtype='complex')
+        self.read_beam_file()
+        
+        for i in range(num_sources):
+            try:
+                if self.beam_file_path is not None:
+                    # index where grid equals source az el values
+                    index = knn_search(np.array([ [az[i]], [el[i]] ]), self.azelgrid.reshape(2,self.gridsize*self.gridsize))
+                    Ifctr = self.Ibeam.reshape(self.gridsize*self.gridsize)[index]
+                    Qfctr = self.Qbeam.reshape(self.gridsize*self.gridsize)[index]
+                    Ufctr = self.Ubeam.reshape(self.gridsize*self.gridsize)[index]
+                    Vfctr = self.Vbeam.reshape(self.gridsize*self.gridsize)[index]
+                    self.jones_matrices[i,:,:]=np.array([[Ifctr+Qfctr,Ufctr-1j*Vfctr],[Ufctr+1j*Vfctr,Ifctr-Qfctr]])
+                else:
+                    raise RuntimeError
+            except:
+                Ifctr=math.sin(el*np.pi/180)**1.6
+                self.jones_matrices[i,:,:]= np.array([[Ifctr,0],[0,Ifctr]])
+        return
+    
+    @staticmethod
+    def get_source_pol_factors(jones_matrix):  ### in [[XX,XY],[YX,YY]] format
+        '''
+        I am assuming that the source is unpolarised. At these low frequencies this is a good assumption.
+        Since the jones matrix in this class is essentially the source pol factors, just returning.
+        '''
+        
+        return  jones_matrix    
                 
                 
 class jones_beam:
