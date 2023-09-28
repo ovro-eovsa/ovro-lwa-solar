@@ -292,3 +292,15 @@ def get_fast_vis_imagenames(msfile,imagename,pol):
             final_imagename=imagename+"_"+time_str+pol1+"-image.fits"
             names.append([wsclean_imagename,final_imagename])
     return names
+    
+def check_corrected_data_present(msname):
+    tb=table()
+    try:
+        tb.open(msname)
+        colnames=tb.colnames()
+        if 'CORRECTED_DATA' in colnames:
+            tb.close()
+            return True
+    finally:
+        tb.close()
+    return False

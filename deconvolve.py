@@ -17,14 +17,27 @@ from primary_beam import analytic_beam as beam
 import primary_beam
 from generate_calibrator_model import model_generation
 import generate_calibrator_model
+import timeit
 tb = table()
 me = measures()
 cl = componentlist()
 msmd = msmetadata()
 
-
-def run_wsclean(msfile, imagename, automask_thresh=8, imsize=4096, cell='2arcmin', uvrange='10',
-                predict=True,pol='I',fast_vis=False, intervals_out=None, field=None):  ### uvrange is in lambda units
+def run_wsclean(msfile, imagename, imsize=4096, cell='2arcmin', uvrange='10', niter=10000,
+                mgain=0.8, do_automask=True, automask_thresh=8, do_autothresh=False, autothreshold_rms=3, 
+                predict=True, pol='I', fast_vis=False, intervals_out=None, field=None):  ### uvrange is in lambda units
+    """
+    Wrapper for imaging using wsclean
+    :param msfile: input CASA measurement set
+    :param imagename: output image name
+    :param imsize: size of the image in pixels
+    :param cell: pixel scale
+    :param niter: number of iterations
+    :param uvrange: uvrange following tclean's syntax
+    :param do_automask: whether or not to do automask
+    :param do_autothresh: whether or not to use local RMS thresholding
+    :param mgain: maximum gain in each major cycle (during every major iteration, the peak is reduced by the given factor)
+    """
     logging.debug("Running WSCLEAN")
     if fast_vis==True:
         if field is None:
@@ -35,14 +48,33 @@ def run_wsclean(msfile, imagename, automask_thresh=8, imsize=4096, cell='2arcmin
     else:
         intervals_out=1
         field='all'
+    if intervals_out!=1 and predict:
+        raise RuntimeError("Prediction cannot be done with multiple images.")
+        
+    if do_automask:
+        automask_handler = " -auto-mask " + str(automask_thresh)
+    else:
+        automask_handler = ""
+
+    if do_autothresh:
+        autothresh_handler = " -local-rms -auto-threshold " + str(autothreshold_rms)
+    else:
+        autothresh_handler = ""
+
+    time1 = timeit.default_timer()
+
     os.system("wsclean -no-dirty -no-update-model-required -no-negative -size " + str(imsize) + " " + \
-              str(imsize) + " -scale " + cell + " -weight uniform -minuv-l " + str(uvrange) + " -auto-mask " + str(
-        automask_thresh) + \
-              " -niter 100000 -name " + imagename + " -mgain 0.75 -beam-fitting-size 2 -pol "+pol+' ' + "-intervals-out "+\
-                str(intervals_out)+" -field "+field + " "+msfile)
+              str(imsize) + " -scale " + cell + " -weight uniform -minuv-l " + str(uvrange) + " -name " + imagename + \
+              " -niter " + str(niter) + " -mgain " + str(mgain) + \
+              automask_handler + autothresh_handler + \
+              " -beam-fitting-size 2 -pol " + pol + ' ' + "-intervals-out "+ \
+              str(intervals_out) + " -field " + field + " " + msfile)
     
     for str1 in ['residual','psf']:
         os.system("rm -rf "+imagename+"*"+str1+"*.fits") 
+    time2 = timeit.default_timer()
+    logging.info('Time taken for all sky imaging is {0:.1f} s'.format(time2-time1))
+
     
     if intervals_out!=1:
         image_names=utils.get_fast_vis_imagenames(msfile,imagename,pol)
@@ -50,11 +82,14 @@ def run_wsclean(msfile, imagename, automask_thresh=8, imsize=4096, cell='2arcmin
             wsclean_imagename=name[0]
             final_imagename=name[1]
             os.system("mv "+wsclean_imagename+" "+final_imagename)
-                
+
     if predict:
         logging.debug("Predicting model visibilities from " + imagename + " in " + msfile)
+        time1 = timeit.default_timer()
         os.system("wsclean -predict -pol "+pol+" "+ "-name " + imagename + " " + msfile)
-             
+        time2 = timeit.default_timer()
+        logging.info('Time taken for predicting the model column is {0:.1f} s'.format(time2-time1))
+        
         
 
 def predict_model(msfile, outms, image="_no_sun",pol='I'):

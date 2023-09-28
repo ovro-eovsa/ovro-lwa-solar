@@ -178,10 +178,16 @@ def gen_ant_flags_from_autocorr(msfile, antflagfile=None, datacolumn='DATA', tav
             flagsall = np.unique(flagsall)
         flagsallstr = [str(flag) for flag in flagsall]
         flag_core_ids = ",".join([str(flag) for flag in np.sort(flagscore)])
-        flag_core_names = msmd.antennanames(flagscore)
+        if len(flagscore) > 0:
+            flag_core_names = msmd.antennanames(flagscore)
+        else:
+            flag_core_names = []
         flag_core_vals = autos_ampdb[flagscore]
         flag_exp_ids = ",".join([str(flag) for flag in np.sort(flagsexp)])
-        flag_exp_names = msmd.antennanames(flagsexp)
+        if len(flagsexp) > 0:
+            flag_exp_names = msmd.antennanames(flagsexp)
+        else:
+            flag_exp_names = []
         flag_exp_vals = autos_ampdb[flagsexp]
         flagsallstr2 = ",".join(flagsallstr)
         print('flagged core antenna ids: ', flag_core_ids)
