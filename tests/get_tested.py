@@ -40,6 +40,7 @@ def run_tests(calib_ms=None, slow_solar_ms1=None, slow_solar_ms2=None, \
         3. Calibration ms=False, bandpass table=True, DI_selfcal_full=False, DI_selfcal_partial=True, DD_selfcal_full=True, fluxscaling=False, slow=True		
         '''
         os.system("rm -rf caltables/"+slow_solar_ms2[:-3]+"*")
+        os.system("rm -rf "+slow_solar_ms2[:-3]+"_calibrated*")
         imagename='sun_only_test03'
         lwa.image_ms(bcal=caltable_name,imagename=imagename,solar_ms=slow_solar_ms2,solint_full_DI_selfcal=10000, \
 				        solint_partial_DI_selfcal=1, solint_full_DD_selfcal=1, solint_partial_DD_selfcal=1)
@@ -50,6 +51,7 @@ def run_tests(calib_ms=None, slow_solar_ms1=None, slow_solar_ms2=None, \
         fluxscaling=False, slow=True
         '''
         os.system("rm -rf caltables/"+slow_solar_ms2[:-3]+"*")
+        os.system("rm -rf "+slow_solar_ms2[:-3]+"_calibrated*")
         imagename='sun_only_test04'
         lwa.image_ms(bcal=caltable_name,imagename=imagename,solar_ms=slow_solar_ms2,solint_full_DI_selfcal=10000, \
 				        solint_partial_DI_selfcal=100000, solint_full_DD_selfcal=1, solint_partial_DD_selfcal=1)
@@ -60,6 +62,7 @@ def run_tests(calib_ms=None, slow_solar_ms1=None, slow_solar_ms2=None, \
         DD_selfcal_partial=True, fluxscaling=False, slow=True
         '''
         os.system("rm -rf caltables/"+slow_solar_ms2[:-3]+"*")
+        os.system("rm -rf "+slow_solar_ms2[:-3]+"_calibrated*")
         imagename='sun_only_test05'
         lwa.image_ms(bcal=caltable_name,imagename=imagename,solar_ms=slow_solar_ms2,solint_full_DI_selfcal=10000, \
 				        solint_partial_DI_selfcal=100000, solint_full_DD_selfcal=1000000, solint_partial_DD_selfcal=1)
@@ -71,6 +74,7 @@ def run_tests(calib_ms=None, slow_solar_ms1=None, slow_solar_ms2=None, \
         '''
 
         os.system("rm -rf caltables/"+slow_solar_ms2[:-3]+"*")
+        os.system("rm -rf "+slow_solar_ms2[:-3]+"_calibrated*")
         imagename='sun_only_test06'
         lwa.image_ms(bcal=caltable_name,imagename=imagename,solar_ms=slow_solar_ms2,solint_full_DI_selfcal=10000, \
 				        solint_partial_DI_selfcal=100000, solint_full_DD_selfcal=1000000, solint_partial_DD_selfcal=10000)
@@ -80,6 +84,7 @@ def run_tests(calib_ms=None, slow_solar_ms1=None, slow_solar_ms2=None, \
         7. Calibration ms=True, bandpass table=False, DI_selfcal_full=True, DD_selfcal_full=True, fluxscaling=True, slow=True
         '''
         os.system("rm -rf caltables/"+slow_solar_ms2[:-3]+"*")
+        os.system("rm -rf "+slow_solar_ms2[:-3]+"_calibrated*")
         imagename='sun_only_test07'
         lwa.image_ms(bcal=caltable_name,imagename=imagename,solar_ms=slow_solar_ms2,solint_full_DI_selfcal=1, \
                         solint_partial_DI_selfcal=1, solint_full_DD_selfcal=1, solint_partial_DD_selfcal=1,\
@@ -90,6 +95,7 @@ def run_tests(calib_ms=None, slow_solar_ms1=None, slow_solar_ms2=None, \
         8. Calibration ms=False, bandpass table=True, DI_selfcal_full=False, DI_selfcal_partial=False, DD_selfcal_full=False, DD_selfcal_partial=False, fluxscaling=True, slow=True
         '''
         os.system("rm -rf caltables/"+slow_solar_ms2[:-3]+"*")
+        os.system("rm -rf "+slow_solar_ms2[:-3]+"_calibrated*")
         imagename='sun_only_test08'
         lwa.image_ms(bcal=caltable_name,imagename=imagename,solar_ms=slow_solar_ms2,solint_full_DI_selfcal=10000, \
 				        solint_partial_DI_selfcal=100000, solint_full_DD_selfcal=1000000, solint_partial_DD_selfcal=10000,\
