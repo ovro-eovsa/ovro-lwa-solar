@@ -146,5 +146,17 @@ def run_tests(calib_ms=None, slow_solar_ms1=None, slow_solar_ms2=None, \
         os.system("cp analysis.log analysis_test11.log")	
         ###############################################################################
 
+    if test_slow:
+
+        ###############################################################################
+        '''
+        13. Calibration ms=True, bandpass table=False, DI_selfcal_full=True, DD_selfcal_full=True, fluxscaling=True, slow=True, quick_imaging=True
+        '''
+        os.system("rm -rf "+slow_solar_ms1[:-3]+"_calibrated*")
+        os.system("rm -rf caltables/"+slow_solar_ms1[:-3]+"_*")
+        imagename='sun_only_test13'
+        lwa.image_ms_quick(calib_ms=calib_ms,imagename=imagename,solar_ms=slow_solar_ms1) 
+        os.system("cp analysis.log analysis_test13.log")
+
         
         
