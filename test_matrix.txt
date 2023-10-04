@@ -15,5 +15,4 @@ goes through each of the major branches in all the tests combined.
 10. Calibration ms=True, bandpass table=True, DI_caltable available, DD_caltable not available, flux scaling=False, fast=True
 11. Calibration ms=True, bandpass table=True, DI_caltable not available, DD_caltable not available, flux scaling=False, fast=True
 12. Calibration ms=True, bandpass table=True, DI_caltable available, DD_caltable not available, flux scaling=True, flux caltable available, fast=True
-13. Calibration ms=True, bandpass table=True, DI_caltable not available, DD_caltable not available, flux scaling=True, flux caltable not available, fast=True
-14. Check if flagging is working fine.
+13. Check if flagging is working fine.

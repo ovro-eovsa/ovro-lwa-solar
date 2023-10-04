@@ -233,8 +233,10 @@ def convert_to_heliocentric_coords(msname, imagename, helio_imagename=None, reft
     if reftime == '':
         msmd.open(msname)
         trange = msmd.timerangeforobs(0)
-        btime = qa.time(trange['begin']['m0'], form='fits')[0]
-        etime = qa.time(trange['end']['m0'], form='fits')[0]
+        #btime = qa.time(trange['begin']['m0'], form='fits')[0]
+        #etime = qa.time(trange['end']['m0'], form='fits')[0]
+        btime = Time(trange['begin']['m0']['value'],format='mjd').isot
+        etime = Time(trange['end']['m0']['value'],format='mjd').isot
         msmd.close()
         reftime = btime+'~'+etime
     print('Use this reference time for registration: ', reftime)
