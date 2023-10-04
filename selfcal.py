@@ -38,7 +38,10 @@ def do_selfcal(msfile, num_phase_cal=2, num_apcal=2, applymode='calflag', loggin
     max1 = np.zeros(num_pol)
     min1 = np.zeros(num_pol)
 
-    niters = np.arange(num_phase_cal) * niter_incr + niter0
+    if num_phase_cal!=0:
+        niters = np.arange(num_phase_cal) * niter_incr + niter0
+    else:
+        niters = np.arange(2) * niter_incr + niter0
     
     for i in range(num_phase_cal):
         imagename = msfile[:-3] + "_self" + str(i)
@@ -155,7 +158,9 @@ def do_selfcal(msfile, num_phase_cal=2, num_apcal=2, applymode='calflag', loggin
     flagdata(vis=msfile, mode='rflag', datacolumn='residual')
     if num_apcal>0:
     	os.system("cp -r " + caltable + " " + caltable_folder)
-    os.system("cp -r " + final_phase_caltable + " " + caltable_folder)
+
+    if len(final_phase_caltable)!=0:    
+        os.system("cp -r " + final_phase_caltable + " " + caltable_folder)
     time2=timeit.default_timer()
     logging.debug("Time taken for selfcal: "+str(time2-time1)+"seconds")
     return True

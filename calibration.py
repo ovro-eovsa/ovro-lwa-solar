@@ -170,7 +170,7 @@ def gen_calibration(msfile, modelcl=None, uvrange='', bcaltb=None, logging_level
     # Now do a bandpass calibration using the model component list
 
     if not bcaltb:
-        bcaltb = caltable_folder + "/" + os.path.basename(msfile).replace('.ms', '.bcal')
+        bcaltb = caltable_fold + "/" + os.path.basename(msfile).replace('.ms', '.bcal')
 
     logging.info("Generating bandpass solution")
     bandpass(msfile, caltable=bcaltb, uvrange=uvrange, combine='scan,field,obs', fillgaps=0)
@@ -245,27 +245,18 @@ def do_bandpass_correction(solar_ms, calib_ms=None, bcal=None, caltable_folder='
         else:
             logging.info('I am told to overwrite it. Proceed with bandpass correction.')
             os.system('rm -rf '+solar_ms1)
-    if os.path.exists(calib_ms):
-        # check if bandpass table already exists
-        if not overwrite or not os.path.isdir(bcal):
-            bcal_ = caltable_folder + "/" + os.path.basename(calib_ms).replace('.ms', '.bcal')
-            if os.path.isdir(bcal_):
-                logging.info('I found an existing bandpass table. Will reuse it to calibrate.')
-                bcal = bcal_
-            else:
-                logging.debug('Flagging all data which are zero')
-                flagdata(vis=calib_ms, mode='clip', clipzeros=True)
+    if calib_ms:
+        if os.path.exists(calib_ms):
+            if not bcal:
+                bcal = caltable_folder + "/" + os.path.basename(calib_ms).replace('.ms', '.bcal')
+            # check if bandpass table already exists
+            if overwrite or not os.path.isdir(bcal):
                 logging.debug('Flagging antennas before calibration.')
                 flagging.flag_bad_ants(calib_ms)
                 bcal = gen_calibration(calib_ms, logging_level=logging_level, caltable_fold=caltable_folder)
                 logging.info('Bandpass calibration table generated using ' + calib_ms)
-        else:
-            logging.debug('Flagging all data which are zero')
-            flagdata(vis=calib_ms, mode='clip', clipzeros=True)
-            logging.debug('Flagging antennas before calibration.')
-            flagging.flag_bad_ants(calib_ms)
-            bcal = gen_calibration(calib_ms, logging_level=logging_level, caltable_folder=caltable_folder)
-            logging.info('Bandpass calibration table generated using ' + calib_ms)
+            else:
+                logging.info('I found an existing bandpass table. Will reuse it to calibrate.')
     else:
         if not bcal or not os.path.isdir(bcal):
             print('Neither calib_ms nor bcal exists. Need to provide calibrations to continue. Abort..')
