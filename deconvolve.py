@@ -48,6 +48,9 @@ def run_wsclean(msfile, imagename, imsize=4096, cell='2arcmin', uvrange='10', ni
     else:
         intervals_out=1
         field='all'
+    if intervals_out!=1 and predict:
+        raise RuntimeError("Prediction cannot be done with multiple images.")
+        
     if do_automask:
         automask_handler = " -auto-mask " + str(automask_thresh)
     else:
@@ -59,21 +62,26 @@ def run_wsclean(msfile, imagename, imsize=4096, cell='2arcmin', uvrange='10', ni
         autothresh_handler = ""
 
     time1 = timeit.default_timer()
+
     os.system("wsclean -no-dirty -no-update-model-required -no-negative -size " + str(imsize) + " " + \
               str(imsize) + " -scale " + cell + " -weight uniform -minuv-l " + str(uvrange) + " -name " + imagename + \
               " -niter " + str(niter) + " -mgain " + str(mgain) + \
               automask_handler + autothresh_handler + \
-              " -beam-fitting-size 2 -pol " + pol + ' ' + + "-intervals-out "+ \
+              " -beam-fitting-size 2 -pol " + pol + ' ' + "-intervals-out "+ \
               str(intervals_out) + " -field " + field + " " + msfile)
+    
+    for str1 in ['residual','psf']:
+        os.system("rm -rf "+imagename+"*"+str1+"*.fits") 
     time2 = timeit.default_timer()
     logging.info('Time taken for all sky imaging is {0:.1f} s'.format(time2-time1))
+
     
     if intervals_out!=1:
-    image_names=utils.get_fast_vis_imagenames(msfile,imagename,pol)
-    for name in image_names:
-        wsclean_imagename=name[0]
-        final_imagename=name[1]
-        os.system("mv "+wsclean_imagename+" "+final_imagename)
+        image_names=utils.get_fast_vis_imagenames(msfile,imagename,pol)
+        for name in image_names:
+            wsclean_imagename=name[0]
+            final_imagename=name[1]
+            os.system("mv "+wsclean_imagename+" "+final_imagename)
 
     if predict:
         logging.debug("Predicting model visibilities from " + imagename + " in " + msfile)

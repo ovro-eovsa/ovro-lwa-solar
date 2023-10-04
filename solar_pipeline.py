@@ -167,8 +167,9 @@ def image_ms(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagename='sun
              caltable_folder='caltables', full_di_selfcal_rounds=[3,2], partial_di_selfcal_rounds=[0, 1],
              full_dd_selfcal_rounds=[1, 1], partial_dd_selfcal_rounds=[0, 1], do_final_imaging=True, pol='I', 
              solint_full_DI_selfcal=14400, solint_partial_DI_selfcal=3600, solint_full_DD_selfcal=1800, solint_partial_DD_selfcal=600,
-             fast_vis=False, fast_vis_image_model_subtraction=False,
+             fast_vis=False, fast_vis_image_model_subtraction=False, delete=True,
              refant='202', overwrite=False, do_fluxscaling=False):
+
     """
     Pipeline to calibrate and imaging a solar visibility
     :param solar_ms: input solar measurement set
@@ -202,8 +203,7 @@ def image_ms(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagename='sun
             format='%(asctime)s %(levelname)-8s %(message)s',
             filemode='w', level=logging.DEBUG,
             datefmt='%Y-%m-%d %H:%M:%S')
-    if fast_vis:
-        solint_partial_DD_selfcal=1800
+    
         
     if not os.path.isdir(caltable_folder):
         os.mkdir(caltable_folder)
@@ -389,15 +389,19 @@ def image_ms_quick(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagenam
                 helio_image = utils.convert_to_heliocentric_coords(outms, imagename+"-image.fits")
         time2=timeit.default_timer()
         logging.info('Imaging completed for ' + solar_ms)
-        logging.info('Time taken for producing final image: {0:.1f} s'.format(time2-time1))
-        time_end=timeit.default_timer()
-        logging.info('Time taken to complete all processing: {0:.1f} s'.format(time_end-time_begin)) 
+        if delete==True:
+            os.system("rm -rf *model*")
         return outms, helio_image
         
     else:
+        if delete==True:
+            os.system("rm -rf *model*")
+        logging.info('Time taken for producing final image: {0:.1f} s'.format(time2-time1))
         time_end=timeit.default_timer()
         logging.info('Time taken to complete all processing: {0:.1f} s'.format(time_end-time_begin)) 
         return outms, None
+        
+   
 
 def solar_pipeline(time_duration, calib_time_duration, freqstr, filepath, time_integration=8, time_cadence=100,
                    observation_integration=8,

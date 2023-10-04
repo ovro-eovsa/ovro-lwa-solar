@@ -1,0 +1,19 @@
+
+
+Below I note down the tests which should be done after any major update. We must ensure that the code
+goes through each of the major branches in all the tests combined.
+
+1. Calibration ms=True, bandpass table=False, DI_selfcal_full=True, DD_selfcal_full=True, fluxscaling=False, slow=True
+2. Calibration ms=False, bandpass table=True, DI_selfcal_full=True, DD_selfcal_full=True, fluxscaling=False, slow=True
+3. Calibration ms=False, bandpass table=True, DI_selfcal_full=False, DI_selfcal_partial=True, DD_selfcal_full=True, fluxscaling=False, slow=True
+4. Calibration ms=False, bandpass table=True, DI_selfcal_full=False, DI_selfcal_partial=False, DD_selfcal_full=True, fluxscaling=False, slow=True
+5. Calibration ms=False, bandpass table=True, DI_selfcal_full=False, DI_selfcal_partial=False, DD_selfcal_full=False, DD_selfcal_partial=True, fluxscaling=False, slow=True
+6. Calibration ms=False, bandpass table=True, DI_selfcal_full=False, DI_selfcal_partial=False, DD_selfcal_full=False, DD_selfcal_partial=False, fluxscaling=False, slow=True
+7. Calibration ms=True, bandpass table=False, DI_selfcal_full=True, DD_selfcal_full=True, fluxscaling=True, slow=True
+8. Calibration ms=False, bandpass table=True, DI_selfcal_full=False, DI_selfcal_partial=False, DD_selfcal_full=False, DD_selfcal_partial=False, fluxscaling=True, slow=True
+9. Calibration ms=True, bandpass table=False, DI_caltable available, DD_caltable available, flux scaling=False, fast=True
+10. Calibration ms=True, bandpass table=True, DI_caltable available, DD_caltable not available, flux scaling=False, fast=True
+11. Calibration ms=True, bandpass table=True, DI_caltable not available, DD_caltable not available, flux scaling=False, fast=True
+12. Calibration ms=True, bandpass table=True, DI_caltable available, DD_caltable not available, flux scaling=True, flux caltable available, fast=True
+13. Calibration ms=True, bandpass table=True, DI_caltable not available, DD_caltable not available, flux scaling=True, flux caltable not available, fast=True
+14. Check if flagging is working fine.
