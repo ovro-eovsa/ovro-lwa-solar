@@ -12,11 +12,11 @@ def run_tests(calib_ms=None, slow_solar_ms1=None, slow_solar_ms2=None, \
 
         ###############################################################################
         '''
-        1. Calibration ms=True, bandpass table=False, DI_selfcal_full=True, DD_selfcal_full=True, fluxscaling=False, slow=True
+        1. Calibration ms=True, bandpass table=False, DI_selfcal_full=True, DD_selfcal_full=True, fluxscaling=True, slow=True
         '''
 
         imagename='sun_only_test01'
-        lwa.image_ms(calib_ms=calib_ms,imagename=imagename,solar_ms=slow_solar_ms1) 
+        lwa.image_ms(calib_ms=calib_ms,imagename=imagename,solar_ms=slow_solar_ms1,do_fluxscaling=True) 
         os.system("cp analysis.log analysis_test01.log")
 
         ###############################################################################3
@@ -81,14 +81,14 @@ def run_tests(calib_ms=None, slow_solar_ms1=None, slow_solar_ms2=None, \
         os.system("cp analysis.log analysis_test06.log")	
         ###############################################################################
         '''
-        7. Calibration ms=True, bandpass table=False, DI_selfcal_full=True, DD_selfcal_full=True, fluxscaling=True, slow=True
+        7. Calibration ms=True, bandpass table=False, DI_selfcal_full=True, DD_selfcal_full=True, fluxscaling=False, slow=True
         '''
         os.system("rm -rf caltables/"+slow_solar_ms2[:-3]+"*")
         os.system("rm -rf "+slow_solar_ms2[:-3]+"_calibrated*")
         imagename='sun_only_test07'
         lwa.image_ms(bcal=caltable_name,imagename=imagename,solar_ms=slow_solar_ms2,solint_full_DI_selfcal=1, \
                         solint_partial_DI_selfcal=1, solint_full_DD_selfcal=1, solint_partial_DD_selfcal=1,\
-			            do_fluxscaling=True)
+			            do_fluxscaling=False)
         os.system("cp analysis.log analysis_test07.log")	
         ###############################################################################
         '''
@@ -112,7 +112,9 @@ def run_tests(calib_ms=None, slow_solar_ms1=None, slow_solar_ms2=None, \
         '''
         os.system("rm -rf caltables/"+slow_solar_ms2[:-3]+"*")
         imagename='sun_only_test09'
-        lwa.image_ms(calib_ms=calib_ms, bcal=caltable_name,imagename=imagename,solar_ms=fast_solar_ms1, fast=True)
+        caltable_name=glob.glob("caltables/*.bcal")[0]
+        os.system("rm -rf "+fast_solar_ms1[:-3]+"_calibrated*")
+        lwa.image_ms(calib_ms=calib_ms, bcal=caltable_name,imagename=imagename,solar_ms=fast_solar_ms1, fast_vis=True)
         os.system("cp analysis.log analysis_test09.log")	
         ###############################################################################
 
@@ -121,20 +123,40 @@ def run_tests(calib_ms=None, slow_solar_ms1=None, slow_solar_ms2=None, \
         '''
         os.system("rm -rf caltables/"+slow_solar_ms1[:-3]+"_selfcalibrated*")
         imagename='sun_only_test10'
-        lwa.image_ms(calib_ms=calib_ms, bcal=caltable_name,imagename=imagename,solar_ms=fast_solar_ms1, fast=True)
+        os.system("rm -rf "+fast_solar_ms1[:-3]+"_calibrated*")
+        lwa.image_ms(calib_ms=calib_ms, bcal=caltable_name,imagename=imagename,solar_ms=fast_solar_ms1, fast_vis=True)
         os.system("cp analysis.log analysis_test10.log")	
         ###############################################################################
-
+        '''
+        12. Calibration ms=True, bandpass table=True, DI_caltable available, DD_caltable not available, flux scaling=True, flux caltable available, fast=True
+        '''
+        os.system("rm -rf caltables/"+slow_solar_ms1[:-3]+"_selfcalibrated*")
+        imagename='sun_only_test12'
+        os.system("rm -rf "+fast_solar_ms1[:-3]+"_calibrated*")
+        lwa.image_ms(calib_ms=calib_ms, bcal=caltable_name,imagename=imagename,solar_ms=fast_solar_ms1, do_fluxscaling=True, fast_vis=True)
+        os.system("cp analysis.log analysis_test12.log")
+        ###############################################################################
         '''
         11. Calibration ms=True, bandpass table=True, DI_caltable not available, DD_caltable not available, flux scaling=False, fast=True
         '''
         os.system("rm -rf caltables/"+slow_solar_ms1[:-3]+"_*")
         imagename='sun_only_test11'
-        lwa.image_ms(calib_ms=calib_ms, bcal=caltable_name,imagename=imagename,solar_ms=fast_solar_ms1, fast=True)
+        os.system("rm -rf "+fast_solar_ms1[:-3]+"_calibrated*")
+        lwa.image_ms(calib_ms=calib_ms, bcal=caltable_name,imagename=imagename,solar_ms=fast_solar_ms1, fast_vis=True)
         os.system("cp analysis.log analysis_test11.log")	
         ###############################################################################
 
-        '''
-        12. Calibration ms=True, bandpass table=True, DI_caltable available, DD_caltable not available, flux scaling=True, flux caltable available, fast=True
-        '''
+    if test_slow:
 
+        ###############################################################################
+        '''
+        13. Calibration ms=True, bandpass table=False, DI_selfcal_full=True, DD_selfcal_full=True, fluxscaling=True, slow=True, quick_imaging=True
+        '''
+        os.system("rm -rf "+slow_solar_ms1[:-3]+"_calibrated*")
+        os.system("rm -rf caltables/"+slow_solar_ms1[:-3]+"_*")
+        imagename='sun_only_test13'
+        lwa.image_ms_quick(calib_ms=calib_ms,imagename=imagename,solar_ms=slow_solar_ms1) 
+        os.system("cp analysis.log analysis_test13.log")
+
+        
+        
