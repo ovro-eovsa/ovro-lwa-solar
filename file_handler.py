@@ -17,7 +17,7 @@ def list_msfiles(file_path, distributed=True, nodes=[1, 2, 3, 4, 5, 6, 7, 8], se
     :return msfiles: a list of dictionary containing all ms files with path, name, time, and frequency
     """
     if verbose:
-        print('Retrieving files from {0:s}:{1:s}'.format(server, file_path)
+        print('Retrieving files from {0:s}:{1:s}'.format(server, file_path))
     msfiles = []
     if not distributed:
         out = os.popen('ssh {0:s} ls {1:s}/'.format(server, file_path)).read()
