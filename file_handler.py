@@ -3,29 +3,45 @@ from astropy.time import Time
 import datetime as dt
 from casatasks import concat
 import logging
-        
-def list_msfiles(file_path):
+
+def list_msfiles(file_path, distributed=True, nodes=[1, 2, 3, 4, 5, 6, 7, 8], server='lwacalim', verbose=False):
     """
     Find measurement sets across all lwacalim nodes under a file path.
     Return a list of dictionary containing their path, name, time, and frequency information
     :param filepath: path relative to /data0x/
+    :param distributed: if True, then assume data are distributed in server and nodes ; 
+                        if False, treat both server and file_path as absolute values
+    :param nodes: list of integers; default to from 1 to 8 for lwacalim nodes
+    :param server: name of the server; default to lwacalim
+    :param verbose: whether or not to print extra information
     :return msfiles: a list of dictionary containing all ms files with path, name, time, and frequency
     """
-    print (file_path)
+    if verbose:
+        print('Retrieving files from {0:s}:{1:s}'.format(server, file_path)
     msfiles = []
-    for i in range(1, 9):
-        out = os.popen('ssh lwacalim0{0:d} ls /data0{1:d}/{2:s}/'.format(i, i, file_path)).read()
+    if not distributed:
+        out = os.popen('ssh {0:s} ls {1:s}/'.format(server, file_path)).read()
         names = out.split('\n')[:-1]
-        
         for n in names:
             if n[-6:] == 'MHz.ms':
-                pathstr = 'lwacalim0{0:d}:/data0{1:d}/{2:s}/{3:s}'.format(i, i,file_path, n)
+                pathstr = '{0:s}:{1:s}/{2:s}'.format(server, file_path, n)
                 tmpstr = n[:15].replace('_', 'T')
                 timestr = tmpstr[:4] + '-' + tmpstr[4:6] + '-' + tmpstr[6:11] + ':' + tmpstr[11:13] + ':' + tmpstr[13:]
                 freqstr = n[16:21]
                 msfiles.append({'path': pathstr, 'name': n, 'time': timestr, 'freq': freqstr})
-            
-    return msfiles
+    else:
+        for i in nodes:
+            out = os.popen('ssh {0:s}0{1:d} ls /data0{2:d}/{3:s}/'.format(server, i, i, file_path)).read()
+            names = out.split('\n')[:-1]
+            for n in names:
+                if n[-6:] == 'MHz.ms':
+                    pathstr = '{0:s}0{1:d}:/data0{2:d}/{3:s}/{4:s}'.format(server, i, i, file_path, n)
+                    tmpstr = n[:15].replace('_', 'T')
+                    timestr = tmpstr[:4] + '-' + tmpstr[4:6] + '-' + tmpstr[6:11] + ':' + tmpstr[11:13] + ':' + tmpstr[13:]
+                    freqstr = n[16:21]
+                    msfiles.append({'path': pathstr, 'name': n, 'time': timestr, 'freq': freqstr})
+
+    return msfiles     
     
 def list_msfiles1(file_path):
     """
