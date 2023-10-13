@@ -249,8 +249,7 @@ def image_ms(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagename='sun
             time1=time2
             logging.info('Removing almost all sources in the sky except Sun')
             print ('Removing almost all sources in the sky except Sun')
-            outms = source_subtraction.remove_nonsolar_sources(outms_dd, imagename='for_weak_source_subtraction',
-                                            remove_strong_sources_only=False, pol=pol)
+            outms = source_subtraction.remove_nonsolar_sources(outms_dd, remove_strong_sources_only=False, pol=pol)
             time2=timeit.default_timer()
             logging.info('Time taken for weak source removal is: {0:.1f} s'.format(time2-time1)) 
             time1=time2
@@ -365,8 +364,7 @@ def image_ms_quick(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagenam
     # Do non-solar source removal
     time1=time2
     print('Removing non-solar sources in the sky')
-    outms = source_subtraction.remove_nonsolar_sources(outms_di, imagename='tmp_strong_source_subtraction',
-                                    remove_strong_sources_only=True, niter=1000, pol=pol)
+    outms = source_subtraction.remove_nonsolar_sources(outms_di, remove_strong_sources_only=True, niter=1000, pol=pol)
     time2=timeit.default_timer()
     logging.info('Time taken for non-solar source removal is {0:.1f} s'.format(time2-time1))
     logging.info('The source subtracted MS is ' + outms)
@@ -489,7 +487,7 @@ def apply_solutions_and_image(msname, bcal, imagename):
     else:
         split(vis = solar_ms, outputvis=solar_ms[:-3]+"_sun_selfcalibrated.ms",datacolumn='data')
     outms = solar_ms[:-3] + "_sun_selfcalibrated.ms"
-    outms = remove_nonsolar_sources(outms,imagename='for_weak_source_subtraction',remove_strong_sources_only=False)
+    outms = remove_nonsolar_sources(outms, remove_strong_sources_only=False)
     change_phasecenter(outms)
     run_wsclean(outms, imagename=imagename, automask_thresh=5, uvrange='0', predict=False, imsize=1024, cell='1arcmin')
     correct_primary_beam(outms, imagename + "-image.fits")
