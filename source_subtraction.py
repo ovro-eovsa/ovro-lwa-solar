@@ -51,13 +51,13 @@ def get_solar_loc_pix(msfile, image="allsky"):
     ra = m['m0']['value']
     dec = m['m1']['value']
     coord = SkyCoord(ra * u.rad, dec * u.rad, frame='icrs')
-    logging.info('RA, Dec of Sun is radians:' + str(ra) + "," + str(dec))
+    logging.info('RA, Dec of Sun is ' + str(ra) + ", " + str(dec) + ' rad')
     head=fits.getheader(image)
     w = WCS(head)
     pix = skycoord_to_pixel(coord, w)
     x = int(pix[0])
     y = int(pix[1])
-    logging.info('RA, Dec of Sun is ' + str(ra) + "pix," + str(dec) + ",pix in imagename " + image)
+    logging.info('Pixel location of Sun is ' + str(x) + " " + str(y) + " in imagename " + image)
     return x, y
 
 
@@ -196,13 +196,12 @@ def gen_nonsolar_source_model(msfile, imagename="allsky", outimage=None, sol_are
     return outimage
     
     
-def remove_nonsolar_sources(msfile, imagename='allsky', imsize=4096, cell='2arcmin', minuv=0,
+def remove_nonsolar_sources(msfile, imsize=4096, cell='2arcmin', minuv=0,
                             remove_strong_sources_only=True, pol='I', niter=50000, fast_vis=False, 
-                            fast_vis_image_model_subtraction=False):
+                            fast_vis_image_model_subtraction=False, delete_tmp_files=True):
     """
     Wrapping for removing the nonsolar sources from the solar measurement set
     :param msfile: input CASA measurement set
-    :param imagename: name of the all sky image
     :param imsize: size of the image in pixels
     :param cell: pixel scale
     :param minuv: minimum uv to consider for imaging (in # of wavelengths)
@@ -215,24 +214,30 @@ def remove_nonsolar_sources(msfile, imagename='allsky', imsize=4096, cell='2arcm
     if fast_vis:
         remove_strong_sources_only=False
         
+    tmpimg = msfile[:-3] + "_allsky"
+
+    tmpms = msfile[:-3] + "_nonsolar_subtracted.ms"
     if not fast_vis or (fast_vis and fast_vis_image_model_subtraction):
-        deconvolve.run_wsclean(msfile=msfile, imagename=imagename, imsize=imsize, cell=cell, uvrange=minuv, predict=False,
+        deconvolve.run_wsclean(msfile=msfile, imagename=tmpimg, imsize=imsize, cell=cell, uvrange=minuv, predict=False,
                     automask_thresh=5, pol=pol, niter=niter)
-        image_nosun = gen_nonsolar_source_model(msfile, imagename=imagename,
+        image_nosun = gen_nonsolar_source_model(msfile, imagename=tmpimg,
                                                 remove_strong_sources_only=remove_strong_sources_only, pol=pol)
-        deconvolve.predict_model(msfile, outms="temp.ms", image=image_nosun, pol=pol)
+        deconvolve.predict_model(msfile, outms=tmpms, image=image_nosun, pol=pol)
         
     elif fast_vis and not fast_vis_image_model_subtraction:
         md = model_generation(vis=msfile, separate_pol=True) 	    
         modelcl, ft_needed = md.gen_model_cl()
         if ft_needed:
-            os.system("cp -r "+msfile+" temp.ms")
-            clearcal("temp.ms", addmodel=True)
-            ft("temp.ms", complist=modelcl, usescratch=True)
+            os.system("cp -r " + msfile + " " + tmpms)
+            clearcal(tmpms, addmodel=True)
+            ft(tmpms, complist=modelcl, usescratch=True)
             
-    uvsub("temp.ms")
-    split(vis="temp.ms", outputvis=outms, datacolumn='corrected')
-    os.system("rm -rf temp.ms")
+    uvsub(tmpms)
+    split(vis=tmpms, outputvis=outms, datacolumn='corrected')
+    # remove temporary image and ms
+    if delete_tmp_files:
+        os.system("rm -rf " + tmpms)
+        os.system("rm -rf " + tmpimg)
     return outms
     
     
