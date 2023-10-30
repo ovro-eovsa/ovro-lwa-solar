@@ -25,7 +25,7 @@ msmd = msmetadata()
 
 def run_wsclean(msfile, imagename, imsize=4096, cell='2arcmin', uvrange='10', niter=10000,
                 mgain=0.8, do_automask=True, automask_thresh=8, do_autothresh=False, autothreshold_rms=3, 
-                predict=True, pol='I', fast_vis=False, intervals_out=None, field=None):  ### uvrange is in lambda units
+                predict=True, pol='I', fast_vis=False, intervals_out=None, field=None,**kwargs):  ### uvrange is in lambda units
     """
     Wrapper for imaging using wsclean
     :param msfile: input CASA measurement set
@@ -37,6 +37,11 @@ def run_wsclean(msfile, imagename, imsize=4096, cell='2arcmin', uvrange='10', ni
     :param do_automask: whether or not to do automask
     :param do_autothresh: whether or not to use local RMS thresholding
     :param mgain: maximum gain in each major cycle (during every major iteration, the peak is reduced by the given factor)
+    
+    Example of using kwargs
+    
+    kwargs={'channels-out':'10','spws':'5,6'}
+    deconvolve.run_wsclean(msfile,imagename=imagename,**kwargs)
     """
     logging.debug("Running WSCLEAN")
     if fast_vis==True:
@@ -63,12 +68,16 @@ def run_wsclean(msfile, imagename, imsize=4096, cell='2arcmin', uvrange='10', ni
 
     time1 = timeit.default_timer()
 
+    cmd_str1=''
+    for cmd,val in zip(kwargs,kwargs.values()):
+        cmd_str1+='-'+cmd+" "+val+" "    
+    
     os.system("wsclean -no-dirty -no-update-model-required -no-negative -size " + str(imsize) + " " + \
               str(imsize) + " -scale " + cell + " -weight uniform -minuv-l " + str(uvrange) + " -name " + imagename + \
               " -niter " + str(niter) + " -mgain " + str(mgain) + \
               automask_handler + autothresh_handler + \
               " -beam-fitting-size 2 -pol " + pol + ' ' + "-intervals-out "+ \
-              str(intervals_out) + " -field " + field + " " + msfile)
+              str(intervals_out) + " -field " + field + " " + cmd_str1+msfile)
     
     for str1 in ['residual','psf']:
         os.system("rm -rf "+imagename+"*"+str1+"*.fits") 
@@ -90,7 +99,7 @@ def run_wsclean(msfile, imagename, imsize=4096, cell='2arcmin', uvrange='10', ni
         time2 = timeit.default_timer()
         logging.info('Time taken for predicting the model column is {0:.1f} s'.format(time2-time1))
         
-        
+      
 
 def predict_model(msfile, outms, image="_no_sun",pol='I'):
     """

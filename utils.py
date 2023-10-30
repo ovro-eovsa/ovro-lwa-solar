@@ -276,6 +276,7 @@ def get_total_fields(msname):
     
 def get_fast_vis_imagenames(msfile,imagename,pol):
     pols=pol.split(',')
+    num_pols=len(pols)
     num_field=get_total_fields(msfile)
     msmd=msmetadata()
     msmd.open(msfile)
@@ -286,10 +287,11 @@ def get_fast_vis_imagenames(msfile,imagename,pol):
         t.format='isot'
         time_str=t.value[0].split('T')[1].replace(':','')
         for pol1 in pols:
-            if pol1=='I':
+            if pol1=='I' or num_pols==1:
                 pol1=''
             else:
                 pol1='-'+pol1
+            
             wsclean_imagename=imagename+'-t'+str(i).zfill(4)+pol1+"-image.fits"
             final_imagename=imagename+"_"+time_str+pol1+"-image.fits"
             names.append([wsclean_imagename,final_imagename])
