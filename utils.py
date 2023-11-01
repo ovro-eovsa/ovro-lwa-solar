@@ -222,35 +222,65 @@ def put_keyword(caltable, keyword, val, return_status=False):
         return
     return success
 
-
+def get_obs_time_interval(msfile):
+    msmd = msmetadata()
+    msmd.open(msname)
+    trange = msmd.timerangeforobs(0)
+    btime = Time(trange['begin']['m0']['value'],format='mjd').isot
+    etime = Time(trange['end']['m0']['value'],format='mjd').isot
+    msmd.close()
+    return btime+'~'+etime
+    
 def convert_to_heliocentric_coords(msname, imagename, helio_imagename=None, reftime=''):
     import datetime as dt
     from suncasa.utils import helioimage2fits as hf
     from casatasks import importfits
     msmd = msmetadata()
     qa = quanta()
+    
+    if type(imagename) is str:
+        imagename=[imagename]
+    elif type(imagename) is not list or type(imagename[0]) is not str:
+        logging.error("Imagename provided should either be a string or a list of strings")
+        raise RuntimeError("Imagename provided should either be a string or a list of strings")
+    
+    if helio_imagename is None:
+        helio_imagename = [img.replace('.fits', '.helio.fits') for img in imagename]
+    else:
+        if type(helio_imagename) is str:
+            helio_imagename=[helio_imagename]
+        elif type(helio_imagename) is not list or type(helio_imagename[0]) is not str:
+            logging.warning("Helio imagename provided should either be a string or a list of strings. Ignoring")
+            helio_imagename = [img.replace('.fits', '.helio.fits') for img in imagename]
+        elif len(helio_imagename)!=len(imagename):
+            logging.warning("Number of helio imagenames provided does not match with the number of images provided. Ignoring")
+            helio_imagename = [img.replace('.fits', '.helio.fits') for img in imagename]
 
     if reftime == '':
-        msmd.open(msname)
-        trange = msmd.timerangeforobs(0)
-        #btime = qa.time(trange['begin']['m0'], form='fits')[0]
-        #etime = qa.time(trange['end']['m0'], form='fits')[0]
-        btime = Time(trange['begin']['m0']['value'],format='mjd').isot
-        etime = Time(trange['end']['m0']['value'],format='mjd').isot
-        msmd.close()
-        reftime = btime+'~'+etime
+        reftime = [get_obs_time_interval(msfile)]*len(imagename)
+    elif type(reftime) is str:
+        reftime = [reftime]*len(imagename)
+    elif type(reftime) is not list or type(reftime[0]) is not str:
+        logging.warning("Reftime provided should either be a string or a list of strings. Ignoring")
+        reftime = [get_obs_time_interval(msfile)]*len(imagename)
+    elif len(reftime)!=len(imagename):
+        logging.warning("Number of reftimes provided does not match with number of images. Ignoring")
+        reftime = [get_obs_time_interval(msfile)]*len(imagename)
+        
     print('Use this reference time for registration: ', reftime)
-    logging.debug('Use this reference time for registration: ', reftime)
-    temp_image = imagename + ".tmp"
-    if helio_imagename is None:
-        helio_imagename = imagename.replace('.fits', '.helio.fits')
-    if not os.path.isdir(imagename):
-        importfits(fitsimage=imagename, imagename=temp_image, overwrite=True)
-    else:
-        temp_image = imagename
+    logging.debug('Use this reference time for registration: ', reftime[0])
+    
+    temp_image_list=[None]*len(imagename)
+    for j,img in enumerate(imagename):
+        temp_image = img + ".tmp"
+        if not os.path.isdir(img):
+            importfits(fitsimage=img, imagename=temp_image, overwrite=True)
+        else:
+            temp_image = img
+        temp_image_list[j]=temp_image
 
     try:
-        hf.imreg(vis=msname, imagefile=temp_image, timerange=reftime,
+        hf.imreg(vis=msname, imagefile=temp_image_list, timerange=reftime,
                  fitsfile=helio_imagename, usephacenter=True, verbose=True, toTb=True)
         os.system("rm -rf "+temp_image)
         return helio_imagename
