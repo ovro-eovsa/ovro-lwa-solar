@@ -223,6 +223,7 @@ def do_bandpass_correction(solar_ms, calib_ms=None, bcal=None, caltable_folder='
     bcal: Name of bandpass table
     caltable_fold: Name of folder where to keep/search for the caltable. This folder should exist
     fast_vis: If True, solar_ms is a fast visibility dataset.
+    bcal: Can be relative/absolute paths
     
     IMPORTANT: For slow visibility, if bcal is provided, then calib_ms need not be provided. But if fast_vis is set to True,
                then calib_ms must be a slow visibility dataset.
@@ -242,7 +243,7 @@ def do_bandpass_correction(solar_ms, calib_ms=None, bcal=None, caltable_folder='
             if not bcal:
                 bcal = caltable_folder + "/" + os.path.basename(calib_ms).replace('.ms', '.bcal')
             # check if bandpass table already exists
-            if overwrite or not os.path.isdir(os.path.join(caltable_folder,bcal)):
+            if overwrite or not os.path.isdir(os.path.join(caltable_folder,os.path.basename(bcal))):
                 logging.debug('Flagging antennas before calibration.')
                 flagging.flag_bad_ants(calib_ms)
                 bcal = gen_calibration(calib_ms, logging_level=logging_level, caltable_fold=caltable_folder)
@@ -250,7 +251,7 @@ def do_bandpass_correction(solar_ms, calib_ms=None, bcal=None, caltable_folder='
             else:
                 logging.info('I found an existing bandpass table. Will reuse it to calibrate.')
     else:
-        if not bcal or not os.path.isdir(bcal):
+        if not bcal or not os.path.isdir(os.path.join(caltable_folder,os.path.basename(bcal))):
             print('Neither calib_ms nor bcal exists. Need to provide calibrations to continue. Abort..')
             logging.error('Neither calib_ms nor bcal exists. Need to provide calibrations to continue. Abort..')
 
