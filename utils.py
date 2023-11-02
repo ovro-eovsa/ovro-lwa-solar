@@ -4,7 +4,10 @@ from astropy.io import fits
 from casatools import image, table, msmetadata, quanta, measures
 import numpy as np
 import logging, glob
-
+import primary_beam
+from primary_beam import analytic_beam as beam 
+from generate_calibrator_model import model_generation
+import generate_calibrator_model
 
 def get_sun_pos(msfile, str_output=True):
     """
@@ -343,3 +346,86 @@ def check_corrected_data_present(msname):
     finally:
         tb.close()
     return False
+    
+    
+def correct_primary_beam(msfile, imagename, pol='I', fast_vis=False):
+    '''
+    Can handle multiple images in a list. However if providing multiple images
+    provide full name of files. No addition to filename is done.
+    If single file is provided, we can add '.image.fits' to it. 
+    '''
+    me=measures()
+    m = get_sun_pos(msfile, str_output=False)
+    logging.debug('Solar ra: ' + str(m['m0']['value']))
+    logging.debug('Solar dec: ' + str(m['m1']['value']))
+    d = me.measure(m, 'AZEL')
+    logging.debug('Solar azimuth: ' + str(d['m0']['value']))
+    logging.debug('Solar elevation: ' + str(d['m1']['value']))
+    elev = d['m1']['value']*180/np.pi
+    az=d['m0']['value']*180/np.pi
+    pb=beam(msfile=msfile)
+    pb.srcjones(az=[az],el=[elev])
+    jones_matrices=pb.get_source_pol_factors(pb.jones_matrices[0,:,:])
+
+    md=generate_calibrator_model.model_generation(vis=msfile)
+    if fast_vis==False:
+        if pol=='I':
+            scale=md.primary_beam_value(0,jones_matrices)
+            logging.info('The Stokes I beam correction factor is ' + str(round(scale, 4)))
+            if type(imagename) is str:
+                if os.path.isfile(imagename+"-image.fits"):
+                    imagename=[imagename+"-image.fits"]
+                elif os.path.isfile(imagename):
+                    imagename=[imagename]
+                else:
+                    raise RuntimeError("Image supplied is not found")
+                    
+            for img in imagename:
+                hdu = fits.open(img, mode='update')
+                hdu[0].data /= scale
+                hdu.flush()
+                hdu.close()
+        else:
+            for pola in ['I','Q','U','V','XX','YY']:
+                if pola=='I' or pola=='XX' or pola=='YY':
+                    n=0
+                elif pola=='Q':
+                    n=1
+                elif pola=='U':
+                    n=2
+                else:
+                    n==3
+                scale=md.primary_beam_value(n,jones_matrices)
+                logging.info('The Stokes '+pola+' beam correction factor is ' + str(round(scale, 4)))
+                if os.path.isfile(imagename+ "-"+pola+"-image.fits"):
+                    hdu = fits.open(imagename+ "-"+pola+"-image.fits", mode='update')
+                    hdu[0].data /= scale
+                    hdu.flush()
+                    hdu.close()
+                elif pola=='I' and os.path.isfile(imagename+"-image.fits"):
+                    hdu = fits.open(imagename+"-image.fits", mode='update')
+                    hdu[0].data /= scale
+                    hdu.flush()
+                    hdu.close()
+    else:
+        image_names=get_fast_vis_imagenames(msfile,imagename,pol)
+        for name in image_names:
+            if os.path.isfile(name[1]):
+                if pol=='I':
+                    scale=md.primary_beam_value(0,jones_matrices)
+                else:
+                    pola=name[1].split('-')[-1]
+                    if pola=='I' or pola=='XX' or pola=='YY':
+                        n=0
+                    elif pola=='Q':
+                        n=1
+                    elif pola=='U':
+                        n=2
+                    else:
+                        n==3
+                    scale=md.primary_beam_value(n,jones_matrices)
+                hdu = fits.open(name[1], mode='update')
+                hdu[0].data /= scale
+                hdu.flush()
+                hdu.close()
+    return
