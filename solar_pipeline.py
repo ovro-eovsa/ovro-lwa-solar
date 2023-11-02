@@ -280,16 +280,21 @@ def image_ms(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagename='sun
         
         correct_primary_beam(outms, imagename, pol=pol, fast_vis=fast_vis)
         if not fast_vis:
+            image_list=[]
             for n,pola in enumerate(['I','Q','U','V','XX','YY']):
                 if os.path.isfile(imagename+ "-"+pola+"-image.fits"):
-                    helio_image = utils.convert_to_heliocentric_coords(outms, imagename+ "-"+pola+"-image.fits")
-                elif pola=='I' and os.path.isfile(imagename+"-image.fits"):
-                    helio_image = utils.convert_to_heliocentric_coords(outms, imagename+"-image.fits")
+                    image_list.append(imagename+ "-"+pola+"-image.fits")
+                   
+            if os.path.isfile(imagename+"-image.fits"):
+                image_list.append(imagename+ "-image.fits")
+            helio_image = utils.convert_to_heliocentric_coords(outms, image_list)
         else:
             image_names=utils.get_fast_vis_imagenames(outms, imagename, pol)
+            image_list=[]
             for name in image_names:
                 if os.path.isfile(name[1]):
-                    helio_image = utils.convert_to_heliocentric_coords(outms, name[1])    
+                    image_list.append(name[1])
+            helio_image = utils.convert_to_heliocentric_coords(outms, image_list)    
         logging.info('Imaging completed for ' + solar_ms)
 
         time2=timeit.default_timer()

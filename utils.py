@@ -224,7 +224,7 @@ def put_keyword(caltable, keyword, val, return_status=False):
 
 def get_obs_time_interval(msfile):
     msmd = msmetadata()
-    msmd.open(msname)
+    msmd.open(msfile)
     trange = msmd.timerangeforobs(0)
     btime = Time(trange['begin']['m0']['value'],format='mjd').isot
     etime = Time(trange['end']['m0']['value'],format='mjd').isot
@@ -232,6 +232,11 @@ def get_obs_time_interval(msfile):
     return btime+'~'+etime
     
 def convert_to_heliocentric_coords(msname, imagename, helio_imagename=None, reftime=''):
+    '''
+    The imagename, helio_imagename and reftime all can be a list.
+    If reftime is not provided, it is assumed to the the center
+    of the observation time given in the MS
+    '''
     import datetime as dt
     from suncasa.utils import helioimage2fits as hf
     from casatasks import importfits
@@ -257,15 +262,15 @@ def convert_to_heliocentric_coords(msname, imagename, helio_imagename=None, reft
             helio_imagename = [img.replace('.fits', '.helio.fits') for img in imagename]
 
     if reftime == '':
-        reftime = [get_obs_time_interval(msfile)]*len(imagename)
+        reftime = [get_obs_time_interval(msname)]*len(imagename)
     elif type(reftime) is str:
         reftime = [reftime]*len(imagename)
     elif type(reftime) is not list or type(reftime[0]) is not str:
         logging.warning("Reftime provided should either be a string or a list of strings. Ignoring")
-        reftime = [get_obs_time_interval(msfile)]*len(imagename)
+        reftime = [get_obs_time_interval(msname)]*len(imagename)
     elif len(reftime)!=len(imagename):
         logging.warning("Number of reftimes provided does not match with number of images. Ignoring")
-        reftime = [get_obs_time_interval(msfile)]*len(imagename)
+        reftime = [get_obs_time_interval(msname)]*len(imagename)
         
     print('Use this reference time for registration: ', reftime)
     logging.debug('Use this reference time for registration: ', reftime[0])
