@@ -4,7 +4,10 @@ from astropy.io import fits
 from casatools import image, table, msmetadata, quanta, measures
 import numpy as np
 import logging, glob
-
+import primary_beam
+from primary_beam import analytic_beam as beam 
+from generate_calibrator_model import model_generation
+import generate_calibrator_model
 
 def get_sun_pos(msfile, str_output=True):
     """
@@ -222,35 +225,70 @@ def put_keyword(caltable, keyword, val, return_status=False):
         return
     return success
 
-
+def get_obs_time_interval(msfile):
+    msmd = msmetadata()
+    msmd.open(msfile)
+    trange = msmd.timerangeforobs(0)
+    btime = Time(trange['begin']['m0']['value'],format='mjd').isot
+    etime = Time(trange['end']['m0']['value'],format='mjd').isot
+    msmd.close()
+    return btime+'~'+etime
+    
 def convert_to_heliocentric_coords(msname, imagename, helio_imagename=None, reftime=''):
+    '''
+    The imagename, helio_imagename and reftime all can be a list.
+    If reftime is not provided, it is assumed to the the center
+    of the observation time given in the MS
+    '''
     import datetime as dt
     from suncasa.utils import helioimage2fits as hf
     from casatasks import importfits
     msmd = msmetadata()
     qa = quanta()
+    
+    if type(imagename) is str:
+        imagename=[imagename]
+    elif type(imagename) is not list or type(imagename[0]) is not str:
+        logging.error("Imagename provided should either be a string or a list of strings")
+        raise RuntimeError("Imagename provided should either be a string or a list of strings")
+    
+    if helio_imagename is None:
+        helio_imagename = [img.replace('.fits', '.helio.fits') for img in imagename]
+    else:
+        if type(helio_imagename) is str:
+            helio_imagename=[helio_imagename]
+        elif type(helio_imagename) is not list or type(helio_imagename[0]) is not str:
+            logging.warning("Helio imagename provided should either be a string or a list of strings. Ignoring")
+            helio_imagename = [img.replace('.fits', '.helio.fits') for img in imagename]
+        elif len(helio_imagename)!=len(imagename):
+            logging.warning("Number of helio imagenames provided does not match with the number of images provided. Ignoring")
+            helio_imagename = [img.replace('.fits', '.helio.fits') for img in imagename]
 
     if reftime == '':
-        msmd.open(msname)
-        trange = msmd.timerangeforobs(0)
-        #btime = qa.time(trange['begin']['m0'], form='fits')[0]
-        #etime = qa.time(trange['end']['m0'], form='fits')[0]
-        btime = Time(trange['begin']['m0']['value'],format='mjd').isot
-        etime = Time(trange['end']['m0']['value'],format='mjd').isot
-        msmd.close()
-        reftime = btime+'~'+etime
+        reftime = [get_obs_time_interval(msname)]*len(imagename)
+    elif type(reftime) is str:
+        reftime = [reftime]*len(imagename)
+    elif type(reftime) is not list or type(reftime[0]) is not str:
+        logging.warning("Reftime provided should either be a string or a list of strings. Ignoring")
+        reftime = [get_obs_time_interval(msname)]*len(imagename)
+    elif len(reftime)!=len(imagename):
+        logging.warning("Number of reftimes provided does not match with number of images. Ignoring")
+        reftime = [get_obs_time_interval(msname)]*len(imagename)
+        
     print('Use this reference time for registration: ', reftime)
-    logging.debug('Use this reference time for registration: ', reftime)
-    temp_image = imagename + ".tmp"
-    if helio_imagename is None:
-        helio_imagename = imagename.replace('.fits', '.helio.fits')
-    if not os.path.isdir(imagename):
-        importfits(fitsimage=imagename, imagename=temp_image, overwrite=True)
-    else:
-        temp_image = imagename
+    logging.debug('Use this reference time for registration: ', reftime[0])
+    
+    temp_image_list=[None]*len(imagename)
+    for j,img in enumerate(imagename):
+        temp_image = img + ".tmp"
+        if not os.path.isdir(img):
+            importfits(fitsimage=img, imagename=temp_image, overwrite=True)
+        else:
+            temp_image = img
+        temp_image_list[j]=temp_image
 
     try:
-        hf.imreg(vis=msname, imagefile=temp_image, timerange=reftime,
+        hf.imreg(vis=msname, imagefile=temp_image_list, timerange=reftime,
                  fitsfile=helio_imagename, usephacenter=True, verbose=True, toTb=True)
         os.system("rm -rf "+temp_image)
         return helio_imagename
@@ -276,6 +314,7 @@ def get_total_fields(msname):
     
 def get_fast_vis_imagenames(msfile,imagename,pol):
     pols=pol.split(',')
+    num_pols=len(pols)
     num_field=get_total_fields(msfile)
     msmd=msmetadata()
     msmd.open(msfile)
@@ -286,10 +325,11 @@ def get_fast_vis_imagenames(msfile,imagename,pol):
         t.format='isot'
         time_str=t.value[0].split('T')[1].replace(':','')
         for pol1 in pols:
-            if pol1=='I':
+            if pol1=='I' or num_pols==1:
                 pol1=''
             else:
                 pol1='-'+pol1
+            
             wsclean_imagename=imagename+'-t'+str(i).zfill(4)+pol1+"-image.fits"
             final_imagename=imagename+"_"+time_str+pol1+"-image.fits"
             names.append([wsclean_imagename,final_imagename])
@@ -306,3 +346,86 @@ def check_corrected_data_present(msname):
     finally:
         tb.close()
     return False
+    
+    
+def correct_primary_beam(msfile, imagename, pol='I', fast_vis=False):
+    '''
+    Can handle multiple images in a list. However if providing multiple images
+    provide full name of files. No addition to filename is done.
+    If single file is provided, we can add '.image.fits' to it. 
+    '''
+    me=measures()
+    m = get_sun_pos(msfile, str_output=False)
+    logging.debug('Solar ra: ' + str(m['m0']['value']))
+    logging.debug('Solar dec: ' + str(m['m1']['value']))
+    d = me.measure(m, 'AZEL')
+    logging.debug('Solar azimuth: ' + str(d['m0']['value']))
+    logging.debug('Solar elevation: ' + str(d['m1']['value']))
+    elev = d['m1']['value']*180/np.pi
+    az=d['m0']['value']*180/np.pi
+    pb=beam(msfile=msfile)
+    pb.srcjones(az=[az],el=[elev])
+    jones_matrices=pb.get_source_pol_factors(pb.jones_matrices[0,:,:])
+
+    md=generate_calibrator_model.model_generation(vis=msfile)
+    if fast_vis==False:
+        if pol=='I':
+            scale=md.primary_beam_value(0,jones_matrices)
+            logging.info('The Stokes I beam correction factor is ' + str(round(scale, 4)))
+            if type(imagename) is str:
+                if os.path.isfile(imagename+"-image.fits"):
+                    imagename=[imagename+"-image.fits"]
+                elif os.path.isfile(imagename):
+                    imagename=[imagename]
+                else:
+                    raise RuntimeError("Image supplied is not found")
+                    
+            for img in imagename:
+                hdu = fits.open(img, mode='update')
+                hdu[0].data /= scale
+                hdu.flush()
+                hdu.close()
+        else:
+            for pola in ['I','Q','U','V','XX','YY']:
+                if pola=='I' or pola=='XX' or pola=='YY':
+                    n=0
+                elif pola=='Q':
+                    n=1
+                elif pola=='U':
+                    n=2
+                else:
+                    n==3
+                scale=md.primary_beam_value(n,jones_matrices)
+                logging.info('The Stokes '+pola+' beam correction factor is ' + str(round(scale, 4)))
+                if os.path.isfile(imagename+ "-"+pola+"-image.fits"):
+                    hdu = fits.open(imagename+ "-"+pola+"-image.fits", mode='update')
+                    hdu[0].data /= scale
+                    hdu.flush()
+                    hdu.close()
+                elif pola=='I' and os.path.isfile(imagename+"-image.fits"):
+                    hdu = fits.open(imagename+"-image.fits", mode='update')
+                    hdu[0].data /= scale
+                    hdu.flush()
+                    hdu.close()
+    else:
+        image_names=get_fast_vis_imagenames(msfile,imagename,pol)
+        for name in image_names:
+            if os.path.isfile(name[1]):
+                if pol=='I':
+                    scale=md.primary_beam_value(0,jones_matrices)
+                else:
+                    pola=name[1].split('-')[-1]
+                    if pola=='I' or pola=='XX' or pola=='YY':
+                        n=0
+                    elif pola=='Q':
+                        n=1
+                    elif pola=='U':
+                        n=2
+                    else:
+                        n==3
+                    scale=md.primary_beam_value(n,jones_matrices)
+                hdu = fits.open(name[1], mode='update')
+                hdu[0].data /= scale
+                hdu.flush()
+                hdu.close()
+    return
