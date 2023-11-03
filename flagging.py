@@ -42,7 +42,7 @@ def get_antids(msfile):
 
 def gen_ant_flags_from_autocorr(msfile, antflagfile=None, datacolumn='DATA', tavg=False,
                                 thresh_core=1.0, thresh_exp=1.0, flag_exp_with_core_stat=True,
-                                flag_either_pol=False, doappend=False, debug=False, doplot=False):
+                                flag_either_pol=True, doappend=False, debug=False, doplot=False):
     """Generates a text file containing the bad antennas.
     DOES NOT ACTUALLY APPLY FLAGS. CURRENTLY SHOULD ONLY BE RUN ON SINGLE SPW MSs.
 
