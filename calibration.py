@@ -259,7 +259,7 @@ def do_bandpass_correction(solar_ms, calib_ms=None, bcal=None, caltable_folder='
     
     doantflag=True
     if bcal and fast_vis==True:
-        bcal=make_fast_caltb_from_slow(calib_ms, solar_ms, bcal)
+        bcal=make_fast_caltb_from_slow(calib_ms, solar_ms, os.path.join(caltable_folder,os.path.basename(bcal)))
         doantflag=False  ### The antenna flag calculation will be wrong for the fast ms.
     apply_calibration(solar_ms, gaintable=bcal, doantflag=doantflag, doflag=True, do_solar_imaging=False)
     split(vis=solar_ms, outputvis=solar_ms[:-3] + "_calibrated.ms", width=int(freqbin))
