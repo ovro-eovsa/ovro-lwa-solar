@@ -280,21 +280,14 @@ def convert_to_heliocentric_coords(msname, imagename, helio_imagename=None, reft
     
     temp_image_list=[None]*len(imagename)
     for j,img in enumerate(imagename):
-        temp_image = img + ".tmp"
-        if not os.path.isdir(img):
-            importfits(fitsimage=img, imagename=temp_image, overwrite=True)
-        else:
-            temp_image = img
-        temp_image_list[j]=temp_image
+        temp_image_list[j]=img
 
     try:
         hf.imreg(vis=msname, imagefile=temp_image_list, timerange=reftime,
                  fitsfile=helio_imagename, usephacenter=True, verbose=True, toTb=True)
-        os.system("rm -rf "+temp_image)
         return helio_imagename
     except:
         logging.warning("Could not convert to helicentric coordinates")
-        os.system("rm -rf "+temp_image)
         return None
         
 def make_wsclean_compatible(msname):
