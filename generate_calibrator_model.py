@@ -408,13 +408,13 @@ class model_generation():
            return modelcl, ft_needed    
 
         if self.includesun == True:
-            logging.info("User wants to add solar model")
-            logging.info("Proceeding to use point source model generation scheme.")
+            logging.debug("User wants to add solar model")
+            logging.debug("Proceeding to use point source model generation scheme.")
             modelcl, ft_needed = self.point_source_model()
             return modelcl, ft_needed
         try:
             
-            logging.info("Generating component list using Gasperin et al. (2021)")
+            logging.debug("Generating component list using Gasperin et al. (2021)")
             
             self.gen_model_file()
             imagename = self.outpath+"dummy"
@@ -427,7 +427,7 @@ class model_generation():
             
             self.generate_model_from_component_list(imagename)
             
-            logging.info("Model file generated using the clean component list")
+            logging.debug("Model file generated using the clean component list")
             
             self.check_negative_in_model()
             

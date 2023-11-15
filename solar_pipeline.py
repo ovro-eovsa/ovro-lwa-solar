@@ -88,9 +88,7 @@ def change_phasecenter(msfile):
     dec1 = dec1 + str(dec) + "s"
     if neg == True:
         dec1 = '-' + dec1
-    print(ra1)
-    print(dec1)
-    logging.info("Changing the phasecenter to " + ra1 + " " + dec1)
+    logging.debug("Changing the phasecenter to " + ra1 + " " + dec1)
     os.system("chgcentre " + msfile + " " + ra1 + " " + dec1)
 
 
@@ -270,14 +268,14 @@ def image_ms_quick(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagenam
         if not overwrite:
             return None, imagename + "-image.helio.fits"
 
-    logging.info('==========Working on a new solar ms file {0:s}============='.format(solar_ms))
+    logging.debug('==========Working on a new solar ms file {0:s}============='.format(solar_ms))
     time_begin=timeit.default_timer()
     time1=timeit.default_timer()
     solar_ms = calibration.do_bandpass_correction(solar_ms, calib_ms=calib_ms, bcal=bcal, caltable_folder=caltable_folder, freqbin=freqbin)
     time2=timeit.default_timer()
-    logging.info('Time taken to do the bandpass correction is: {0:.1f} s'.format(time2-time1)) 
+    logging.debug('Time taken to do the bandpass correction is: {0:.1f} s'.format(time2-time1)) 
     time1=time2
-    logging.info('Analysing ' + solar_ms)
+    logging.debug('Analysing ' + solar_ms)
     if do_selfcal:
         #outms_di = selfcal.DI_selfcal(solar_ms, logging_level=logging_level, full_di_selfcal_rounds=full_di_selfcal_rounds,
         #                      partial_di_selfcal_rounds=[0, 0], pol=pol, refant=refant, caltable_folder=caltable_folder)
@@ -287,16 +285,16 @@ def image_ms_quick(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagenam
             refant=refant, niter0=niter0, niter_incr=niter_incr, caltable_folder=caltable_folder)
         outms_di = solar_ms[:-3] + "_selfcalibrated.ms"
         if do_fluxscaling:
-            logging.info('Doing a flux scaling using background strong sources')
+            logging.debug('Doing a flux scaling using background strong sources')
             fc=flux_scaling.flux_scaling(vis=solar_ms, min_beam_val=0.1, pol=pol)
             fc.correct_flux_scaling()
-            logging.info('Splitted the selfcalibrated MS into a file named ' + solar_ms[:-3] + "_selfcalibrated.ms")
+            logging.debug('Splitted the selfcalibrated MS into a file named ' + solar_ms[:-3] + "_selfcalibrated.ms")
             split(vis=solar_ms, outputvis=outms_di, datacolumn='data')
         else:
-            logging.info('Splitted the selfcalibrated MS into a file named ' + solar_ms[:-3] + "_selfcalibrated.ms")
+            logging.debug('Splitted the selfcalibrated MS into a file named ' + solar_ms[:-3] + "_selfcalibrated.ms")
             split(vis=solar_ms, outputvis=outms_di, datacolumn='corrected')
         time2=timeit.default_timer()
-        logging.info('Time taken for selfcal and fluxscaling is: {0:.1f} s'.format(time2-time1))
+        logging.debug('Time taken for selfcal and fluxscaling is: {0:.1f} s'.format(time2-time1))
         print(outms_di)
     else:
         outms_di = solar_ms
@@ -306,19 +304,19 @@ def image_ms_quick(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagenam
     print('Removing non-solar sources in the sky')
     outms = source_subtraction.remove_nonsolar_sources(outms_di, remove_strong_sources_only=True, niter=1000, pol=pol)
     time2=timeit.default_timer()
-    logging.info('Time taken for non-solar source removal is {0:.1f} s'.format(time2-time1))
-    logging.info('The source subtracted MS is ' + outms)
+    logging.debug('Time taken for non-solar source removal is {0:.1f} s'.format(time2-time1))
+    logging.debug('The source subtracted MS is ' + outms)
     time1=time2
 
-    logging.info('Changing the phasecenter to position of Sun')
+    logging.debug('Changing the phasecenter to position of Sun')
     change_phasecenter(outms)
     time2=timeit.default_timer()
-    logging.info('Time taken for changing phasecenter: {0:.1f} s'.format(time2-time1))
+    logging.debug('Time taken for changing phasecenter: {0:.1f} s'.format(time2-time1))
     time1=time2
     if do_final_imaging:
-        logging.info('Generating final solar centered image')
+        logging.debug('Generating final solar centered image')
         deconvolve.run_wsclean(outms, imagename=imagename, automask_thresh=5, uvrange='0', predict=False, imsize=imsize, cell=cell,pol=pol)
-        logging.info('Correcting for the primary beam at the location of Sun')
+        logging.debug('Correcting for the primary beam at the location of Sun')
         correct_primary_beam(outms, imagename, pol=pol)
         for n,pola in enumerate(['I','Q','U','V','XX','YY']):
             if os.path.isfile(imagename+ "-"+pola+"-image.fits"):
@@ -326,7 +324,7 @@ def image_ms_quick(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagenam
             elif pola=='I' and os.path.isfile(imagename+"-image.fits"):
                 helio_image = utils.convert_to_heliocentric_coords(outms, imagename+"-image.fits")
         time2=timeit.default_timer()
-        logging.info('Imaging completed for ' + solar_ms)
+        logging.debug('Imaging completed for ' + solar_ms)
         if delete==True:
             os.system("rm -rf *model*")
         return outms, helio_image
@@ -334,9 +332,9 @@ def image_ms_quick(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagenam
     else:
         if delete==True:
             os.system("rm -rf *model*")
-        logging.info('Time taken for producing final image: {0:.1f} s'.format(time2-time1))
+        logging.debug('Time taken for producing final image: {0:.1f} s'.format(time2-time1))
         time_end=timeit.default_timer()
-        logging.info('Time taken to complete all processing: {0:.1f} s'.format(time_end-time_begin)) 
+        logging.debug('Time taken to complete all processing: {0:.1f} s'.format(time_end-time_begin)) 
         return outms, None
         
    

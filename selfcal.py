@@ -28,8 +28,8 @@ def do_selfcal(msfile, num_phase_cal=2, num_apcal=2, applymode='calflag', loggin
                ms_keyword='di_selfcal_time',pol='I', refant='202', niter0=1000, niter_incr=500):
     
     time1=timeit.default_timer()          
-    logging.info('The plan is to do ' + str(num_phase_cal) + " rounds of phase selfcal")
-    logging.info('The plan is to do ' + str(num_apcal) + " rounds of amplitude-phase selfcal")
+    logging.debug('The plan is to do ' + str(num_phase_cal) + " rounds of phase selfcal")
+    logging.debug('The plan is to do ' + str(num_apcal) + " rounds of amplitude-phase selfcal")
     
     num_pol=2
     if pol=='XX,YY':
@@ -52,7 +52,7 @@ def do_selfcal(msfile, num_phase_cal=2, num_apcal=2, applymode='calflag', loggin
         logging.debug('Maximum pixel values are: ' + str(max1[0]) + "," + str(max1[1]))
         logging.debug('Minimum pixel values around peaks are: ' + str(min1[0]) + "," + str(min1[1]))
         if not good:
-            logging.info('Dynamic range has reduced. Doing a round of flagging')
+            logging.debug('Dynamic range has reduced. Doing a round of flagging')
             flagdata(vis=msfile, mode='rflag', datacolumn='corrected')
             deconvolve.run_wsclean(msfile, imagename=imagename, niter=niters[i], mgain=0.9, do_automask=False, do_autothresh=False, pol=pol)
             
@@ -62,7 +62,7 @@ def do_selfcal(msfile, num_phase_cal=2, num_apcal=2, applymode='calflag', loggin
             logging.debug('Maximum pixel values are: ' + str(max1[0]) + "," + str(max1[1]))
             logging.debug('Minimum pixel values around peaks are: ' + str(min1[0]) + "," + str(min1[1]))
             if not good:
-                logging.info('Flagging could not solve the issue. Restoring flags, applying last good solutions.')
+                logging.debug('Flagging could not solve the issue. Restoring flags, applying last good solutions.')
                 utils.restore_flag(msfile)
                 logging.debug('Restoring flags')
                 os.system("rm -rf " + imagename + "-*.fits")
@@ -71,7 +71,7 @@ def do_selfcal(msfile, num_phase_cal=2, num_apcal=2, applymode='calflag', loggin
                 imagename = msfile[:-3] + "_self" + str(i - 2)
                 caltable = imagename + ".gcal"
                 if os.path.isdir(caltable):
-                    logging.info("Applying " + caltable)
+                    logging.debug("Applying " + caltable)
                     applycal(vis=msfile, gaintable=caltable, calwt=[False], applymode=applymode)
                     os.system("cp -r " + caltable + " " + caltable_folder)
                 else:
@@ -93,7 +93,7 @@ def do_selfcal(msfile, num_phase_cal=2, num_apcal=2, applymode='calflag', loggin
         time2=timeit.default_timer()
         logging.debug('Apply selfcal gain solutions took {0:.1f} s'.format(time2-time1))
 
-    logging.info("Phase self-calibration finished successfully")
+    logging.debug("Phase self-calibration finished successfully")
 
     if num_phase_cal > 0:
         final_phase_caltable = imagename + ".gcal"
@@ -108,7 +108,7 @@ def do_selfcal(msfile, num_phase_cal=2, num_apcal=2, applymode='calflag', loggin
         logging.debug('Maximum pixel values are: ' + str(max1[0]) + "," + str(max1[1]))
         logging.debug('Minimum pixel values around peaks are: ' + str(min1[0]) + "," + str(min1[1]))
         if not good:
-            logging.info('Dynamic range has reduced. Doing a round of flagging')
+            logging.debug('Dynamic range has reduced. Doing a round of flagging')
             flagdata(vis=msfile, mode='rflag', datacolumn='corrected')
             deconvolve.run_wsclean(msfile, imagename=imagename, niter=np.max(niters), mgain=0.9, do_automask=False, do_autothresh=False, pol=pol)
             
@@ -116,7 +116,7 @@ def do_selfcal(msfile, num_phase_cal=2, num_apcal=2, applymode='calflag', loggin
             
             print(good)
             if not good:
-                logging.info('Flagging could not solve the issue. Restoring flags, applying last good solutions.')
+                logging.debug('Flagging could not solve the issue. Restoring flags, applying last good solutions.')
                 utils.restore_flag(msfile)
                 os.system("rm -rf " + imagename + "-*.fits")
                 caltable = msfile[:-3] + "_self" + str(i - 1) + "_ap_over_p.gcal"
@@ -124,7 +124,7 @@ def do_selfcal(msfile, num_phase_cal=2, num_apcal=2, applymode='calflag', loggin
                 imagename = msfile[:-3] + "_self" + str(i - 2)
                 caltable = imagename + "_ap_over_p.gcal"
                 if os.path.isdir(caltable):
-                    logging.info("Applying " + caltable + " and " + final_phase_caltable)
+                    logging.debug("Applying " + caltable + " and " + final_phase_caltable)
                     if num_phase_cal > 0:
                         applycal(vis=msfile, gaintable=[caltable, final_phase_caltable], calwt=[False, False],
                                  applymode=applymode)
@@ -136,7 +136,7 @@ def do_selfcal(msfile, num_phase_cal=2, num_apcal=2, applymode='calflag', loggin
                 else:
                     logging.warning("No good aplitude-phase selfcal solution found.")
                     if num_phase_cal > 0:
-                        logging.info("Applying " + final_phase_caltable)
+                        logging.debug("Applying " + final_phase_caltable)
                         applycal(vis=msfile, gaintable=[final_phase_caltable], calwt=[False], applymode=applymode)
                         os.system("cp -r " + final_phase_caltable + " " + caltable_folder)
                     else:
@@ -175,12 +175,12 @@ def do_fresh_selfcal(solar_ms, num_phase_cal=3, num_apcal=5, logging_level='info
     :param logging_level: type of logging, default to "info"
     :return: N/A
     """
-    logging.info('Starting to do direction independent Stokes I selfcal')
+    logging.debug('Starting to do direction independent Stokes I selfcal')
     success = do_selfcal(solar_ms, num_phase_cal=num_phase_cal, num_apcal=num_apcal, logging_level=logging_level, pol=pol, 
             refant=refant, niter0=niter0, niter_incr=niter_incr)
     if not success:
 #TODO Understand why this step is needed
-        logging.info('Starting fresh selfcal as DR decreased significantly')
+        logging.debug('Starting fresh selfcal as DR decreased significantly')
         clearcal(solar_ms)
         success = do_selfcal(solar_ms, num_phase_cal=num_phase_cal, num_apcal=num_apcal, logging_level=logging_level, pol=pol, 
                 refant=refant, niter0=niter0, niter_incr=niter_incr)
@@ -261,16 +261,16 @@ def DI_selfcal(solar_ms, solint_full_selfcal=14400, solint_partial_selfcal=3600,
                 flagdata(vis=solar_ms, mode='rflag', datacolumn='corrected')
 
                 if sep < solint_partial_selfcal:
-                    logging.info('Seperation is shorter than the partial solint, skipping all direction independent selfcal')
-                    logging.info('Applying gaintables from ' + di_selfcal_time_str)
+                    logging.debug('Seperation is shorter than the partial solint, skipping all direction independent selfcal')
+                    logging.debug('Applying gaintables from ' + di_selfcal_time_str)
                     applycal(solar_ms, gaintable=di_cal, calwt=[False] * len(di_cal))
                     flagdata(vis=solar_ms, mode='rflag', datacolumn='corrected')
                     success = utils.put_keyword(solar_ms, 'di_selfcal_time', di_selfcal_time_str, return_status=True)
 
                 elif sep > solint_partial_selfcal and sep < solint_full_selfcal:
                     # Partical selfcal does one additional round of ap self-calibration
-                    logging.info('Seperation is shorter than the full solint, skipping phase-only selfcal')
-                    logging.info(
+                    logging.debug('Seperation is shorter than the full solint, skipping phase-only selfcal')
+                    logging.debug(
                         'Starting to do direction independent Stokes I selfcal after applying ' + di_selfcal_time_str)
                     applycal(solar_ms, gaintable=di_cal, calwt=[False] * len(di_cal))
                     success = utils.put_keyword(solar_ms, 'di_selfcal_time', mstime_str, return_status=True)
@@ -281,8 +281,8 @@ def DI_selfcal(solar_ms, solint_full_selfcal=14400, solint_partial_selfcal=3600,
                     datacolumn = 'corrected'
                 else:
                     success = utils.put_keyword(solar_ms, 'di_selfcal_time', mstime_str, return_status=True)
-                    logging.info('Seperation is longer than the full solint, doing fresh direction independent selfcal')
-                    logging.info(
+                    logging.debug('Seperation is longer than the full solint, doing fresh direction independent selfcal')
+                    logging.debug(
                         'Starting to do direction independent Stokes I selfcal after applying ' + di_selfcal_time_str)
                     do_fresh_selfcal(solar_ms, num_phase_cal=full_di_selfcal_rounds[0],
                                      num_apcal=full_di_selfcal_rounds[1], logging_level=logging_level, pol=pol, refant=refant)
@@ -291,20 +291,20 @@ def DI_selfcal(solar_ms, solint_full_selfcal=14400, solint_partial_selfcal=3600,
                         success = do_selfcal(solar_ms, logging_level=logging_level,pol=pol, refant=refant, niter0=niter0, niter_incr=niter_incr)
             else:
                 success = utils.put_keyword(solar_ms, 'di_selfcal_time', mstime_str, return_status=True)
-                logging.info(
+                logging.debug(
                     'Starting to do direction independent Stokes I selfcal as I failed to retrieve the keyword for DI selfcal')
                 do_fresh_selfcal(solar_ms, num_phase_cal=full_di_selfcal_rounds[0],
                                  num_apcal=full_di_selfcal_rounds[1], logging_level=logging_level, pol=pol, refant=refant)
         else:
             success = utils.put_keyword(solar_ms, 'di_selfcal_time', mstime_str, return_status=True)
-            logging.info(
+            logging.debug(
                 'Starting to do direction independent Stokes I selfcal as mysteriously I did not find a suitable caltable')
             do_fresh_selfcal(solar_ms, num_phase_cal=full_di_selfcal_rounds[0],
                              num_apcal=full_di_selfcal_rounds[1], logging_level=logging_level, pol=pol, refant=refant)
     else:
         if not fast_vis:
             success = utils.put_keyword(solar_ms, 'di_selfcal_time', mstime_str, return_status=True)
-            logging.info('I do not find any existing selfcal tables. Starting to do fresh direction independent Stokes I selfcal')
+            logging.debug('I do not find any existing selfcal tables. Starting to do fresh direction independent Stokes I selfcal')
             do_fresh_selfcal(solar_ms, num_phase_cal=full_di_selfcal_rounds[0],
                              num_apcal=full_di_selfcal_rounds[1], logging_level=logging_level, pol=pol, refant=refant)
         else:
@@ -316,13 +316,13 @@ def DI_selfcal(solar_ms, solint_full_selfcal=14400, solint_partial_selfcal=3600,
     
     solar_ms_slfcaled = solar_ms[:-3] + "_selfcalibrated.ms"
     if do_fluxscaling:
-        logging.info('Doing a flux scaling using background strong sources')
+        logging.debug('Doing a flux scaling using background strong sources')
         fc=flux_scaling.flux_scaling(vis=solar_ms, min_beam_val=0.1, pol=pol, fast_vis=fast_vis, calib_ms=calib_ms)
         fc.correct_flux_scaling()
-        logging.info('Splitted the selfcalibrated MS into a file named ' + solar_ms[:-3] + "_selfcalibrated.ms")
+        logging.debug('Splitted the selfcalibrated MS into a file named ' + solar_ms[:-3] + "_selfcalibrated.ms")
         split(vis=solar_ms, outputvis=solar_ms_slfcaled, datacolumn='data')
     else:
-        logging.info('Splitted the selfcalibrated MS into a file named ' + solar_ms[:-3] + "_selfcalibrated.ms")
+        logging.debug('Splitted the selfcalibrated MS into a file named ' + solar_ms[:-3] + "_selfcalibrated.ms")
         corrected_data_present=utils.check_corrected_data_present(solar_ms)
         if corrected_data_present:
             datacolumn='corrected'
@@ -390,12 +390,12 @@ def DD_selfcal(solar_ms, solint_full_selfcal=1800, solint_partial_selfcal=600, c
             flagdata(vis=solar_ms, mode='rflag', datacolumn='corrected')
 
             if sep < solint_partial_selfcal:
-                logging.info('No direction dependent Stokes I selfcal after applying ' + dd_selfcal_time_str)
+                logging.debug('No direction dependent Stokes I selfcal after applying ' + dd_selfcal_time_str)
                 success = utils.put_keyword(solar_ms, 'dd_selfcal_time', dd_selfcal_time_str, return_status=True)
 
             elif sep > solint_partial_selfcal and sep < solint_full_selfcal:
                 success = utils.put_keyword(solar_ms, 'dd_selfcal_time', mstime_str, return_status=True)
-                logging.info(
+                logging.debug(
                     'Starting to do direction dependent Stokes I selfcal after applying ' + dd_selfcal_time_str)
                 success = do_selfcal(solar_ms, num_phase_cal=partial_dd_selfcal_rounds[0],
                                      num_apcal=partial_dd_selfcal_rounds[1], applymode='calonly',
@@ -405,7 +405,7 @@ def DD_selfcal(solar_ms, solint_full_selfcal=1800, solint_partial_selfcal=600, c
 
             else:
                 success = utils.put_keyword(solar_ms, 'dd_selfcal_time', mstime_str, return_status=True)
-                logging.info(
+                logging.debug(
                     'Starting to do direction dependent Stokes I selfcal after applying ' + dd_selfcal_time_str)
                 success = do_selfcal(solar_ms, num_phase_cal=full_dd_selfcal_rounds[0],
                                      num_apcal=full_dd_selfcal_rounds[1], applymode='calonly',
@@ -413,7 +413,7 @@ def DD_selfcal(solar_ms, solint_full_selfcal=1800, solint_partial_selfcal=600, c
                 datacolumn = 'corrected'
         else:
             success = utils.put_keyword(solar_ms, 'dd_selfcal_time', mstime_str, return_status=True)
-            logging.info(
+            logging.debug(
                 'Starting to do direction dependent Stokes I selfcal as I failed to retrieve the keyword for DD selfcal')
             success = do_selfcal(solar_ms, num_phase_cal=full_dd_selfcal_rounds[0],
                                  num_apcal=full_dd_selfcal_rounds[1], applymode='calonly',
@@ -424,7 +424,7 @@ def DD_selfcal(solar_ms, solint_full_selfcal=1800, solint_partial_selfcal=600, c
     else:
         if not fast_vis:
             success = utils.put_keyword(solar_ms, 'dd_selfcal_time', mstime_str, return_status=True)
-            logging.info('Starting to do direction dependent Stokes I selfcal')
+            logging.debug('Starting to do direction dependent Stokes I selfcal')
             success = do_selfcal(solar_ms, num_phase_cal=full_dd_selfcal_rounds[0], num_apcal=full_dd_selfcal_rounds[1],
                                  applymode='calonly', logging_level=logging_level,
                                  ms_keyword='dd_selfcal_time', pol=pol, refant=refant, niter0=niter0, niter_incr=niter_incr)
@@ -432,7 +432,7 @@ def DD_selfcal(solar_ms, solint_full_selfcal=1800, solint_partial_selfcal=600, c
             logging.warning("DD selfcal caltable not found. Proceed with caution.")
             os.system("cp -r "+solar_ms+" "+solar_ms[:-3] + "_sun_selfcalibrated.ms")
     if not fast_vis or prior_selfcal:
-        logging.info('Splitted the selfcalibrated MS into a file named ' + solar_ms[:-3] + "_sun_selfcalibrated.ms")
+        logging.debug('Splitted the selfcalibrated MS into a file named ' + solar_ms[:-3] + "_sun_selfcalibrated.ms")
         split(vis=solar_ms, outputvis=solar_ms[:-3] + "_sun_selfcalibrated.ms")
 
     solar_ms = solar_ms[:-3] + "_sun_selfcalibrated.ms"

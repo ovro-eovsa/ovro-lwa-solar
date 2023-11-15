@@ -112,7 +112,7 @@ def gen_ant_flags_from_autocorr(msfile, antflagfile=None, datacolumn='DATA', tav
     stdval_exp = np.ma.std(autos_ampdb[inds_exp, :], axis=0)
     if flag_exp_with_core_stat:
         print('!! Use core antenna statistics to flag outer antennas !!')
-        logging.info('!! Use core antenna statistics to flag outer antennas !!')
+        logging.debug('!! Use core antenna statistics to flag outer antennas !!')
         medval_exp = medval_core
         stdval_exp = stdval_core
     if debug:
@@ -333,7 +333,7 @@ def flag_bad_ants(msfile, antflagfile=None, datacolumn='DATA', thresh_core=1.0, 
     if antflagfile is None:
         logging.debug('Antenna flag file not supplied.')
         antflagfile = os.path.splitext(os.path.abspath(msfile))[0] + '.badants'
-        logging.info('Generating antenna flags from auto-correlation')
+        logging.debug('Generating antenna flags from auto-correlation')
         res = gen_ant_flags_from_autocorr(msfile, antflagfile=antflagfile, datacolumn=datacolumn,
                                           thresh_core=thresh_core, thresh_exp=thresh_exp)
     if os.path.isfile(antflagfile):
@@ -341,10 +341,10 @@ def flag_bad_ants(msfile, antflagfile=None, datacolumn='DATA', thresh_core=1.0, 
             antenna_list = f.readline()
             print('Applying flags for these antennas')
             print(antenna_list)
-            logging.info('Flagging antennas ' + antenna_list)
+            logging.debug('Flagging antennas ' + antenna_list)
         flagdata(vis=msfile, mode='manual', antenna=antenna_list)
     else:
-        logging.info("No flag is found. Do nothing")
+        logging.debug("No flag is found. Do nothing")
         print("No flag is found. Do nothing")
     return antflagfile
 

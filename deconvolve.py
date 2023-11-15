@@ -72,7 +72,7 @@ def run_wsclean(msfile, imagename, imsize=4096, cell='2arcmin', uvrange='10', ni
     for cmd,val in zip(kwargs,kwargs.values()):
         cmd_str1+='-'+cmd+" "+val+" "    
     
-    os.system("wsclean -no-dirty -no-update-model-required -no-negative -size " + str(imsize) + " " + \
+    os.system("wsclean -j 4 -no-dirty -no-update-model-required -no-negative -size " + str(imsize) + " " + \
               str(imsize) + " -scale " + cell + " -weight uniform -minuv-l " + str(uvrange) + " -name " + imagename + \
               " -niter " + str(niter) + " -mgain " + str(mgain) + \
               automask_handler + autothresh_handler + \
@@ -82,7 +82,7 @@ def run_wsclean(msfile, imagename, imsize=4096, cell='2arcmin', uvrange='10', ni
     for str1 in ['residual','psf']:
         os.system("rm -rf "+imagename+"*"+str1+"*.fits") 
     time2 = timeit.default_timer()
-    logging.info('Time taken for all sky imaging is {0:.1f} s'.format(time2-time1))
+    logging.debug('Time taken for all sky imaging is {0:.1f} s'.format(time2-time1))
 
     
     if intervals_out!=1:
@@ -97,7 +97,7 @@ def run_wsclean(msfile, imagename, imsize=4096, cell='2arcmin', uvrange='10', ni
         time1 = timeit.default_timer()
         os.system("wsclean -predict -pol "+pol+" "+ "-name " + imagename + " " + msfile)
         time2 = timeit.default_timer()
-        logging.info('Time taken for predicting the model column is {0:.1f} s'.format(time2-time1))
+        logging.debug('Time taken for predicting the model column is {0:.1f} s'.format(time2-time1))
         
       
 
