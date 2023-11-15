@@ -18,7 +18,6 @@ cl = componentlist()
 msmd = msmetadata()
 
 def make_fast_caltb_from_slow(calib_ms, solar_ms, caltb, \
-                            delayfile='/home/pipeline/proj/lwa-shell/mnc_python/data/cable_delays.csv',\
                             caltable_fold='caltables', overwrite=False):
     '''
     calib_ms: This is a essentially a MS which has slow visibilties
@@ -96,20 +95,13 @@ def make_fast_caltb_from_slow(calib_ms, solar_ms, caltb, \
                     print('found antid ', antid[0], 'for antenna', fast_ant)
                     antids.append(antid[0])
 
-    delays_ns = np.zeros([NSTAND, 2]) # stand x pol
-    with open(delayfile, 'r') as fh:
-        for line in fh.readlines():
-            if line.startswith('#'):
-                continue
-            else:
-                v = line.split()
-                delays_ns[int(v[0])] = [float(v[1]), float(v[1])]
+
+    
 
     fast_ants_name_wolwa = [int(i.replace('LWA','')) for i in fast_ants]
     slow_ants_name_wolwa = [int(i.replace('LWA','')) for i in slow_ants][:48]
 
-#    plt.plot(np.arange(nant_fast), delays_ns[fast_ants_name_wolwa,0], 'bo')
- #   plt.plot(np.arange(nant_fast), delays_ns[fast_ants_name_wolwa,0]-delays_ns[slow_ants_name_wolwa,0], 'ro')
+
     
     
 
@@ -143,7 +135,7 @@ def make_fast_caltb_from_slow(calib_ms, solar_ms, caltb, \
     msmd.done()
     return caltb_fast
     
-def gen_calibration(msfile, modelcl=None, uvrange='', bcaltb=None, logging_level='debug', caltable_fold='caltables'):
+def gen_calibration(msfile, modelcl=None, uvrange='', bcaltb=None, logging_level='info', caltable_fold='caltables',refant='202'):
     """
     This function is for doing initial self-calibrations using strong sources that are above the horizon
     It is recommended to use a dataset observed at night when the Sun is not in the field of view
@@ -172,14 +164,14 @@ def gen_calibration(msfile, modelcl=None, uvrange='', bcaltb=None, logging_level
     if not bcaltb:
         bcaltb = caltable_fold + "/" + os.path.basename(msfile).replace('.ms', '.bcal')
 
-    logging.debug("Generating bandpass solution")
-    bandpass(msfile, caltable=bcaltb, uvrange=uvrange, combine='scan,field,obs', fillgaps=0)
+    logging.info("Generating bandpass solution")
+    bandpass(msfile, caltable=bcaltb, uvrange=uvrange, combine='scan,field,obs', fillgaps=0,refant=refant)
     logging.debug("Applying the bandpass solutions")
     applycal(vis=msfile, gaintable=bcaltb)
     logging.debug("Doing a rflag run on corrected data")
     flagdata(vis=msfile, mode='rflag', datacolumn='corrected')
     logging.debug("Finding updated and final bandpass table")
-    bandpass(msfile, caltable=bcaltb, uvrange=uvrange, combine='scan,field,obs', fillgaps=0)
+    bandpass(msfile, caltable=bcaltb, uvrange=uvrange, combine='scan,field,obs', fillgaps=0,refant=refant)
 
     if logging_level == 'debug':
         utils.get_flagged_solution_num(bcaltb)
@@ -231,6 +223,7 @@ def do_bandpass_correction(solar_ms, calib_ms=None, bcal=None, caltable_folder='
     bcal: Name of bandpass table
     caltable_fold: Name of folder where to keep/search for the caltable. This folder should exist
     fast_vis: If True, solar_ms is a fast visibility dataset.
+    bcal: Can be relative/absolute paths
     
     IMPORTANT: For slow visibility, if bcal is provided, then calib_ms need not be provided. But if fast_vis is set to True,
                then calib_ms must be a slow visibility dataset.
@@ -250,7 +243,7 @@ def do_bandpass_correction(solar_ms, calib_ms=None, bcal=None, caltable_folder='
             if not bcal:
                 bcal = caltable_folder + "/" + os.path.basename(calib_ms).replace('.ms', '.bcal')
             # check if bandpass table already exists
-            if overwrite or not os.path.isdir(bcal):
+            if overwrite or not os.path.isdir(os.path.join(caltable_folder,os.path.basename(bcal))):
                 logging.debug('Flagging antennas before calibration.')
                 flagging.flag_bad_ants(calib_ms)
                 bcal = gen_calibration(calib_ms, logging_level=logging_level, caltable_fold=caltable_folder)
@@ -258,7 +251,7 @@ def do_bandpass_correction(solar_ms, calib_ms=None, bcal=None, caltable_folder='
             else:
                 logging.debug('I found an existing bandpass table. Will reuse it to calibrate.')
     else:
-        if not bcal or not os.path.isdir(bcal):
+        if not bcal or not os.path.isdir(os.path.join(caltable_folder,os.path.basename(bcal))):
             print('Neither calib_ms nor bcal exists. Need to provide calibrations to continue. Abort..')
             logging.error('Neither calib_ms nor bcal exists. Need to provide calibrations to continue. Abort..')
 
@@ -266,7 +259,7 @@ def do_bandpass_correction(solar_ms, calib_ms=None, bcal=None, caltable_folder='
     
     doantflag=True
     if bcal and fast_vis==True:
-        bcal=make_fast_caltb_from_slow(calib_ms, solar_ms, bcal)
+        bcal=make_fast_caltb_from_slow(calib_ms, solar_ms, os.path.join(caltable_folder,os.path.basename(bcal)))
         doantflag=False  ### The antenna flag calculation will be wrong for the fast ms.
     apply_calibration(solar_ms, gaintable=bcal, doantflag=doantflag, doflag=True, do_solar_imaging=False)
     split(vis=solar_ms, outputvis=solar_ms[:-3] + "_calibrated.ms", width=int(freqbin))

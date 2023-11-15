@@ -92,72 +92,7 @@ def change_phasecenter(msfile):
     os.system("chgcentre " + msfile + " " + ra1 + " " + dec1)
 
 
-def correct_primary_beam(msfile, imagename, pol='I', fast_vis=False):
-    m = utils.get_sun_pos(msfile, str_output=False)
-    logging.debug('Solar ra: ' + str(m['m0']['value']))
-    logging.debug('Solar dec: ' + str(m['m1']['value']))
-    d = me.measure(m, 'AZEL')
-    logging.debug('Solar azimuth: ' + str(d['m0']['value']))
-    logging.debug('Solar elevation: ' + str(d['m1']['value']))
-    elev = d['m1']['value']*180/np.pi
-    az=d['m0']['value']*180/np.pi
-    pb=beam(msfile=msfile)
-    pb.srcjones(az=[az],el=[elev])
-    jones_matrices=pb.get_source_pol_factors(pb.jones_matrices[0,:,:])
 
-    md=generate_calibrator_model.model_generation(vis=msfile)
-    if fast_vis==False:
-        if pol=='I':
-            scale=md.primary_beam_value(0,jones_matrices)
-            logging.info('The Stokes I beam correction factor is ' + str(round(scale, 4)))
-            hdu = fits.open(imagename+ "-image.fits", mode='update')
-            hdu[0].data /= scale
-            hdu.flush()
-            hdu.close()
-        else:
-            for pola in ['I','Q','U','V','XX','YY']:
-                if pola=='I' or pola=='XX' or pola=='YY':
-                    n=0
-                elif pola=='Q':
-                    n=1
-                elif pola=='U':
-                    n=2
-                else:
-                    n==3
-                scale=md.primary_beam_value(n,jones_matrices)
-                logging.info('The Stokes '+pola+' beam correction factor is ' + str(round(scale, 4)))
-                if os.path.isfile(imagename+ "-"+pola+"-image.fits"):
-                    hdu = fits.open(imagename+ "-"+pola+"-image.fits", mode='update')
-                    hdu[0].data /= scale
-                    hdu.flush()
-                    hdu.close()
-                elif pola=='I' and os.path.isfile(imagename+"-image.fits"):
-                    hdu = fits.open(imagename+"-image.fits", mode='update')
-                    hdu[0].data /= scale
-                    hdu.flush()
-                    hdu.close()
-    else:
-        image_names=utils.get_fast_vis_imagenames(msfile,imagename,pol)
-        for name in image_names:
-            if os.path.isfile(name[1]):
-                if pol=='I':
-                    scale=md.primary_beam_value(0,jones_matrices)
-                else:
-                    pola=name[1].split('-')[-1]
-                    if pola=='I' or pola=='XX' or pola=='YY':
-                        n=0
-                    elif pola=='Q':
-                        n=1
-                    elif pola=='U':
-                        n=2
-                    else:
-                        n==3
-                    scale=md.primary_beam_value(n,jones_matrices)
-                hdu = fits.open(name[1], mode='update')
-                hdu[0].data /= scale
-                hdu.flush()
-                hdu.close()
-    return
 
 
 def image_ms(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagename='sun_only',
@@ -276,18 +211,23 @@ def image_ms(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagename='sun
                                    imsize=imsize, cell=cell, pol=pol, fast_vis=fast_vis, 
                                    field=','.join([str(i) for i in range(num_fields)]))
         
-        correct_primary_beam(outms, imagename, pol=pol, fast_vis=fast_vis)
+        utils.correct_primary_beam(outms, imagename, pol=pol, fast_vis=fast_vis)
         if not fast_vis:
+            image_list=[]
             for n,pola in enumerate(['I','Q','U','V','XX','YY']):
                 if os.path.isfile(imagename+ "-"+pola+"-image.fits"):
-                    helio_image = utils.convert_to_heliocentric_coords(outms, imagename+ "-"+pola+"-image.fits")
-                elif pola=='I' and os.path.isfile(imagename+"-image.fits"):
-                    helio_image = utils.convert_to_heliocentric_coords(outms, imagename+"-image.fits")
+                    image_list.append(imagename+ "-"+pola+"-image.fits")
+                   
+            if os.path.isfile(imagename+"-image.fits"):
+                image_list.append(imagename+ "-image.fits")
+            helio_image = utils.convert_to_heliocentric_coords(outms, image_list)
         else:
             image_names=utils.get_fast_vis_imagenames(outms, imagename, pol)
+            image_list=[]
             for name in image_names:
                 if os.path.isfile(name[1]):
-                    helio_image = utils.convert_to_heliocentric_coords(outms, name[1])    
+                    image_list.append(name[1])
+            helio_image = utils.convert_to_heliocentric_coords(outms, image_list)    
         logging.info('Imaging completed for ' + solar_ms)
 
         time2=timeit.default_timer()
