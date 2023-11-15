@@ -101,7 +101,7 @@ def file_downloader(file_list,path,freq):
             cmd_str="scp -r {0:s} ./".format(filepath)
            # print (cmd_str)
             os.system(cmd_str)
-            logging.info('Downloading {0:s}'.format(filename))
+            logging.debug('Downloading {0:s}'.format(filename))
         vis.append(filename)
     
     if len(vis)>1:

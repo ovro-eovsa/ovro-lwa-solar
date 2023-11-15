@@ -100,19 +100,19 @@ class flux_scaling():
                     mean_factor=np.zeros(2)
                     if len(scaling_factor[0])>0:
                         mean_factor[0]=np.mean(scaling_factor[0])
-                        logging.info('Scaling factor for X pol is for :' + str(mean_factor[0]))
+                        logging.debug('Scaling factor for X pol is for :' + str(mean_factor[0]))
                     else:
                         logging.warning("Flux scaling factor could not be found for X pol")
                         mean_factor[0]=1
                     if len(scaling_factor[1])>0:
                         mean_factor[1]=np.mean(scaling_factor[1])
-                        logging.info('Scaling factor for Y pol is for :' + str(mean_factor[1]))
+                        logging.debug('Scaling factor for Y pol is for :' + str(mean_factor[1]))
                     else:
                         logging.warning("Flux scaling factor could not be found for Y pol")
                         mean_factor[1]=1
                 else:
                     mean_factor=np.mean(scaling_factor)                
-                    logging.info('Scaling factor is for :' + str(mean_factor))
+                    logging.debug('Scaling factor is for :' + str(mean_factor))
                 
                 print(mean_factor)
                 
@@ -132,7 +132,7 @@ class flux_scaling():
             caltable = glob.glob("caltables/" + di_selfcal_str + "*.fluxscale")[0]
             if self.fast_vis==True:
             	caltable=calibration.make_fast_caltb_from_slow(self.calib_ms, self.msfile, caltable)
-            logging.info("Applying {0:s} for doing fluxscaling".format(caltable))
+            logging.debug("Applying {0:s} for doing fluxscaling".format(caltable))
         else:
             caltable = self.msfile[:-3] + "." + self.caltable_suffix
             gencal(vis=self.msfile, caltable=caltable, caltype='amp', parameter=1)
@@ -242,12 +242,12 @@ class flux_scaling():
                     logging.warning('Model flux is negative. Picking flux from point source model')
                     model_flux = get_point_flux(modelcl,
                                                 s,prefix)  ### if model had negative, then Component List was generated in gen_model_cl
-                logging.info('Model flux of ' + s['label'] + ' is  ' + str(model_flux))
+                logging.debug('Model flux of ' + s['label'] + ' is  ' + str(model_flux))
                 image_flux = imstat(imagename=final_image, box=str(src_x - self.src_area_xpix // 2) + "," + \
                                                                str(src_y - self.src_area_ypix // 2) + "," + \
                                                                str(src_x + self.src_area_xpix // 2) + "," + \
                                                                str(src_y + self.src_area_ypix // 2))['flux'][0]
-                logging.info('Image flux of ' + s['label'] + ' is  ' + str(image_flux))
+                logging.debug('Image flux of ' + s['label'] + ' is  ' + str(image_flux))
                 # print (image_flux)
                 print(s['label'], image_flux, model_flux)
                 s['model_flux'] = model_flux
@@ -260,7 +260,7 @@ class flux_scaling():
                         s['scaling_factor']['I'] = model_flux / image_flux
                     else:
                         s['scaling_factor'][prefix[1:]] = model_flux / image_flux
-                    logging.info('Scaling factor obtained from ' + s['label'] + ' is ' + str(model_flux / image_flux))
+                    logging.debug('Scaling factor obtained from ' + s['label'] + ' is ' + str(model_flux / image_flux))
                     
                 else:
                     logging.warning('Scaling factor is not calculated for ' + s[
