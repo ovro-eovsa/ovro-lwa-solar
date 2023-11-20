@@ -252,7 +252,7 @@ def run_imager(msfile_slfcaled, imagedir_allch=None, ephem=None, nch_out=12):
 
 def pipeline_quick(image_time=Time.now() - TimeDelta(20., format='sec'), server='lwacalim', file_path='slow', 
             distributed=True, min_nband=6, nch_out=12, do_selfcal=True, num_phase_cal=0, num_apcal=1, overwrite_ms=False, delete_ms_slfcaled=False,
-            logger_file=None):
+            logger_file=None, compress_fits=True):
     """
     Pipeline for processing and imaging slow visibility data
     :param time_start: start time of the visibility data to be processed
@@ -439,7 +439,7 @@ def pipeline_quick(image_time=Time.now() - TimeDelta(20., format='sec'), server=
                 else:
                     continue
             fitsfiles_mfs.sort()
-            ndfits.wrap(fitsfiles_mfs, outfitsfile=fits_mfs)
+            ndfits.wrap(fitsfiles_mfs, outfitsfile=fits_mfs, docompress=compress_fits)
             # fine channel spectral images
             fits_fch = imagedir_allch_combined + '/ovro-lwa.lev1_fch_10s.' + timestr_iso + '.image.fits' 
             #fitsfiles_fch = list(set(glob.glob(imagedir_allch + '/' + timestr + '*-image.fits'))-set(glob.glob(imagedir_allch + '/' + timestr + '*MFS-image.fits')))
@@ -450,7 +450,7 @@ def pipeline_quick(image_time=Time.now() - TimeDelta(20., format='sec'), server=
                 else:
                     continue
             fitsfiles_fch.sort()
-            ndfits.wrap(fitsfiles_fch, outfitsfile=fits_fch)
+            ndfits.wrap(fitsfiles_fch, outfitsfile=fits_fch, docompress=compress_fits)
             os.system('rm -rf '+imagedir_allch + '*')
 
             # Plot mfs images (1 image per subband)
