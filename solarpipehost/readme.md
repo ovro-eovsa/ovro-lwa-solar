@@ -18,11 +18,11 @@ Based on Ubuntu 22.04, the container is built using the `Dockerfile` in this dir
 
 (A) Run interactive bash command line  
 ```bash
-docker run --rm -i -v /mnt:/mnt -u root -t peijin/lwadata /bin/bash
+docker run --rm -i -v /mnt:/mnt -u root -t peijin/lwa-solar-pipehost /bin/bash
 ```
 Then you will get a shell env will all env dependencies
 
 (B) Run a jupyter to start  
 ```bash
-docker run --rm -i -p 8998:8998 -v /mnt:/mnt -u root -t peijin/lwadata /bin/bash -c "jupyter-lab --notebook-dir=/mnt --ip='*' --port=8998 --no-browser --allow-root"
+docker run --rm -i -p 8998:8998 -v /mnt:/mnt -u root -t peijin/lwa-solar-pipehost /bin/bash -c "jupyter-lab --notebook-dir=/mnt --ip='*' --port=8998 --no-browser --allow-root"
 ```
