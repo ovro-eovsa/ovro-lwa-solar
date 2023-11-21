@@ -2,10 +2,10 @@ import numpy as np
 import math,os,logging
 from casatasks import clearcal, ft
 from casatools import table, measures, componentlist, msmetadata
-from primary_beam import analytic_beam as beam
-import utils
+from .primary_beam import analytic_beam as beam
+
 from astropy.io import fits
-import primary_beam
+from . import primary_beam, utils
 
 def conv_deg(dec):
     if 's' in dec:

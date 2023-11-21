@@ -5,9 +5,9 @@ import math
 import sys, os, time
 import numpy as np
 import matplotlib.pyplot as plt
-import utils
+from . import utils
 import logging, glob
-import primary_beam
+from . import primary_beam
 
 tb = table()
 me = measures()
