@@ -64,7 +64,7 @@ def sun_riseset(date=Time.now(), observatory='ovro'):
 
 
 #### define data files #####
-def list_msfiles(intime, server='lwacalim', distributed=True, file_path='slow',
+def list_msfiles_old(intime, server='lwacalim', distributed=True, file_path='slow',
             nodes = [1, 2, 3, 4, 5, 6, 7, 8], time_interval='10s'):
     """
     Return a list of visibilities to be copied for pipeline processing for a given time
@@ -112,6 +112,59 @@ def list_msfiles(intime, server='lwacalim', distributed=True, file_path='slow',
                     msfiles.append({'path': pathstr, 'name': filename, 'time': timestr, 'freq': freqstr})
     return msfiles
 
+def list_msfiles(intime, lustre=True, file_path='slow', server=None, time_interval='10s', 
+                 bands=['32MHz', '36MHz', '41MHz', '46MHz', '50MHz', '55MHz', '59MHz', '64MHz', '69MHz', '73MHz', '78MHz', '82MHz']):
+    """
+    Return a list of visibilities to be copied for pipeline processing for a given time
+    :param intime: astropy Time object
+    :param server: name of the server to list available data
+    :param lustre: if True, specific to lustre system on lwacalim nodes. If not, try your luck in combination with file_path
+    :param file_path: file path to the data files. For lustre, it is either 'slow' or 'fast'. For other servers, provide full path to data.
+    :param time_interval: Options are '10s', '1min', '10min'
+    :param bands: bands to list/download. Default to 12 bands above 30 MHz. Full list of available bands is
+            ['13MHz', '18MHz', '23MHz', '27MHz', '32MHz', '36MHz', '41MHz', '46MHz', '50MHz', '55MHz', '59MHz', '64MHz', '69MHz', '73MHz', '78MHz', '82MHz']
+    """
+    intimestr = intime.isot[:-4].replace('-','').replace(':','').replace('T','_')
+    datestr = intime.isot[:10]
+    hourstr = intime.isot[11:13]
+    if time_interval == '10s':
+        tstr = intimestr[:-1]
+    if time_interval == '1min':
+        tstr = intimestr[:-2]
+    if time_interval == '10min':
+        tstr = intimestr[:-3]
+
+    msfiles = []
+    if lustre:
+        processes=[]
+        for b in bands:
+            pathstr = '/lustre/pipeline/{0:s}/{1:s}/{2:s}/{3:s}/'.format(file_path, b, datestr, hourstr)
+            cmd = 'ls ' + pathstr + ' | grep ' + tstr
+            p = subprocess.Popen(cmd, stdout=subprocess.PIPE, shell=True)
+            processes.append(p)
+            filenames = p.communicate()[0].decode('utf-8').split('\n')[:-1]
+            for filename in filenames:
+                if filename[-6:] == 'MHz.ms':
+                    filestr = pathstr + filename
+                    tmpstr = filename[:15].replace('_', 'T')
+                    timestr = tmpstr[:4] + '-' + tmpstr[4:6] + '-' + tmpstr[6:11] + ':' + tmpstr[11:13] + ':' + tmpstr[13:]
+                    freqstr = filename[16:21]
+                    msfiles.append({'path': filestr, 'name': filename, 'time': timestr, 'freq': freqstr})
+    else:
+        if server:
+            cmd = 'ssh ' + server + ' ls ' + file_path + ' | grep ' + tstr
+        else:
+            cmd = 'ls ' + file_path + ' | grep ' + tstr
+        p = subprocess.run(cmd, capture_output=True, shell=True)
+        filenames = p.stdout.decode('utf-8').split('\n')[:-1]
+        for filename in filenames:
+            if filename[-6:] == 'MHz.ms':
+                pathstr = '{0:s}:{1:s}/{2:s}'.format(server, file_path, filename)
+                tmpstr = filename[:15].replace('_', 'T')
+                timestr = tmpstr[:4] + '-' + tmpstr[4:6] + '-' + tmpstr[6:11] + ':' + tmpstr[11:13] + ':' + tmpstr[13:]
+                freqstr = filename[16:21]
+                msfiles.append({'path': pathstr, 'name': filename, 'time': timestr, 'freq': freqstr})
+    return msfiles
 
 def download_msfiles(msfiles, destination='/fast/bin.chen/20231014_eclipse/slow_working/', bands=None, verbose=True):
     """
@@ -153,8 +206,9 @@ def download_msfiles(msfiles, destination='/fast/bin.chen/20231014_eclipse/slow_
     omsfiles = [destination + n for n in omsfiles_name]
     return omsfiles
 
+
 def download_timerange(starttime, endtime, download_interval='1min', destination='/fast/bin.chen/20231027/slow/', 
-        server='lwacalim', distributed=True, file_path='slow', nodes = [1, 2, 3, 4, 5, 6, 7, 8], bands=None, verbose=True):
+                file_path='slow', bands=None, verbose=True):
     t_start = Time(starttime)
     t_end = Time(endtime)
     print('Start time: ', t_start.isot)
@@ -172,12 +226,11 @@ def download_timerange(starttime, endtime, download_interval='1min', destination
     print('Will download {0:d} times at an interval of {1:s}'.format(nt, download_interval))
     for i in range(nt):
         intime = t_start + i * dt
-        msfiles = list_msfiles(intime, server=server, distributed=distributed, file_path=file_path, nodes=nodes, time_interval='10s')
+        #msfiles = list_msfiles(intime, distributed=distributed, file_path=file_path, nodes=nodes, time_interval='10s')
+        msfiles = list_msfiles(intime, file_path=file_path, time_interval='10s')
         if verbose:
             print('Downloading time ', intime.isot)
         download_msfiles(msfiles, destination=destination, bands=bands, verbose=verbose)
-
-
 
 
 def run_calib(msfile, msfiles_cal=None, do_selfcal=True, num_phase_cal=0, num_apcal=1, caltable_folder=None, logger_file=None, visdir_slfcaled=None):
@@ -300,13 +353,13 @@ def pipeline_quick(image_time=Time.now() - TimeDelta(20., format='sec'), server=
     try:
         print(socket.gethostname(), '=======Processing Time {0:s}======='.format(image_time.isot))
         #logging.info('=======Processing Time {0:s}======='.format(image_time.isot))
-        msfiles0 = list_msfiles(image_time, server=server, file_path=file_path, distributed=distributed)
+        msfiles0 = list_msfiles(image_time, file_path=file_path)
         if len(msfiles0) < min_nband:
             print('This time only has {0:d} subbands. Check nearby +-10s time.'.format(len(msfiles0)))
             image_time_before = image_time - TimeDelta(10., format='sec')
-            msfiles0_before = list_msfiles(image_time_before, server=server, file_path=file_path, distributed=distributed)
+            msfiles0_before = list_msfiles(image_time_before, file_path=file_path)
             image_time_after = image_time + TimeDelta(10., format='sec')
-            msfiles0_after = list_msfiles(image_time_after, server=server, file_path=file_path, distributed=distributed)
+            msfiles0_after = list_msfiles(image_time_after, file_path=file_path)
             if len(msfiles0_before) < min_nband and len(msfiles0_after) < min_nband:
                 print('I cannot find a nearby time with at least {0:d} available subbands. Abort and wait for next time interval.'.format(min_nband))
                 return False
@@ -439,7 +492,8 @@ def pipeline_quick(image_time=Time.now() - TimeDelta(20., format='sec'), server=
                 else:
                     continue
             fitsfiles_mfs.sort()
-            ndfits.wrap(fitsfiles_mfs, outfitsfile=fits_mfs, docompress=compress_fits)
+            #ndfits.wrap(fitsfiles_mfs, outfitsfile=fits_mfs, docompress=compress_fits)
+            ndfits.wrap(fitsfiles_mfs, outfitsfile=fits_mfs)
             # fine channel spectral images
             fits_fch = imagedir_allch_combined + '/ovro-lwa.lev1_fch_10s.' + timestr_iso + '.image.fits' 
             #fitsfiles_fch = list(set(glob.glob(imagedir_allch + '/' + timestr + '*-image.fits'))-set(glob.glob(imagedir_allch + '/' + timestr + '*MFS-image.fits')))
@@ -450,7 +504,8 @@ def pipeline_quick(image_time=Time.now() - TimeDelta(20., format='sec'), server=
                 else:
                     continue
             fitsfiles_fch.sort()
-            ndfits.wrap(fitsfiles_fch, outfitsfile=fits_fch, docompress=compress_fits)
+            #ndfits.wrap(fitsfiles_fch, outfitsfile=fits_fch, docompress=compress_fits)
+            ndfits.wrap(fitsfiles_fch, outfitsfile=fits_fch)
             os.system('rm -rf '+imagedir_allch + '*')
 
             # Plot mfs images (1 image per subband)
@@ -582,11 +637,20 @@ def run_pipeline(time_start=Time.now(), time_interval=600., delay_from_now=180.,
 
 
 if __name__=='__main__':
+    """
+    Main routine of running the realtime pipeline. Example call
+        pdsh -w lwacalim[00-09] 'conda activate suncasa && cd /fast/bin.chen/ && python /opt/devel/bin.chen/ovro-lwa-solar/solar_realtime_pipeline.py 2023-11-21T15:50'
+    Sometimes afer killing the pipeline (with ctrl c), one need to remove the temporary files and kill all the processes before restarting.
+        pdsh -w lwacalim[00-09] 'rm -rf /fast/bin.chen/realtime_pipeline/slow_working/*'
+        pdsh -w lwacalim[00-09] 'rm -rf /fast/bin.chen/realtime_pipeline/slow_slfcaled/*'
+        pdsh -w lwacalim[00-09] 'pkill -u bin.chen -f wsclean'
+        pdsh -w lwacalim[00-09] 'pkill -u bin.chen -f python'
+    """
     parser = argparse.ArgumentParser(description='Solar realtime pipeline')
     parser.add_argument('prefix', type=str, help='Timestamp for the start time. Format YYYY-MM-DDTHH:MM')
     parser.add_argument('--interval', default=600., help='Time interval in seconds')
     parser.add_argument('--nodes', default=10, help='Number of nodes to use')
-    parser.add_argument('--delay', default=180, help='Delay from current time in seconds')
+    parser.add_argument('--delay', default=60, help='Delay from current time in seconds')
     args = parser.parse_args()
     try:
         run_pipeline(args.prefix, time_interval=float(args.interval), nodes=int(args.nodes), delay_from_now=float(args.delay))
