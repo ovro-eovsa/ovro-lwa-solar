@@ -415,7 +415,7 @@ def apply_solutions_and_image(msname, bcal, imagename):
     flagdata(vis=msname, mode='rflag', datacolumn='corrected')
     split(vis=msname, outputvis=msname[:-3] + "_selfcalibrated.ms")
     solar_ms = msname[:-3] + "_selfcalibrated.ms"
-    outms = utils.remove_nonsolar_sources(solar_ms)
+    outms = source_subtraction.remove_nonsolar_sources(solar_ms)
     solar_ms = outms
     num_dd_cal = len(dd_cal)
     if num_dd_cal != 0:
@@ -425,8 +425,8 @@ def apply_solutions_and_image(msname, bcal, imagename):
     else:
         split(vis = solar_ms, outputvis=solar_ms[:-3]+"_sun_selfcalibrated.ms",datacolumn='data')
     outms = solar_ms[:-3] + "_sun_selfcalibrated.ms"
-    outms = utils.remove_nonsolar_sources(outms, remove_strong_sources_only=False)
+    outms = source_subtraction.remove_nonsolar_sources(outms, remove_strong_sources_only=False)
     change_phasecenter(outms)
-    utils.run_wsclean(outms, imagename=imagename, automask_thresh=5, uvrange='0', predict=False, imsize=1024, cell='1arcmin')
+    deconvolve.run_wsclean(outms, imagename=imagename, automask_thresh=5, uvrange='0', predict=False, imsize=1024, cell='1arcmin')
     utils.correct_primary_beam(outms, imagename + "-image.fits")
     logging.info('Imaging completed for ' + msname)
