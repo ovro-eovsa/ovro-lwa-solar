@@ -20,13 +20,13 @@ import astropy.units as u
 from astropy.wcs import WCS
 from astropy.io import fits
 import matplotlib.pyplot as plt
-import utils,flagging,calibration,selfcal,source_subtraction,deconvolve
+from . import utils,flagging,calibration,selfcal,source_subtraction,deconvolve
 import logging, glob
-from file_handler import File_Handler
-from primary_beam import analytic_beam as beam 
-import primary_beam
-from generate_calibrator_model import model_generation
-import generate_calibrator_model
+from .file_handler import File_Handler
+from .primary_beam import analytic_beam as beam 
+from . import primary_beam
+from .generate_calibrator_model import model_generation
+from . import generate_calibrator_model
 import timeit
 
 tb = table()
@@ -317,7 +317,7 @@ def image_ms_quick(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagenam
         logging.debug('Generating final solar centered image')
         deconvolve.run_wsclean(outms, imagename=imagename, automask_thresh=5, uvrange='0', predict=False, imsize=imsize, cell=cell,pol=pol)
         logging.debug('Correcting for the primary beam at the location of Sun')
-        correct_primary_beam(outms, imagename, pol=pol)
+        utils.correct_primary_beam(outms, imagename, pol=pol)
         for n,pola in enumerate(['I','Q','U','V','XX','YY']):
             if os.path.isfile(imagename+ "-"+pola+"-image.fits"):
                 helio_image = utils.convert_to_heliocentric_coords(outms, imagename+ "-"+pola+"-image.fits")
@@ -415,7 +415,7 @@ def apply_solutions_and_image(msname, bcal, imagename):
     flagdata(vis=msname, mode='rflag', datacolumn='corrected')
     split(vis=msname, outputvis=msname[:-3] + "_selfcalibrated.ms")
     solar_ms = msname[:-3] + "_selfcalibrated.ms"
-    outms = remove_nonsolar_sources(solar_ms)
+    outms = source_subtraction.remove_nonsolar_sources(solar_ms)
     solar_ms = outms
     num_dd_cal = len(dd_cal)
     if num_dd_cal != 0:
@@ -425,8 +425,8 @@ def apply_solutions_and_image(msname, bcal, imagename):
     else:
         split(vis = solar_ms, outputvis=solar_ms[:-3]+"_sun_selfcalibrated.ms",datacolumn='data')
     outms = solar_ms[:-3] + "_sun_selfcalibrated.ms"
-    outms = remove_nonsolar_sources(outms, remove_strong_sources_only=False)
+    outms = source_subtraction.remove_nonsolar_sources(outms, remove_strong_sources_only=False)
     change_phasecenter(outms)
-    run_wsclean(outms, imagename=imagename, automask_thresh=5, uvrange='0', predict=False, imsize=1024, cell='1arcmin')
-    correct_primary_beam(outms, imagename + "-image.fits")
+    deconvolve.run_wsclean(outms, imagename=imagename, automask_thresh=5, uvrange='0', predict=False, imsize=1024, cell='1arcmin')
+    utils.correct_primary_beam(outms, imagename + "-image.fits")
     logging.info('Imaging completed for ' + msname)
