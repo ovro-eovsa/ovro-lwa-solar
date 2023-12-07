@@ -38,7 +38,9 @@ msmd = msmetadata()
 def correct_ms_bug(msfile):
     """
     Temporary fix for the visibility files produced by the current pipeline.
+    
     Update: initially found in August 2022. Not needed as of April 2023.
+
     :param msfile: input CASA measurement set
     """
     tb.open(msfile + "/SPECTRAL_WINDOW", nomodify=False)
@@ -51,6 +53,9 @@ def correct_ms_bug(msfile):
 
 
 def change_phasecenter(msfile):
+    """
+    Change the phasecenter of the measurement set to the position of the Sun.
+    """
     m = utils.get_sun_pos(msfile, str_output=False)
     ra = m['m0']['value']  ### ra in radians
     dec = m['m1']['value']  ### dec in radians
@@ -93,8 +98,6 @@ def change_phasecenter(msfile):
 
 
 
-
-
 def image_ms(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagename='sun_only',
              imsize=1024, cell='1arcmin', logfile='analysis.log', logging_level='info',
              caltable_folder='caltables', full_di_selfcal_rounds=[3,2], partial_di_selfcal_rounds=[0, 1],
@@ -105,6 +108,7 @@ def image_ms(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagename='sun
 
     """
     Pipeline to calibrate and imaging a solar visibility
+
     :param solar_ms: input solar measurement set
     :param calib_ms: (optional) input measurement set for generating the calibrations, usually is one observed at night
     :param bcal: (optional) bandpass calibration table. If not provided, use calib_ms to generate one.
@@ -249,6 +253,7 @@ def image_ms_quick(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagenam
     """
     Pipeline to calibrate and imaging a solar visibility. 
     This is the version that optimizes the speed with a somewhat reduced image dynamic range.
+
     :param solar_ms: input solar measurement set
     :param calib_ms: (optional) input measurement set for generating the calibrations, usually is one observed at night
     :param bcal: (optional) bandpass calibration table. If not provided, use calib_ms to generate one.
