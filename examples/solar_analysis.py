@@ -1,6 +1,6 @@
 import sys
 sys.path.append('/home/surajit/ovro-lwa-solar')
-import solar_pipeline as lwa
+from ovrolwasolar import solar_pipeline as lwa
 import os
 
 
