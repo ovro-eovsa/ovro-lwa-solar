@@ -20,7 +20,7 @@ import astropy.units as u
 from astropy.wcs import WCS
 from astropy.io import fits
 import matplotlib.pyplot as plt
-from . import utils,flagging,calibration,selfcal,source_subtraction,deconvolve
+from . import utils,flagging,calibration,selfcal,source_subtraction,deconvolve,flux_scaling
 import logging, glob
 from .file_handler import File_Handler
 from .primary_beam import analytic_beam as beam 

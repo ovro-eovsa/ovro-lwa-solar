@@ -1,5 +1,5 @@
-import file_handler as fh
-from file_handler import File_Handler
+import ovrolwasolar.file_handler as fh
+from ovrolwasolar.file_handler import File_Handler
 
 time_duration='2023/05/02/18:00:00~2023/05/02/18:30:00'
 freqstr=['78MHz','31MHz']
