@@ -4,14 +4,14 @@
 
 import os, sys, glob, getopt
 sys.path.append('/opt/devel/bin.chen/ovro-lwa-solar')
-import solar_pipeline as sp
-from primary_beam import analytic_beam as beam
-import utils
+from ovrolwasolar import solar_pipeline as sp
+from ovrolwasolar.primary_beam import analytic_beam as beam
+from ovrolwasolar import utils
 from casatasks import clearcal, applycal, flagdata, tclean, exportfits, imsubimage
 from casatools import msmetadata, quanta, measures
 from suncasa.utils import helioimage2fits as hf
 from suncasa.io import ndfits
-import file_handler
+from ovrolwasolar import file_handler
 import logging
 import timeit
 import multiprocessing

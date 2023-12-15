@@ -18,6 +18,7 @@ msmd = msmetadata()
 def get_antids(msfile):
     """
     Read antenna ids from a measurement set and separate them to inner and expansion ones
+
     :param msfile: path to CASA measurement set
     :return: antenna ids for core antennas and expansion antennas
     """
@@ -43,26 +44,28 @@ def get_antids(msfile):
 def gen_ant_flags_from_autocorr(msfile, antflagfile=None, datacolumn='DATA', tavg=False,
                                 thresh_core=1.0, thresh_exp=1.0, flag_exp_with_core_stat=True,
                                 flag_either_pol=True, doappend=False, debug=False, doplot=False):
-    """Generates a text file containing the bad antennas.
+    """
+    Generates a text file containing the bad antennas.
     DOES NOT ACTUALLY APPLY FLAGS. CURRENTLY SHOULD ONLY BE RUN ON SINGLE SPW MSs.
 
     Adapted from the flag_ants_from_postcal_autocorr() module in
     https://github.com/ovro-lwa/distributed-pipeline/blob/main/orca/flagging/flag_bad_ants.py
-    
+
     Args:
-        :param msfile: string
-        :param datacolumn: specify which data column to use. Default to "DATA".
-            Could be "CORRECTED_DATA" if the dataset is calibrated
-        :param tavg: If set to True, will time average before evaluating flags.
-        :param antflagfile: Output file that contains the flagged antennas. If not defined, use msfile.replace('.ms', 'antflags')
-        :param thresh_core: Threshold to use for flagging for core antennas. Default is 1.
-        :param thresh_exp: Threshold to use for flagging for expansion antennas. Default is 1.
-        :param flag_exp_with_core_stat: If True, use statistics of core antennas to determine flags for outer antennas
-        :param flag_either_pol: If True, the antenna will be flagged if either polarization is bad (OR scheme).
-                              If False, the antenna will be flagged only if both polarizations are bad (AND scheme).
+        msfile (str): Path to the measurement set file.
+        datacolumn (str, optional): Specify which data column to use. Defaults to "DATA".
+                                   Could be "CORRECTED_DATA" if the dataset is calibrated.
+        tavg (bool, optional): If set to True, will time average before evaluating flags. Defaults to False.
+        antflagfile (str, optional): Output file that contains the flagged antennas. If not defined,
+                                     defaults to msfile.replace('.ms', 'antflags').
+        thresh_core (float, optional): Threshold to use for flagging for core antennas. Defaults to 1.
+        thresh_exp (float, optional): Threshold to use for flagging for expansion antennas. Defaults to 1.
+        flag_exp_with_core_stat (bool, optional): If True, use statistics of core antennas to determine flags for outer antennas. Defaults to False.
+        flag_either_pol (bool, optional): If True, the antenna will be flagged if either polarization is bad (OR scheme).
+                                          If False, the antenna will be flagged only if both polarizations are bad (AND scheme).
 
     Returns:
-        Path to the text file with the list of antennas to flag (antflagfile).
+        str: Path to the text file with the list of antennas to flag (antflagfile).
     """
     tb.open(msfile)
     tautos = tb.query('ANTENNA1=ANTENNA2')
@@ -250,7 +253,7 @@ def gen_ant_flags_tst(msfile: str, debug: bool = False) -> str:
 
     Comment BC (April 7, 2023): Does not seem to work well with lots of antennas out
     Args:
-        msfile: msfile to generate
+        :param msfile: msfile to generate
     Returns:
         Path to the text file with list of antennas to flag.
     """
@@ -321,6 +324,7 @@ def gen_ant_flags_tst(msfile: str, debug: bool = False) -> str:
 def flag_bad_ants(msfile, antflagfile=None, datacolumn='DATA', thresh_core=1.0, thresh_exp=1.0, clearflags=True):
     """
     Read the text file that contains flags for bad antennas, and apply the flags
+    
     :param msfile: input CASA ms visibility for calibration
     :param thresh: Threshold to use for flagging. Default is 10.
     """

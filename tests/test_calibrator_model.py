@@ -1,4 +1,4 @@
-from generate_calibrator_model import model_generation
+from ovrolwasolar.generate_calibrator_model import model_generation
 
 
 msfile='/data07/msurajit/82MHz/20230309_191023_82MHz.ms'

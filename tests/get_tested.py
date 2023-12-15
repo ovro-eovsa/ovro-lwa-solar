@@ -1,4 +1,4 @@
-import solar_pipeline as lwa
+from ovrolwasolar import solar_pipeline as lwa
 import os,glob
 
 

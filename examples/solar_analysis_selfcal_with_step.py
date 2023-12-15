@@ -1,6 +1,6 @@
 import sys
 sys.path.append('/data07/msurajit/ovro-lwa-solar1')
-import solar_pipeline as lwa
+from ovrolwasolar import solar_pipeline as lwa
 import os,glob
 
 calib_ms='20230319_010731_55MHz.ms'

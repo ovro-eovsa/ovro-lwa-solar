@@ -6,6 +6,7 @@ from scipy.interpolate import griddata as gd
 def knn_search(arr,grid):
     '''
     Find 'nearest neighbor' of array of points in multi-dimensional grid
+    
     Source: glowingpython.blogspot.com/2012/04/k-nearest-neighbor-search.html
     '''
     gridsize = grid.shape[1]

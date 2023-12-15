@@ -21,13 +21,13 @@ msmd = msmetadata()
 def make_fast_caltb_from_slow(calib_ms, solar_ms, caltb, \
                             caltable_fold='caltables', overwrite=False):
     '''
-    calib_ms: This is a essentially a MS which has slow visibilties
-    solar_ms: The fast visibility MS
-    caltb: the caltable generated from slow visibility data
+    :param calib_ms: This is a essentially a MS which has slow visibilties
+    :param solar_ms: The fast visibility MS
+    :param caltb: the caltable generated from slow visibility data
            which will be converted to fast visibility format
-    delayfile: This file is probably unnecessary.
-    caltable_fold: location of the caltb and the output of this function
-    overwrite: If True, overwrite
+    :param delayfile: This file is probably unnecessary.
+    :param caltable_fold: location of the caltb and the output of this function
+    :param overwrite: If True, overwrite
     
     Writes a caltable in the caltable_fold with name ".fast" appended to caltb
     '''                         

@@ -8,6 +8,7 @@ def list_msfiles(file_path, distributed=True, nodes=[1, 2, 3, 4, 5, 6, 7, 8], se
     """
     Find measurement sets across all lwacalim nodes under a file path.
     Return a list of dictionary containing their path, name, time, and frequency information
+
     :param filepath: path relative to /data0x/
     :param distributed: if True, then assume data are distributed in server and nodes ; 
                         if False, treat both server and file_path as absolute values
@@ -47,6 +48,7 @@ def list_msfiles1(file_path):
     """
     Find measurement sets across all lwacalim nodes under a file path.
     Return a list of dictionary containing their path, name, time, and frequency information
+
     :param filepath: path relative to /data0x/
     :return msfiles: a list of dictionary containing all ms files with path, name, time, and frequency
     """
@@ -396,17 +398,6 @@ class File_Handler:
                 j+=1
         
         return filtered
-            
+
+
         
-        
-        
-            
-        
-        
-                  
-                            
-                    
-            
-        
-                      
-    

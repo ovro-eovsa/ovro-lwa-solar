@@ -1,6 +1,6 @@
 import sys
 sys.path.append('/data07/msurajit/ovro-lwa-solar')
-from primary_beam import analytic_beam as beam
+from ovrolwasolar.primary_beam import analytic_beam as beam
 import numpy as np
 
 filepath='/data07/msurajit/primary_beam_files/'
