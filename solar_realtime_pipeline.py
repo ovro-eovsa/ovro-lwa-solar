@@ -3,7 +3,7 @@
 # Author: Bin Chen (bin.chen@njit.edu) on 2023 August 21
 
 import os, sys, glob, getopt
-sys.path.append('/opt/devel/bin.chen/ovro-lwa-solar')
+#sys.path.append('/opt/devel/bin.chen/ovro-lwa-solar')
 from ovrolwasolar import solar_pipeline as sp
 from ovrolwasolar.primary_beam import analytic_beam as beam
 from ovrolwasolar import utils
@@ -29,6 +29,7 @@ import shlex, subprocess
 from functools import partial
 from time import sleep
 import socket
+from matplotlib.patches import Ellipse
 import argparse
 matplotlib.use('agg')
 
@@ -305,7 +306,9 @@ def run_imager(msfile_slfcaled, imagedir_allch=None, ephem=None, nch_out=12):
 
 def pipeline_quick(image_time=Time.now() - TimeDelta(20., format='sec'), server='lwacalim', file_path='slow', 
             distributed=True, min_nband=6, nch_out=12, do_selfcal=True, num_phase_cal=0, num_apcal=1, overwrite_ms=False, delete_ms_slfcaled=False,
-            logger_file=None, compress_fits=True):
+            logger_file=None, compress_fits=True,
+            proc_dir = '/fast/bin.chen/realtime_pipeline/',
+            save_img_dir = '/lustre/bin.chen/realtime_pipeline/'):
     """
     Pipeline for processing and imaging slow visibility data
     :param time_start: start time of the visibility data to be processed
@@ -320,13 +323,14 @@ def pipeline_quick(image_time=Time.now() - TimeDelta(20., format='sec'), server=
     time_begin = timeit.default_timer() 
     bands = ['32MHz', '36MHz', '41MHz', '46MHz', '50MHz', '55MHz', '59MHz', '64MHz', '69MHz', '73MHz', '78MHz', '82MHz']
 
-    visdir_calib = '/fast/bin.chen/realtime_pipeline/slow_calib/'
-    caltable_folder = '/fast/bin.chen/realtime_pipeline/caltables/'
-    imagedir_allch_combined = '/lustre/bin.chen/realtime_pipeline/fits/'
-    fig_mfs_dir = '/lustre/bin.chen/realtime_pipeline/figs_mfs/'
-    visdir_work = '/fast/bin.chen/realtime_pipeline/slow_working/'
-    visdir_slfcaled = '/fast/bin.chen/realtime_pipeline/slow_slfcaled/'
-    imagedir_allch = '/fast/bin.chen/realtime_pipeline/images_allch/'
+    visdir_calib = proc_dir + 'slow_calib/'
+    caltable_folder = proc_dir + 'caltables/'
+    visdir_work = proc_dir + 'slow_working/'
+    visdir_slfcaled = proc_dir + 'slow_slfcaled/'
+    imagedir_allch = proc_dir + 'images_allch/'
+
+    imagedir_allch_combined = save_img_dir + 'fits/'
+    fig_mfs_dir = save_img_dir + 'figs_mfs/'
 
     ## Night-time MS files used for calibration ##
     msfiles_cal = glob.glob(visdir_calib + '20231013_041100_*MHz.ms')
@@ -510,6 +514,7 @@ def pipeline_quick(image_time=Time.now() - TimeDelta(20., format='sec'), server=
 
             # Plot mfs images (1 image per subband)
             fig = plt.figure(figsize=(15., 8.))
+            fov = 8000
             gs = gridspec.GridSpec(3, 4, left=0.07, right=0.98, top=0.94, bottom=0.10, wspace=0.3, hspace=0.4)
             meta, rdata = ndfits.read(fits_mfs)
             freqs_mhz = meta['ref_cfreqs']/1e6
@@ -523,6 +528,13 @@ def pipeline_quick(image_time=Time.now() - TimeDelta(20., format='sec'), server=
                     rmap_plt = pmX.Sunmap(rmap_plt_)
                     im = rmap_plt.imshow(axes=ax, cmap='hinodexrt')
                     rmap_plt.draw_limb(ls='-', color='w', alpha=0.5)
+
+                    bmaj,bmin,bpa = meta['cbmaj'][bd],meta['cbmin'][bd],meta['cbpa'][bd]
+                    beam0 = Ellipse((-fov/2*0.75, -fov/2*0.75), bmaj*3600,
+                            bmin*3600, angle=(-bpa),  fc='None', lw=2, ec='w')
+
+                    ax.add_artist(beam0)
+
                     cbar = plt.colorbar(im)
                     cbar.set_label(r'$T_B$ (MK)')
                     freq_mhz = meta['ref_cfreqs'][bd]/1e6
@@ -539,11 +551,18 @@ def pipeline_quick(image_time=Time.now() - TimeDelta(20., format='sec'), server=
                     empty_map = pmX.Sunmap(empty_map_)
                     im = empty_map.imshow(axes=ax, cmap='hinodexrt', vmin=0, vmax=1.)
                     empty_map.draw_limb(ls='-', color='w', alpha=0.5)
+
+                    bmaj,bmin,bpa = meta['cbmaj'][bd],meta['cbmin'][bd],meta['cbpa'][bd]
+                    beam0 = Ellipse((-fov/2*0.75, -fov/2*0.75), bmaj*3600,
+                            bmin*3600, angle=(-bpa),  fc='None', lw=2, ec='w')
+                    
+                    ax.add_artist(beam0)
+
                     cbar = plt.colorbar(im)
                     cbar.set_label(r'$T_B$ (MK)')
                     ax.text(0.02, 0.98, '{0:.0f} MHz (no data)'.format(freq_plt), color='w', ha='left', va='top', fontsize=12, transform=ax.transAxes)
-                ax.set_xlim([-4000, 4000])
-                ax.set_ylim([-4000, 4000])
+                ax.set_xlim([-fov/2, fov/2])
+                ax.set_ylim([-fov/2, fov/2])
             fig.suptitle('OVRO-LWA Images at ' + tref.isot[:-4], fontsize=15)
             text1 = fig.text(0.01, 0.01, 'OVRO-LWA Solar Team (NJIT Solar Radio Group)', fontsize=12, ha='left', va='bottom')
             text2 = fig.text(0.99, 0.01, 'OVRO Long Wavelength Array (Caltech)', fontsize=12, ha='right', va='bottom')
@@ -566,7 +585,9 @@ def pipeline_quick(image_time=Time.now() - TimeDelta(20., format='sec'), server=
 
 def run_pipeline(time_start=Time.now(), time_interval=600., delay_from_now=180., do_selfcal=True, num_phase_cal=0, num_apcal=1, 
         server='lwacalim', file_path='slow', multinode=True, nodes=10, firstnode=0, delete_ms_slfcaled=True, 
-        logger_file='/fast/bin.chen/realtime_pipeline/realtime_calib-imaging_parallel.log'):
+        logger_file='/fast/bin.chen/realtime_pipeline/realtime_calib-imaging_parallel.log',
+        proc_dir = '/fast/bin.chen/realtime_pipeline/',
+        save_img_dir = '/lustre/bin.chen/realtime_pipeline/'):
     '''
     Main routine to run the pipeline. Note each time stamp takes about 8.5 minutes to complete.
     "time_interval" needs to be set to something greater than that. 600 is recommended.
@@ -614,7 +635,7 @@ def run_pipeline(time_start=Time.now(), time_interval=600., delay_from_now=180.,
             sleep(twait.sec + delay_from_now)
         logging.info('{0:s}: Start processing {1:s}'.format(socket.gethostname(), time_start.isot))
         res = pipeline_quick(time_start, do_selfcal=do_selfcal, num_phase_cal=num_phase_cal, num_apcal=num_apcal, server=server, file_path=file_path, 
-                delete_ms_slfcaled=delete_ms_slfcaled, logger_file=logger_file)
+                delete_ms_slfcaled=delete_ms_slfcaled, logger_file=logger_file, proc_dir=proc_dir, save_img_dir=save_img_dir)
         time2 = timeit.default_timer()
         if res:
             logging.info('{0:s}: Processing {1:s} was successful within {2:.1f}m'.format(socket.gethostname(), time_start.isot, (time2-time1)/60.))
@@ -651,9 +672,14 @@ if __name__=='__main__':
     parser.add_argument('--interval', default=600., help='Time interval in seconds')
     parser.add_argument('--nodes', default=10, help='Number of nodes to use')
     parser.add_argument('--delay', default=60, help='Delay from current time in seconds')
+    parser.add_argument('--proc_dir', default='/fast/bin.chen/realtime_pipeline/', help='Directory for processing')
+    parser.add_argument('--save_img_dir', default='/lustre/bin.chen/realtime_pipeline/', help='Directory for saving fits files')
+    parser.add_argument('--logger_file', default='/fast/bin.chen/realtime_pipeline/realtime_calib-imaging_parallel.log', help='Directory for saving fits files')
+                        
     args = parser.parse_args()
     try:
-        run_pipeline(args.prefix, time_interval=float(args.interval), nodes=int(args.nodes), delay_from_now=float(args.delay))
+        run_pipeline(args.prefix, time_interval=float(args.interval), nodes=int(args.nodes), delay_from_now=float(args.delay),
+                     proc_dir=args.proc_dir, save_img_dir=args.save_img_dir, logger_file=args.logger_file)
     except Exception as e:
         logging.error(e)
         raise e
