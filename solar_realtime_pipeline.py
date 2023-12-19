@@ -29,6 +29,7 @@ import shlex, subprocess
 from functools import partial
 from time import sleep
 import socket
+from matplotlib.patches import Ellipse
 import argparse
 matplotlib.use('agg')
 
@@ -513,6 +514,7 @@ def pipeline_quick(image_time=Time.now() - TimeDelta(20., format='sec'), server=
 
             # Plot mfs images (1 image per subband)
             fig = plt.figure(figsize=(15., 8.))
+            fov = 8000
             gs = gridspec.GridSpec(3, 4, left=0.07, right=0.98, top=0.94, bottom=0.10, wspace=0.3, hspace=0.4)
             meta, rdata = ndfits.read(fits_mfs)
             freqs_mhz = meta['ref_cfreqs']/1e6
@@ -526,6 +528,13 @@ def pipeline_quick(image_time=Time.now() - TimeDelta(20., format='sec'), server=
                     rmap_plt = pmX.Sunmap(rmap_plt_)
                     im = rmap_plt.imshow(axes=ax, cmap='hinodexrt')
                     rmap_plt.draw_limb(ls='-', color='w', alpha=0.5)
+
+                    bmaj,bmin,bpa = meta['cbmaj'][bd],meta['cbmin'][bd],meta['cbpa'][bd]
+                    beam0 = Ellipse((-fov/2*0.75, -fov/2*0.75), bmaj*3600,
+                            bmin*3600, angle=(-bpa), color='w')
+
+                    ax.add_artist(beam0)
+
                     cbar = plt.colorbar(im)
                     cbar.set_label(r'$T_B$ (MK)')
                     freq_mhz = meta['ref_cfreqs'][bd]/1e6
@@ -542,11 +551,18 @@ def pipeline_quick(image_time=Time.now() - TimeDelta(20., format='sec'), server=
                     empty_map = pmX.Sunmap(empty_map_)
                     im = empty_map.imshow(axes=ax, cmap='hinodexrt', vmin=0, vmax=1.)
                     empty_map.draw_limb(ls='-', color='w', alpha=0.5)
+
+                    bmaj,bmin,bpa = meta['cbmaj'][bd],meta['cbmin'][bd],meta['cbpa'][bd]
+                    beam0 = Ellipse((-fov/2*0.75, -fov/2*0.75), bmaj*3600,
+                            bmin*3600, angle=(-bpa), color='w')
+                    
+                    ax.add_artist(beam0)
+
                     cbar = plt.colorbar(im)
                     cbar.set_label(r'$T_B$ (MK)')
                     ax.text(0.02, 0.98, '{0:.0f} MHz (no data)'.format(freq_plt), color='w', ha='left', va='top', fontsize=12, transform=ax.transAxes)
-                ax.set_xlim([-4000, 4000])
-                ax.set_ylim([-4000, 4000])
+                ax.set_xlim([-fov/2, fov/2])
+                ax.set_ylim([-fov/2, fov/2])
             fig.suptitle('OVRO-LWA Images at ' + tref.isot[:-4], fontsize=15)
             text1 = fig.text(0.01, 0.01, 'OVRO-LWA Solar Team (NJIT Solar Radio Group)', fontsize=12, ha='left', va='bottom')
             text2 = fig.text(0.99, 0.01, 'OVRO Long Wavelength Array (Caltech)', fontsize=12, ha='right', va='bottom')
