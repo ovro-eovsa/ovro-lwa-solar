@@ -531,7 +531,7 @@ def pipeline_quick(image_time=Time.now() - TimeDelta(20., format='sec'), server=
 
                     bmaj,bmin,bpa = meta['cbmaj'][bd],meta['cbmin'][bd],meta['cbpa'][bd]
                     beam0 = Ellipse((-fov/2*0.75, -fov/2*0.75), bmaj*3600,
-                            bmin*3600, angle=(-bpa),  fc='None', lw=2, ec='w')
+                            bmin*3600, angle=(-(90-bpa)),  fc='None', lw=2, ec='w')
 
                     ax.add_artist(beam0)
 
@@ -554,7 +554,7 @@ def pipeline_quick(image_time=Time.now() - TimeDelta(20., format='sec'), server=
 
                     bmaj,bmin,bpa = meta['cbmaj'][bd],meta['cbmin'][bd],meta['cbpa'][bd]
                     beam0 = Ellipse((-fov/2*0.75, -fov/2*0.75), bmaj*3600,
-                            bmin*3600, angle=(-bpa),  fc='None', lw=2, ec='w')
+                            bmin*3600, angle=(-(90-bpa)),  fc='None', lw=2, ec='w')
                     
                     ax.add_artist(beam0)
 

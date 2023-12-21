@@ -9,6 +9,8 @@ from .primary_beam import analytic_beam as beam
 from .generate_calibrator_model import model_generation
 from . import generate_calibrator_model
 
+import casacore.tables as pt
+
 def get_sun_pos(msfile, str_output=True):
     """
     Return J2000 RA and DEC coordinates of the solar disk center
@@ -424,3 +426,88 @@ def correct_primary_beam(msfile, imagename, pol='I', fast_vis=False):
                 hdu.flush()
                 hdu.close()
     return
+
+
+
+def get_obs_info_from_ms(fname):
+    """ get observation information from ms
+
+    Args:
+        fname (string): measurement set name
+
+    Returns:
+        list : list of antenna name
+        int : number of baselines
+        string : telescope name
+    """
+    ant = pt.taql('select NAME from '+fname+'/ANTENNA').getcol("NAME")
+    nbaseline = int((len(ant)+1)*len(ant)/2)
+    telescope_name = pt.taql('select TELESCOPE_NAME from '+fname+'/OBSERVATION').getcol('TELESCOPE_NAME')[0]
+    return ant, nbaseline, telescope_name
+
+
+def get_t_from_ms(fname):
+    """ get time information from ms
+
+    Args:
+        fname (string): measurement set name
+
+    Returns:
+        int : total number of time index
+        list : time range
+    """
+    ant, nbaseline, telescope_name = get_obs_info_from_ms(fname)
+    t_all  = pt.taql('select TIME from '+fname+' LIMIT ::$nbaseline').getcol('TIME')
+    N_idx_time =  len(t_all)
+    obs_this_tmp = pt.taql('select * from '+fname+'/OBSERVATION')
+    time_range = (Time(obs_this_tmp.getcol('TIME_RANGE').ravel()[0:2]/3600/24.,
+                           format='mjd').to_datetime())
+    return N_idx_time, time_range
+
+def get_freq_from_ms(fname):
+    spw = pt.taql('select REF_FREQUENCY from '+fname+'/SPECTRAL_WINDOW')
+    return spw.getcol('REF_FREQUENCY')[0]
+
+
+def cook_wsclean_cmd(fname, mode="default", multiscale=True,
+                     weight="briggs 0", mgain=0.8,
+                     thresholding="-auto-mask 3 -auto-threshold 0.3",
+                     len_baseline_eff=35000, FOV=10000, scale_factor=4.3,
+                     circbeam=True, niter=1200, pol='I', data_col="CORRECTED_DATA",
+                     misc="", name="",
+                     interval=[-1, -1], intervals_out=-1):
+
+    mgain_var = "-mgain {}".format(mgain)
+    weight_var = "-weight "+weight
+    thresholding_var = thresholding
+    multiscale_var = "-multiscale" if multiscale else ""
+    circbeam_var = "-circularbeam" if circbeam else ""
+    pol_var = "-pol "+pol
+    data_col_var = "-data-column "+data_col
+
+    freq = get_freq_from_ms(fname)
+    time = get_t_from_ms(fname)
+
+    scale = 1.22*(3e8/freq)/len_baseline_eff * 180/np.pi*3600 / scale_factor
+    scale_var = "-scale {}asec".format(scale)
+    size_var = "-size {} {}".format(int(FOV/scale), int(FOV/scale))
+
+    # error handling for the intervals
+    if interval[1]>0 and intervals_out<=0:
+        intervals_out = interval[1]-interval[0]
+    if intervals_out> interval[1]-interval[0]:
+        intervals_out = interval[1]-interval[0]
+        
+    interval_var = "-interval {} {}".format(
+        interval[0], interval[1]) if interval[0] > 0 else "-interval {} {}".format(0, time[0])
+    intervals_out_var = "-intervals-out {}".format(
+        intervals_out) if intervals_out > 0 else "-intervals-out {}".format(time[0])
+
+    clean_cmd = ("wsclean -mem 90 -no-reorder -no-update-model-required  " + mgain_var + 
+                 " " + weight_var + " " + multiscale_var + " " + thresholding_var + " " + 
+                 size_var + " " + scale_var + " " + pol_var + " " + data_col_var + " " + 
+                 interval_var + " " + intervals_out_var + " " + circbeam_var + " " + misc +
+                 " -niter {} -name "+ name).format(niter)
+
+    return clean_cmd
+    
