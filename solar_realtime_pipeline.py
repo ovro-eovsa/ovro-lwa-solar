@@ -292,8 +292,15 @@ def run_imager(msfile_slfcaled, imagedir_allch=None, ephem=None, nch_out=12):
         jones_matrices = pb.get_source_pol_factors(pb.jones_matrices[0,:,:])
         sclfactor = 1. / jones_matrices[0][0]
         helio_imagename = imagedir_allch + os.path.basename(msfile_slfcaled).replace('.ms','.sun') 
-        os.system("wsclean -j 4 -no-dirty -size 1024 1024 -scale 1arcmin -weight briggs -0.5 -minuv-l 10 -auto-threshold 3 -name " + 
+        default_wscleancmd = ("wsclean -j 4 -no-dirty -size 1024 1024 -scale 1arcmin -weight briggs -0.5 -minuv-l 10 -auto-threshold 3 -name " + 
                 helio_imagename + " -niter 10000 -mgain 0.8 -beam-fitting-size 1 -pol I -join-channels -channels-out " + str(nch_out) + ' ' + msfile_slfcaled)
+
+        msic_parset = '  -beam-fitting-size 1   -join-channels -channels-out ' + str(nch_out) 
+
+        new_wscleancmd = utils.cook_wsclean_cmd(msfile_slfcaled, multiscale=False) + ' ' + helio_imagename + ' ' + msic_parset + ' ' + msfile_slfcaled
+ 
+        os.system(new_wscleancmd)
+
         outfits = glob.glob(helio_imagename + '*-image.fits')
         outfits.sort()
         outfits_helio = hf.imreg(msfile_slfcaled, outfits, ephem=ephem, msinfo=msinfo, timerange=[tref_str] * len(outfits), 

@@ -101,8 +101,42 @@ def run_wsclean(msfile, imagename, imsize=4096, cell='2arcmin', uvrange='10', ni
         os.system("wsclean -predict -pol "+pol+" "+ "-name " + imagename + " " + msfile)
         time2 = timeit.default_timer()
         logging.debug('Time taken for predicting the model column is {0:.1f} s'.format(time2-time1))
-        
-      
+
+
+def cook_wsclean_cmd(fname, mode="default", multiscale=True,
+                     weight="briggs 0", mgain=0.8,
+                     thresholding="-auto-mask 3 -auto-threshold 0.3",
+                     len_baseline_eff=3200, FOV=14000, scale_factor=9,
+                     circbeam=True, niter=5000, pol='I', data_col="DATA",
+                     misc="", name=""):
+
+    mgain_var = "-mgain {}".format(mgain)
+    weight_var = "-weight "+weight
+    thresholding_var = thresholding
+    multiscale_var = "-multiscale" if multiscale else ""
+    circbeam_var = "-circularbeam" if circbeam else ""
+    pol_var = "-pol "+pol
+    data_col_var = "-data-column "+data_col
+
+    msmd = msmetadata()
+    msmd.open(fname)
+    freqcenter = msmd.chanfreqs(0)
+    msmd.close()
+
+    freq = np.median(freqcenter)
+
+    scale = 1.22*(3e8/freq)/len_baseline_eff * 180/np.pi*3600 / scale_factor
+    scale_var = "-scale {}asec".format(scale)
+    size_var = "-size {} {}".format(int(FOV/scale), int(FOV/scale))
+
+    clean_cmd = ("wsclean -no-reorder -no-update-model-required  " + mgain_var + 
+                 " " + weight_var + " " + multiscale_var + " " + thresholding_var + " " + 
+                 size_var + " " + scale_var + " " + pol_var + " " + data_col_var + " "
+                 + " " + circbeam_var + " " + misc +
+                 " -niter {} -name "+ name).format(niter)
+
+    return clean_cmd
+
 
 def predict_model(msfile, outms, image="_no_sun",pol='I'):
     """
