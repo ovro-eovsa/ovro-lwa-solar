@@ -431,6 +431,7 @@ def pipeline_quick(image_time=Time.now() - TimeDelta(20., format='sec'), server=
             os.system('rm -rf '+ visdir_work + '/' + timestr + '*')
         else:
             logging.debug('=====Selfcalibrated ms already exist for {0:s}. Proceed with imaging.========'.format(timestr)) 
+            os.system('rm -rf '+ visdir_work + '/' + timestr + '*')
 
 
         # Do imaging
@@ -490,10 +491,19 @@ def pipeline_quick(image_time=Time.now() - TimeDelta(20., format='sec'), server=
             os.system('rm -rf '+ caltable_folder + '/' + timestr + '_*MHz*')
 
         if 'fitsfiles' in locals() and len(fitsfiles) > 1:
+            ## define subdirectories for storing the fits and png files
+            datedir = btime.isot[:10].replace('-','/')+'/'
+            imagedir_allch_combined_sub = imagedir_allch_combined + '/' + datedir
+            fig_mfs_dir_sub = fig_mfs_dir + '/' + datedir
+            if not os.path.exists(imagedir_allch_combined_sub):
+               os.makedirs(imagedir_allch_combined_sub)
+            if not os.path.exists(fig_mfs_dir_sub):
+                os.makedirs(fig_mfs_dir_sub)
+
             ## Wrap images
             timestr_iso = btime.isot[:-4].replace(':','')+'Z'
             # multi-frequency synthesis images
-            fits_mfs = imagedir_allch_combined + '/ovro-lwa.lev1_mfs_10s.' + timestr_iso + '.image.fits' 
+            fits_mfs = imagedir_allch_combined_sub + '/ovro-lwa.lev1_mfs_10s.' + timestr_iso + '.image.fits' 
             #fitsfiles_mfs = glob.glob(imagedir_allch + '/' + timestr+ '*MFS-image.fits')
             fitsfiles_mfs = []
             for f in fitsfiles:
@@ -506,7 +516,7 @@ def pipeline_quick(image_time=Time.now() - TimeDelta(20., format='sec'), server=
             #ndfits.wrap(fitsfiles_mfs, outfitsfile=fits_mfs, docompress=compress_fits)
             ndfits.wrap(fitsfiles_mfs, outfitsfile=fits_mfs)
             # fine channel spectral images
-            fits_fch = imagedir_allch_combined + '/ovro-lwa.lev1_fch_10s.' + timestr_iso + '.image.fits' 
+            fits_fch = imagedir_allch_combined_sub + '/ovro-lwa.lev1_fch_10s.' + timestr_iso + '.image.fits' 
             #fitsfiles_fch = list(set(glob.glob(imagedir_allch + '/' + timestr + '*-image.fits'))-set(glob.glob(imagedir_allch + '/' + timestr + '*MFS-image.fits')))
             fitsfiles_fch = []
             for f in fitsfiles:
@@ -522,7 +532,7 @@ def pipeline_quick(image_time=Time.now() - TimeDelta(20., format='sec'), server=
             # Plot mfs images (1 image per subband)
             fig = plt.figure(figsize=(15., 8.))
             fov = 8000
-            gs = gridspec.GridSpec(3, 4, left=0.07, right=0.98, top=0.94, bottom=0.10, wspace=0.3, hspace=0.4)
+            gs = gridspec.GridSpec(3, 4, left=0.05, right=0.95, top=0.94, bottom=0.10, wspace=0.3, hspace=0.4)
             meta, rdata = ndfits.read(fits_mfs)
             freqs_mhz = meta['ref_cfreqs']/1e6
             freqs_plt = [34.1, 38.7, 43.2, 47.8, 52.4, 57.0, 61.6, 66.2, 70.8, 75.4, 80.0, 84.5]
@@ -538,7 +548,8 @@ def pipeline_quick(image_time=Time.now() - TimeDelta(20., format='sec'), server=
 
                     bmaj,bmin,bpa = meta['cbmaj'][bd],meta['cbmin'][bd],meta['cbpa'][bd]
                     beam0 = Ellipse((-fov/2*0.75, -fov/2*0.75), bmaj*3600,
-                            bmin*3600, angle=(-(90-bpa)),  fc='None', lw=2, ec='w')
+                            #bmin*3600, angle=(-bpa),  fc='None', lw=2, ec='w')
+                            bmin*3600, angle=-(90.-bpa),  fc='None', lw=2, ec='w')
 
                     ax.add_artist(beam0)
 
@@ -573,7 +584,7 @@ def pipeline_quick(image_time=Time.now() - TimeDelta(20., format='sec'), server=
             fig.suptitle('OVRO-LWA Images at ' + tref.isot[:-4], fontsize=15)
             text1 = fig.text(0.01, 0.01, 'OVRO-LWA Solar Team (NJIT Solar Radio Group)', fontsize=12, ha='left', va='bottom')
             text2 = fig.text(0.99, 0.01, 'OVRO Long Wavelength Array (Caltech)', fontsize=12, ha='right', va='bottom')
-            fig.savefig(fig_mfs_dir + '/' + os.path.basename(fits_mfs).replace('.image.fits', '.png'))
+            fig.savefig(fig_mfs_dir_sub + '/' + os.path.basename(fits_mfs).replace('.image.fits', '.png'))
             plt.close()
             time_completed= timeit.default_timer() 
             logging.debug('====All processing for time {0:s} is done in {1:.1f} minutes'.format(timestr, (time_completed-time_begin)/60.))
@@ -626,7 +637,7 @@ def run_pipeline(time_start=Time.now(), time_interval=600., delay_from_now=180.,
     (t_rise, t_set) = sun_riseset(time_start)
     if time_start < t_rise:
         twait = t_rise - time_start
-        logging.info('{0:s}: Start time {1:s} is before sunrise. Wait for {1:.1f} hours to start.'.format(socket.gethostname(), time_start.isot, twait.value * 24.))
+        logging.info('{0:s}: Start time {1:s} is before sunrise. Wait for {2:.1f} hours to start.'.format(socket.gethostname(), time_start.isot, twait.value * 24.))
         time_start += TimeDelta(twait.sec + 60., format='sec')
         sleep(twait.sec + 60.)
     else:
