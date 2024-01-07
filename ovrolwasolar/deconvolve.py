@@ -26,66 +26,92 @@ me = measures()
 cl = componentlist()
 msmd = msmetadata()
 
-def run_wsclean(msfile, imagename, imsize=4096, cell='2arcmin', predict=True, fast_vis=False, field=None,
-                uvrange='10', niter=10000,
-                mgain=0.8, do_automask=True, automask_thresh=8, do_autothresh=False, autothreshold_rms=3, 
-                pol='I', intervals_out=None, **kwargs):  ### uvrange is in lambda units
+def run_wsclean(msfile, imagename,  fast_vis=False, field=None,
+            **kwargs):  ### uvrange is in lambda units
     """
-    Wrapper for imaging using wsclean
+    Wrapper for imaging using wsclean, with the following default parameters:
+    ```
+        default_kwargs={
+        'j':'4',                    # number of threads
+        'size':'4096 4096',         # image size
+        'scale':'2arcmin',          # pixel scale
+        'weight':'uniform',         # weighting scheme
+        'no_dirty':'',              # don't save dirty image
+        'niter':'10000',            # number of iterations
+        'mgain':'0.8',              # maximum gain in each cycle
+        'auto_threshold':'3',       # auto threshold
+        'auto_mask':'8',            # auto mask
+        'pol':'I',                  # polarization
+        'minuv_l':'10',             # minimum uv distance in lambda
+        'intervals_out':'1',        # number of output images
+        'no_reorder':'',            # don't reorder the channels
+    }
+    ```
+    use the parameter of wsclean in args (need to replace '-' with '_' in the argument name), for example:
+    ```
+    run_wsclean('OVRO-60MHz.MS', 'IMG-60MHz',  size='2048 2048', niter=1000, mgain=0.9)
+    ```
+
     :param msfile: input CASA measurement set
     :param imagename: output image name
-    :param imsize: size of the image in pixels
-    :param cell: pixel scale
-    :param niter: number of iterations
-    :param uvrange: uvrange following tclean's syntax
-    :param do_automask: whether or not to do automask
-    :param do_autothresh: whether or not to use local RMS thresholding
-    :param mgain: maximum gain in each major cycle (during every major iteration, the peak is reduced by the given factor)
-    
-    Example of using kwargs
-    
-    kwargs={'channels-out':'10','spws':'5,6'}
-    deconvolve.run_wsclean(msfile,imagename=imagename,**kwargs)
+    :param fast_vis: if True, split the measurement set into multiple measurement sets, each containing one field
+    :param field: field ID to image, if fast_vis is True
+    :param kwargs: additional arguments to wsclean, need to replace '-' with '_' in the argument name
     """
 
-    #TODO: clean param list, use kwargs
 
     logging.debug("Running WSCLEAN")
+    
+    default_kwargs={
+        'j':'4',                    # number of threads
+        'size':'4096 4096',         # image size
+        'scale':'2arcmin',          # pixel scale
+        'weight':'uniform',         # weighting scheme
+        'no_dirty':'',              # don't save dirty image
+        'niter':'10000',            # number of iterations
+        'mgain':'0.8',              # maximum gain in each cycle
+        'auto_threshold':'3',       # auto threshold
+        'auto_mask':'8',            # auto mask
+        'pol':'I',                  # polarization
+        'minuv_l':'10',             # minimum uv distance in lambda
+        'intervals_out':'1',        # number of output images
+        'no_reorder':'',            # don't reorder the channels
+    }
+
+    # remove the key if val is False from kwargs
+    for key, value in kwargs.items():
+        if value is False:
+            default_kwargs.pop(key, None)
+        elif value is True:
+            # Add the key with an empty string as value if True
+            default_kwargs[key] = ''
+        else:
+            default_kwargs[key] = str(value)
+
+
     if fast_vis==True:
         if field is None:
-           intervals_out=1
-           field='all'
-        else: 
-            intervals_out=len(field.split(','))
+            default_kwargs['intervals_out']='1'
+            default_kwargs['field']='all'
+        else:
+            default_kwargs["intervals_out"] =str(len(field.split(',')))
     else:
-        intervals_out=1
-        field='all'
-    if intervals_out!=1 and predict:
+        default_kwargs['intervals_out']='1'
+        default_kwargs['field']='all'
+    if default_kwargs['intervals_out']!='1' and 'predict' in default_kwargs:
         raise RuntimeError("Prediction cannot be done with multiple images.")
-        
-    if do_automask:
-        automask_handler = " -auto-mask " + str(automask_thresh)
-    else:
-        automask_handler = ""
-
-    if do_autothresh:
-        autothresh_handler = " -local-rms -auto-threshold " + str(autothreshold_rms)
-    else:
-        autothresh_handler = ""
-
+    
     time1 = timeit.default_timer()
 
-    cmd_str1=''
-    for cmd,val in zip(kwargs,kwargs.values()):
-        cmd_str1+='-'+cmd+" "+val+" "    
-    
-    cmd_clean = "wsclean -j 4 -no-dirty -no-update-model-required -no-negative -size " + str(imsize) + " " + \
-              str(imsize) + " -scale " + cell + " -weight uniform -minuv-l " + str(uvrange) + " -name " + imagename + \
-              " -niter " + str(niter) + " -mgain " + str(mgain) + \
-              automask_handler + autothresh_handler + \
-              " -beam-fitting-size 2 -pol " + pol + ' ' + "-intervals-out "+ \
-              str(intervals_out) + " -field " + field + " " + cmd_str1+msfile
+    cmd_clean = "wsclean "
+    # Add additional arguments from default_params
+    for key, value in default_kwargs.items():
+        # Convert Python-style arguments to command line format
+        cli_arg = key.replace('_', '-')
+        cmd_clean += f" -{cli_arg} {value}" if value != '' else f" -{cli_arg}"
 
+    cmd_clean += " -name " + imagename + " " + msfile
+    
     #TODO: put -weighting in free param
 
     logging.debug(cmd_clean)
@@ -96,18 +122,17 @@ def run_wsclean(msfile, imagename, imsize=4096, cell='2arcmin', predict=True, fa
     time2 = timeit.default_timer()
     logging.debug('Time taken for all sky imaging is {0:.1f} s'.format(time2-time1))
 
-    
-    if intervals_out!=1:
+    if default_kwargs['intervals_out']!='1':
         image_names=utils.get_fast_vis_imagenames(msfile,imagename,pol)
         for name in image_names:
             wsclean_imagename=name[0]
             final_imagename=name[1]
             os.system("mv "+wsclean_imagename+" "+final_imagename)
 
-    if predict:
+    if 'predict' in default_kwargs:
         logging.debug("Predicting model visibilities from " + imagename + " in " + msfile)
         time1 = timeit.default_timer()
-        os.system("wsclean -predict -pol "+pol+" "+ "-name " + imagename + " " + msfile)
+        os.system("wsclean -predict -pol "+default_kwargs['pol']+" "+ "-name " + imagename + " " + msfile)
         time2 = timeit.default_timer()
         logging.debug('Time taken for predicting the model column is {0:.1f} s'.format(time2-time1))
 
