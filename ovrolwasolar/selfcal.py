@@ -157,7 +157,7 @@ def do_selfcal(msfile, num_phase_cal=2, num_apcal=2, applymode='calflag', loggin
     logging.debug('Flagging on the residual')
     flagdata(vis=msfile, mode='rflag', datacolumn='residual')
     if num_apcal>0:
-    	os.system("cp -r " + caltable + " " + caltable_folder)
+        os.system("cp -r " + caltable + " " + caltable_folder)
 
     if len(final_phase_caltable)!=0:    
         os.system("cp -r " + final_phase_caltable + " " + caltable_folder)

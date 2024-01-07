@@ -26,9 +26,10 @@ me = measures()
 cl = componentlist()
 msmd = msmetadata()
 
-def run_wsclean(msfile, imagename, imsize=4096, cell='2arcmin', uvrange='10', niter=10000,
+def run_wsclean(msfile, imagename, imsize=4096, cell='2arcmin', predict=True, fast_vis=False, field=None,
+                uvrange='10', niter=10000,
                 mgain=0.8, do_automask=True, automask_thresh=8, do_autothresh=False, autothreshold_rms=3, 
-                predict=True, pol='I', fast_vis=False, intervals_out=None, field=None,**kwargs):  ### uvrange is in lambda units
+                pol='I', intervals_out=None, **kwargs):  ### uvrange is in lambda units
     """
     Wrapper for imaging using wsclean
     :param msfile: input CASA measurement set
@@ -46,6 +47,9 @@ def run_wsclean(msfile, imagename, imsize=4096, cell='2arcmin', uvrange='10', ni
     kwargs={'channels-out':'10','spws':'5,6'}
     deconvolve.run_wsclean(msfile,imagename=imagename,**kwargs)
     """
+
+    #TODO: clean param list, use kwargs
+
     logging.debug("Running WSCLEAN")
     if fast_vis==True:
         if field is None:
@@ -75,12 +79,17 @@ def run_wsclean(msfile, imagename, imsize=4096, cell='2arcmin', uvrange='10', ni
     for cmd,val in zip(kwargs,kwargs.values()):
         cmd_str1+='-'+cmd+" "+val+" "    
     
-    os.system("wsclean -j 4 -no-dirty -no-update-model-required -no-negative -size " + str(imsize) + " " + \
+    cmd_clean = "wsclean -j 4 -no-dirty -no-update-model-required -no-negative -size " + str(imsize) + " " + \
               str(imsize) + " -scale " + cell + " -weight uniform -minuv-l " + str(uvrange) + " -name " + imagename + \
               " -niter " + str(niter) + " -mgain " + str(mgain) + \
               automask_handler + autothresh_handler + \
               " -beam-fitting-size 2 -pol " + pol + ' ' + "-intervals-out "+ \
-              str(intervals_out) + " -field " + field + " " + cmd_str1+msfile)
+              str(intervals_out) + " -field " + field + " " + cmd_str1+msfile
+
+    #TODO: put -weighting in free param
+
+    logging.debug(cmd_clean)
+    os.system(cmd_clean)
     
     for str1 in ['residual','psf']:
         os.system("rm -rf "+imagename+"*"+str1+"*.fits") 

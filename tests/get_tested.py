@@ -6,8 +6,6 @@ import os,glob
 def run_tests(calib_ms=None, slow_solar_ms1=None, slow_solar_ms2=None, \
                 fast_solar_ms1=None,test_slow=False, test_fast=False):
 
-
-
     if test_slow:
 
         ###############################################################################
