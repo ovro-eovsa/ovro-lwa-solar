@@ -30,13 +30,10 @@ def run_wsclean(msfile, imagename,  fast_vis=False, field=None,
             **kwargs):  ### uvrange is in lambda units
     """
     Wrapper for imaging using wsclean, 
-    need to use the parameter of wsclean in args (need to replace '-' with '_' in the argument name), for example:
-    ``
-    run_wsclean('OVRO-60MHz.MS', 'IMG-60MHz',  size='2048 2048', niter=1000, mgain=0.9)
-    ``
+    use the parameter of wsclean in args (need to replace '-' with '_' in the argument name), for example:
+    ``run_wsclean('OVRO-60MHz.MS', 'IMG-60MHz',  size='2048 2048', niter=1000, mgain=0.9)``
     with the following default parameters:
-    ``
-        default_kwargs={
+    ``default_kwargs={
         'j':'4',                    # number of threads
         'size':'4096 4096',         # image size
         'scale':'2arcmin',          # pixel scale
@@ -50,8 +47,7 @@ def run_wsclean(msfile, imagename,  fast_vis=False, field=None,
         'minuv_l':'10',             # minimum uv distance in lambda
         'intervals_out':'1',        # number of output images
         'no_reorder':'',            # don't reorder the channels
-    }
-    ``
+    }``
 
 
     :param msfile: input CASA measurement set
