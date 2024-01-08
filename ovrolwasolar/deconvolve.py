@@ -29,32 +29,33 @@ msmd = msmetadata()
 def run_wsclean(msfile, imagename,  fast_vis=False, field=None,
             **kwargs):  ### uvrange is in lambda units
     """
-    Wrapper for imaging using wsclean, 
-    use the parameter of wsclean in args (need to replace '-' with '_' in the argument name), for example:
-    ``run_wsclean('OVRO-60MHz.MS', 'IMG-60MHz',  size='2048 2048', niter=1000, mgain=0.9)``
-    with the following default parameters:
-    ``default_kwargs={
-        'j':'4',                    # number of threads
-        'size':'4096 4096',         # image size
-        'scale':'2arcmin',          # pixel scale
-        'weight':'uniform',         # weighting scheme
-        'no_dirty':'',              # don't save dirty image
-        'niter':'10000',            # number of iterations
-        'mgain':'0.8',              # maximum gain in each cycle
-        'auto_threshold':'3',       # auto threshold
-        'auto_mask':'8',            # auto mask
-        'pol':'I',                  # polarization
-        'minuv_l':'10',             # minimum uv distance in lambda
-        'intervals_out':'1',        # number of output images
-        'no_reorder':'',            # don't reorder the channels
-    }``
+    Wrapper for imaging using wsclean, use the parameter of wsclean in args. 
+    
+    To be noted:
 
+    * replace '-' with '_' in the argument name), 
+    * The args without value is set to True or False, for example.
+    * add False to a key to remove it from the args list.
 
+    ``run_wsclean('OVRO-60MHz.MS', 'IMG-60MHz',  size='2048 2048', niter=1000, mgain=0.9, no_reorder=True, predict=True)``
+    
     :param msfile: input CASA measurement set
     :param imagename: output image name
     :param fast_vis: if True, split the measurement set into multiple measurement sets, each containing one field
     :param field: field ID to image, if fast_vis is True
-    :param kwargs: additional arguments to wsclean, need to replace '-' with '_' in the argument name
+    :param j: number of threads, default 4
+    :param size: image size, default 4096 4096
+    :param scale: pixel scale, default 2arcmin
+    :param weight: weighting scheme, default uniform
+    :param no_dirty: don't save dirty image, default True
+    :param niter: number of iterations, default 10000
+    :param mgain: maximum gain in each cycle, default 0.8
+    :param auto_threshold: auto threshold, default 3
+    :param auto_mask: auto mask, default 8
+    :param pol: polarization, default I
+    :param minuv_l: minimum uv distance in lambda, default 10
+    :param intervals_out: number of output images, default 1
+    :param no_reorder: don't reorder the channels, default True
     """
 
 
@@ -66,6 +67,8 @@ def run_wsclean(msfile, imagename,  fast_vis=False, field=None,
         'scale':'2arcmin',          # pixel scale
         'weight':'uniform',         # weighting scheme
         'no_dirty':'',              # don't save dirty image
+        'no_update_model_required':'', # don't update model required
+        'no_negative':'',           # no negative gain for CLEAN
         'niter':'10000',            # number of iterations
         'mgain':'0.8',              # maximum gain in each cycle
         'auto_threshold':'3',       # auto threshold
@@ -74,6 +77,7 @@ def run_wsclean(msfile, imagename,  fast_vis=False, field=None,
         'minuv_l':'10',             # minimum uv distance in lambda
         'intervals_out':'1',        # number of output images
         'no_reorder':'',            # don't reorder the channels
+        'beam_fitting_size':'2',    # beam fitting size
     }
 
     # remove the key if val is False from kwargs
@@ -106,7 +110,7 @@ def run_wsclean(msfile, imagename,  fast_vis=False, field=None,
     for key, value in default_kwargs.items():
         # Convert Python-style arguments to command line format
         cli_arg = key.replace('_', '-')
-        cmd_clean += f" -{cli_arg} {value}" if value != '' else f" -{cli_arg}"
+        cmd_clean += f" -{cli_arg} {value} " if value != '' else f" -{cli_arg} "
 
     cmd_clean += " -name " + imagename + " " + msfile
     

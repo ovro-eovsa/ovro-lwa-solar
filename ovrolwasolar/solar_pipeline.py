@@ -207,12 +207,12 @@ def image_ms(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagename='sun
         time1=timeit.default_timer()
         logging.info('Generating final solar centered image')
         if not fast_vis:
-            deconvolve.run_wsclean(outms, imagename=imagename, automask_thresh=5, uvrange='0', predict=False, 
-                                   imsize=imsize, cell=cell, pol=pol, fast_vis=fast_vis)
+            deconvolve.run_wsclean(outms, imagename=imagename, auto_mask=5, minuv_l='0', predict=False, 
+                                   size=str(imsize)+' '+str(imsize), scale=cell, pol=pol, fast_vis=fast_vis)
         else:
             num_fields=utils.get_total_fields(outms)
-            deconvolve.run_wsclean(outms, imagename=imagename, automask_thresh=5, uvrange='0', predict=False,
-                                   imsize=imsize, cell=cell, pol=pol, fast_vis=fast_vis, 
+            deconvolve.run_wsclean(outms, imagename=imagename, auto_mask=5, minuv_l='0', predict=False,
+                                   size=str(imsize)+' '+str(imsize) , scale=cell, pol=pol, fast_vis=fast_vis, 
                                    field=','.join([str(i) for i in range(num_fields)]))
         
         utils.correct_primary_beam(outms, imagename, pol=pol, fast_vis=fast_vis)
@@ -320,7 +320,8 @@ def image_ms_quick(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagenam
     time1=time2
     if do_final_imaging:
         logging.debug('Generating final solar centered image')
-        deconvolve.run_wsclean(outms, imagename=imagename, automask_thresh=5, uvrange='0', predict=False, imsize=imsize, cell=cell,pol=pol)
+        deconvolve.run_wsclean(outms, imagename=imagename, auto_mask=5, minuv_l='0', predict=False, 
+                               size=str(imsize)+' '+str(imsize), scale=cell, pol=pol)
         logging.debug('Correcting for the primary beam at the location of Sun')
         utils.correct_primary_beam(outms, imagename, pol=pol)
         for n,pola in enumerate(['I','Q','U','V','XX','YY']):
@@ -432,6 +433,7 @@ def apply_solutions_and_image(msname, bcal, imagename):
     outms = solar_ms[:-3] + "_sun_selfcalibrated.ms"
     outms = source_subtraction.remove_nonsolar_sources(outms, remove_strong_sources_only=False)
     change_phasecenter(outms)
-    deconvolve.run_wsclean(outms, imagename=imagename, automask_thresh=5, uvrange='0', predict=False, imsize=1024, cell='1arcmin')
+    deconvolve.run_wsclean(outms, imagename=imagename, auto_mask=5, minuv_l='0', predict=False, 
+                           size='1024 1024', scale='1arcmin')
     utils.correct_primary_beam(outms, imagename + "-image.fits")
     logging.info('Imaging completed for ' + msname)

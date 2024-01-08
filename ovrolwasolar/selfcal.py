@@ -45,7 +45,8 @@ def do_selfcal(msfile, num_phase_cal=2, num_apcal=2, applymode='calflag', loggin
     
     for i in range(num_phase_cal):
         imagename = msfile[:-3] + "_self" + str(i)
-        deconvolve.run_wsclean(msfile, imagename=imagename, niter=niters[i], mgain=0.9, do_automask=False, do_autothresh=False, pol=pol)
+        deconvolve.run_wsclean(msfile, imagename=imagename, niter=niters[i], 
+                               mgain=0.9, auto_mask=False, auto_threshold=False, pol=pol)
         good = utils.check_image_quality(imagename, max1, min1)
        
         print(good)
@@ -54,7 +55,8 @@ def do_selfcal(msfile, num_phase_cal=2, num_apcal=2, applymode='calflag', loggin
         if not good:
             logging.debug('Dynamic range has reduced. Doing a round of flagging')
             flagdata(vis=msfile, mode='rflag', datacolumn='corrected')
-            deconvolve.run_wsclean(msfile, imagename=imagename, niter=niters[i], mgain=0.9, do_automask=False, do_autothresh=False, pol=pol)
+            deconvolve.run_wsclean(msfile, imagename=imagename, niter=niters[i], mgain=0.9, 
+                                   auto_mask=False, auto_threshold=False, pol=pol)
             
             good = utils.check_image_quality(imagename, max1, min1,reorder=False)
             
@@ -101,7 +103,8 @@ def do_selfcal(msfile, num_phase_cal=2, num_apcal=2, applymode='calflag', loggin
         final_phase_caltable = ''
     for i in range(num_phase_cal, num_phase_cal + num_apcal):
         imagename = msfile[:-3] + "_self" + str(i)
-        deconvolve.run_wsclean(msfile, imagename=imagename, niter=np.max(niters) + (i+1) * niter_incr, mgain=0.9, do_automask=False, do_autothresh=False, pol=pol)
+        deconvolve.run_wsclean(msfile, imagename=imagename, niter=np.max(niters) + (i+1) * niter_incr,
+                                mgain=0.9, auto_mask=False, auto_threshold=False, pol=pol)
         
         good = utils.check_image_quality(imagename, max1, min1)
         
@@ -110,7 +113,8 @@ def do_selfcal(msfile, num_phase_cal=2, num_apcal=2, applymode='calflag', loggin
         if not good:
             logging.debug('Dynamic range has reduced. Doing a round of flagging')
             flagdata(vis=msfile, mode='rflag', datacolumn='corrected')
-            deconvolve.run_wsclean(msfile, imagename=imagename, niter=np.max(niters), mgain=0.9, do_automask=False, do_autothresh=False, pol=pol)
+            deconvolve.run_wsclean(msfile, imagename=imagename, niter=np.max(niters),
+                                mgain=0.9, auto_mask=False, auto_threshold=False, pol=pol)
             
             good = utils.check_image_quality(imagename, max1, min1, reorder=False)
             
