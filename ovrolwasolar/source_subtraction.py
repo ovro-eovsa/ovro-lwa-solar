@@ -57,6 +57,9 @@ def get_solar_loc_pix(msfile, image="allsky"):
     head=fits.getheader(image)
     w = WCS(head)
     pix = skycoord_to_pixel(coord, w)
+    if np.isnan(pix[0]):
+        logging.warning('Sun is not in the image')
+        return None, None
     x = int(pix[0])
     y = int(pix[1])
     logging.debug('Pixel location of Sun is ' + str(x) + " " + str(y) + " in imagename " + image)

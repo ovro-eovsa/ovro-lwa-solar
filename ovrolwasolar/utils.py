@@ -9,8 +9,6 @@ from .primary_beam import analytic_beam as beam
 from .generate_calibrator_model import model_generation
 from . import generate_calibrator_model
 
-import casacore.tables as pt
-
 def get_sun_pos(msfile, str_output=True):
     """
     Return J2000 RA and DEC coordinates of the solar disk center
