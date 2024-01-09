@@ -26,7 +26,8 @@ me = measures()
 cl = componentlist()
 msmd = msmetadata()
 
-def run_wsclean(msfile, imagename,  fast_vis=False, field=None,
+def run_wsclean(msfile, imagename, size:int =4096, scale='2arcmin', fast_vis=False, field=None,
+            predict=True, auto_pix_fov = False, telescope_size = 3200, im_fov=182*3600, pix_scale_factor=1.5,
             **kwargs):  ### uvrange is in lambda units
     """
     Wrapper for imaging using wsclean, use the parameter of wsclean in args. 
@@ -37,15 +38,19 @@ def run_wsclean(msfile, imagename,  fast_vis=False, field=None,
     * The args without value is set to True or False, for example.
     * add False to a key to remove it from the args list.
 
-    ``run_wsclean('OVRO-60MHz.MS', 'IMG-60MHz',  size='2048 2048', niter=1000, mgain=0.9, no_reorder=True, predict=True)``
+    ``run_wsclean('OVRO-60MHz.MS', 'IMG-60MHz',  size=2048, niter=1000, mgain=0.9, no_reorder=True, predict=True)``
     
     :param msfile: input CASA measurement set
     :param imagename: output image name
+    :param size: (int) image size, default 4096
+    :param scale: pixel scale, default 2arcmin
     :param fast_vis: if True, split the measurement set into multiple measurement sets, each containing one field
     :param field: field ID to image, if fast_vis is True
+    :param predict: if True, predict the model visibilities from the image
+    :param auto_pix_fov: if True, automatically set the pixel scale to match the field of view
+    :param telescope_size: size of the telescope in meters, default 3200 (OVRO-LWA)
+    :param im_fov: field of view of the image in arcseconds, default 182*3600asec (full sky+ 2deg)
     :param j: number of threads, default 4
-    :param size: image size, default 4096 4096
-    :param scale: pixel scale, default 2arcmin
     :param weight: weighting scheme, default uniform
     :param no_dirty: don't save dirty image, default True
     :param niter: number of iterations, default 10000
@@ -63,8 +68,6 @@ def run_wsclean(msfile, imagename,  fast_vis=False, field=None,
     
     default_kwargs={
         'j':'4',                    # number of threads
-        'size':'4096 4096',         # image size
-        'scale':'2arcmin',          # pixel scale
         'weight':'uniform',         # weighting scheme
         'no_dirty':'',              # don't save dirty image
         'no_update_model_required':'', # don't update model required
@@ -79,6 +82,21 @@ def run_wsclean(msfile, imagename,  fast_vis=False, field=None,
         'no_reorder':'',            # don't reorder the channels
         'beam_fitting_size':'2',    # beam fitting size
     }
+
+    if auto_pix_fov:
+        msmd = msmetadata()
+        msmd.open(msfile)
+        freqcenter = msmd.chanfreqs(0)
+        msmd.close()
+        freq = np.median(freqcenter)
+
+        scale_num = 1.22*(3e8/freq)/telescope_size * 180/np.pi*3600 / pix_scale_factor
+        scale = str(scale_num/60)+'arcmin'
+        size = int(im_fov/scale_num)
+        logging.debug("Auto pixel scale: " + scale+ ", size: " + str(size)+ "pix, at freq:" + str(freq/1e6) + "MHz")
+
+    default_kwargs['size']=str(size)+' '+str(size)
+    default_kwargs['scale']=scale
 
     # remove the key if val is False from kwargs
     for key, value in kwargs.items():
@@ -100,7 +118,7 @@ def run_wsclean(msfile, imagename,  fast_vis=False, field=None,
     else:
         default_kwargs['intervals_out']='1'
         default_kwargs['field']='all'
-    if default_kwargs['intervals_out']!='1' and 'predict' in default_kwargs:
+    if default_kwargs['intervals_out']!='1' and predict:
         raise RuntimeError("Prediction cannot be done with multiple images.")
     
     time1 = timeit.default_timer()
@@ -131,7 +149,7 @@ def run_wsclean(msfile, imagename,  fast_vis=False, field=None,
             final_imagename=name[1]
             os.system("mv "+wsclean_imagename+" "+final_imagename)
 
-    if 'predict' in default_kwargs:
+    if predict:
         logging.debug("Predicting model visibilities from " + imagename + " in " + msfile)
         time1 = timeit.default_timer()
         os.system("wsclean -predict -pol "+default_kwargs['pol']+" "+ "-name " + imagename + " " + msfile)
@@ -139,39 +157,6 @@ def run_wsclean(msfile, imagename,  fast_vis=False, field=None,
         logging.debug('Time taken for predicting the model column is {0:.1f} s'.format(time2-time1))
 
 
-def cook_wsclean_cmd(fname, mode="default", multiscale=True,
-                     weight="briggs 0", mgain=0.8,
-                     thresholding="-auto-mask 3 -auto-threshold 0.3",
-                     len_baseline_eff=3200, FOV=14000, scale_factor=9,
-                     circbeam=True, niter=5000, pol='I', data_col="DATA",
-                     misc="", name=""):
-
-    mgain_var = "-mgain {}".format(mgain)
-    weight_var = "-weight "+weight
-    thresholding_var = thresholding
-    multiscale_var = "-multiscale" if multiscale else ""
-    circbeam_var = "-circularbeam" if circbeam else ""
-    pol_var = "-pol "+pol
-    data_col_var = "-data-column "+data_col
-
-    msmd = msmetadata()
-    msmd.open(fname)
-    freqcenter = msmd.chanfreqs(0)
-    msmd.close()
-
-    freq = np.median(freqcenter)
-
-    scale = 1.22*(3e8/freq)/len_baseline_eff * 180/np.pi*3600 / scale_factor
-    scale_var = "-scale {}asec".format(scale)
-    size_var = "-size {} {}".format(int(FOV/scale), int(FOV/scale))
-
-    clean_cmd = ("wsclean -no-reorder -no-update-model-required  " + mgain_var + 
-                 " " + weight_var + " " + multiscale_var + " " + thresholding_var + " " + 
-                 size_var + " " + scale_var + " " + pol_var + " " + data_col_var + " "
-                 + " " + circbeam_var + " " + misc +
-                 " -niter {} -name "+ name).format(niter)
-
-    return clean_cmd
 
 
 def predict_model(msfile, outms, image="_no_sun",pol='I'):
