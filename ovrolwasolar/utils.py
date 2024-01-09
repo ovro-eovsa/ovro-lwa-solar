@@ -12,6 +12,7 @@ from . import generate_calibrator_model
 def get_sun_pos(msfile, str_output=True):
     """
     Return J2000 RA and DEC coordinates of the solar disk center
+
     :param msfile: input CASA measurement set
     :param str_output: if True, return coordinate in string form acceptable by CASA tclean
         if False, return a dictionary in CASA measures format: https://casa.nrao.edu/docs/casaref/measures.measure.html
@@ -37,6 +38,7 @@ def get_sun_pos(msfile, str_output=True):
 def get_msinfo(msfile):
     """
     Return some basic information of an OVRO-LWA measurement set
+    
     :param msfile: path to CASA measurement set
     :return: number of antennas, number of spectral windows, number of channels
     """

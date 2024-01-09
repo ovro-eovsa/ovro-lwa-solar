@@ -212,6 +212,7 @@ class model_generation():
     def flux80_47(self,flux_hi, sp,jones_matrix):
         """
         Given a flux at 80 MHz and a sp_index, return the flux at 47 MHz.
+
         :param flux_hi: flux at the reference frequency
         :param sp: spectral index
         :param ref_freq: reference frequency in MHz
@@ -393,6 +394,7 @@ class model_generation():
     def gen_model_cl(self):
         """
         Generate source models for bright sources as CASA clean components
+        
         :param msfile: input visibility
         :param ref_freq: reference frequency of the preset flux values of bright sources
         :param output_freq: output frequency to be written into the CASA component list

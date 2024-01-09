@@ -169,6 +169,7 @@ def do_selfcal(msfile, num_phase_cal=2, num_apcal=2, applymode='calflag', loggin
 def do_fresh_selfcal(solar_ms, num_phase_cal=3, num_apcal=5, logging_level='info',pol='I', refant='202', niter0=600, niter_incr=200):
     """
     Do fresh self-calibration if no self-calibration tables are found
+
     :param solar_ms: input solar visibility
     :param num_phase_cal: (maximum) rounds of phase-only selfcalibration. Default to 3
     :param num_apcal: (maximum) rounds of ampitude and phase selfcalibration. Default to 5
@@ -198,6 +199,7 @@ def DI_selfcal(solar_ms, solint_full_selfcal=14400, solint_partial_selfcal=3600,
                fast_vis=False, niter0=1000, niter_incr=500, do_fluxscaling=False):
     """
     Directional-independent self-calibration (full sky)
+
     :param solar_ms: input solar visibility
     :param solint_full_selfcal: interval for doing full self-calibration in seconds. Default to 4 hours
     :param solint_partial_selfcal: interval for doing partial self-calibration in seconds. Default to 1 hour.
@@ -339,6 +341,7 @@ def DD_selfcal(solar_ms, solint_full_selfcal=1800, solint_partial_selfcal=600, c
                logging_level='info', pol='I', refant='202', niter0=1000, niter_incr=500, fast_vis=False):
     """
     Directional-dependent self-calibration on the Sun only
+
     :param solar_ms: input solar visibility
     :param solint_full_selfcal: interval for doing full self-calibration in seconds. Default to 30 min
     :param solint_partial_selfcal: interval for doing partial self-calibration in seconds. Default to 10 min.
@@ -347,6 +350,7 @@ def DD_selfcal(solar_ms, solint_full_selfcal=1800, solint_partial_selfcal=600, c
     :param partial_dd_selfcal_rounds: [rounds of phase-only selfcal, rounds of amp-phase selfcal]
             for partial selfcalibration runs
     :param logging_level: level of logging
+    
     :return: N/A
     """
 

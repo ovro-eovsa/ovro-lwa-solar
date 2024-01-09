@@ -27,6 +27,7 @@ def make_fullsky_image(msfile, imagename="allsky", imsize=4096, cell='2arcmin',
                        minuv=10,pol='I'):  ### minuv: minimum uv in lambda
     """
     Make all sky image with wsclean
+    
     :param msfile: path to CASA measurement set
     :param imagename: output image name
     :param imsize: size of the image in pixels
@@ -42,6 +43,7 @@ def make_fullsky_image(msfile, imagename="allsky", imsize=4096, cell='2arcmin',
 def get_solar_loc_pix(msfile, image="allsky"):
     """
     Get the x, y pixel location of the Sun from an all-sky image
+
     :param msfile: path to CASA measurement set
     :param image: all sky image made from the measurement set
     :return: pixel value in X and Y for solar disk center
@@ -64,6 +66,7 @@ def get_solar_loc_pix(msfile, image="allsky"):
 def get_nonsolar_sources_loc_pix(msfile, image="allsky", verbose=False, min_beam_val=1e-6):
     """
     Converting the RA & DEC coordinates of nonsolar sources to image coordinates in X and Y
+
     :param image: input CASA image
     :return: an updated directionary of strong sources with 'xpix' and 'ypix' added
     """
@@ -125,6 +128,7 @@ def gen_nonsolar_source_model(msfile, imagename="allsky", outimage=None, sol_are
                               remove_strong_sources_only=True, verbose=True, pol='I'):
     """
     Take the full sky image, remove non-solar sources from the image
+
     :param msfile: path to CASA measurement set
     :param imagename: input all sky image
     :param outimage: output all sky image without other sources
@@ -201,10 +205,12 @@ def remove_nonsolar_sources(msfile, imsize=4096, cell='2arcmin', minuv=0,
                             fast_vis_image_model_subtraction=False, delete_tmp_files=True):
     """
     Wrapping for removing the nonsolar sources from the solar measurement set
+
     :param msfile: input CASA measurement set
     :param imsize: size of the image in pixels
     :param cell: pixel scale
     :param minuv: minimum uv to consider for imaging (in # of wavelengths)
+
     :return: a CASA measurement set with non-solar sources removed. Default name is "*_sun_only.ms"
     """
     outms = msfile[:-3] + "_sun_only.ms"
