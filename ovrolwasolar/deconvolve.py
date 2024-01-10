@@ -92,7 +92,7 @@ def run_wsclean(msfile, imagename, size:int =4096, scale='2arcmin', fast_vis=Fal
 
         scale_num = 1.22*(3e8/freq)/telescope_size * 180/np.pi*3600 / pix_scale_factor
         scale = str(scale_num/60)+'arcmin'
-        size = int(im_fov/scale_num)
+        size = find_smallest_fftw_sz_number(im_fov/scale_num)
         logging.debug("Auto pixel scale: " + scale+ ", size: " + str(size)+ "pix, at freq:" + str(freq/1e6) + "MHz")
 
     default_kwargs['size']=str(size)+' '+str(size)
@@ -157,6 +157,28 @@ def run_wsclean(msfile, imagename, size:int =4096, scale='2arcmin', fast_vis=Fal
         logging.debug('Time taken for predicting the model column is {0:.1f} s'.format(time2-time1))
 
 
+def find_smallest_fftw_sz_number(n):
+    """
+    Find the smallest number that can be decomposed into 2,3,5,7
+    
+    :param n: input number
+    :return: the smallest number that can be decomposed into 2,3,5,7
+    """
+
+    max_a = int(np.ceil(np.log(n) / np.log(2)))
+    max_b = int(np.ceil(np.log(n) / np.log(3)))
+    max_c = int(np.ceil(np.log(n) / np.log(5)))
+    max_d = int(np.ceil(np.log(n) / np.log(7)))
+
+    smallest_fftw_sz = float('inf')
+    for a in range(max_a + 1):
+        for b in range(max_b + 1):
+            for c in range(max_c + 1):
+                for d in range(max_d + 1):
+                    fftw_sz = (2 ** a) * (3 ** b) * (5 ** c) * (7 ** d)
+                    if fftw_sz > n and fftw_sz < smallest_fftw_sz:
+                        smallest_fftw_sz = int(fftw_sz)
+    return smallest_fftw_sz
 
 
 def predict_model(msfile, outms, image="_no_sun",pol='I'):
