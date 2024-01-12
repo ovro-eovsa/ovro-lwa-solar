@@ -26,69 +26,123 @@ me = measures()
 cl = componentlist()
 msmd = msmetadata()
 
-def run_wsclean(msfile, imagename, imsize=4096, cell='2arcmin', uvrange='10', niter=10000,
-                mgain=0.8, do_automask=True, automask_thresh=8, do_autothresh=False, autothreshold_rms=3, 
-                predict=True, pol='I', fast_vis=False, intervals_out=None, field=None,**kwargs):  ### uvrange is in lambda units
+def run_wsclean(msfile, imagename, size:int =4096, scale='2arcmin', fast_vis=False, field=None,
+            predict=True, auto_pix_fov = False, telescope_size = 3200, im_fov=182*3600, pix_scale_factor=1.5,
+            **kwargs):  ### uvrange is in lambda units
     """
-    Wrapper for imaging using wsclean
+    Wrapper for imaging using wsclean, use the parameter of wsclean in args. 
+    
+    To be noted:
+
+    * replace '-' with '_' in the argument name), 
+    * The args without value is set to True or False, for example.
+    * add False to a key to remove it from the args list.
+
+    ``run_wsclean('OVRO-60MHz.MS', 'IMG-60MHz',  size=2048, niter=1000, mgain=0.9, no_reorder=True, predict=True)``
+    
     :param msfile: input CASA measurement set
     :param imagename: output image name
-    :param imsize: size of the image in pixels
-    :param cell: pixel scale
-    :param niter: number of iterations
-    :param uvrange: uvrange following tclean's syntax
-    :param do_automask: whether or not to do automask
-    :param do_autothresh: whether or not to use local RMS thresholding
-    :param mgain: maximum gain in each major cycle (during every major iteration, the peak is reduced by the given factor)
-    
-    Example of using kwargs
-    
-    kwargs={'channels-out':'10','spws':'5,6'}
-    deconvolve.run_wsclean(msfile,imagename=imagename,**kwargs)
+    :param size: (int) image size, default 4096
+    :param scale: pixel scale, default 2arcmin
+    :param fast_vis: if True, split the measurement set into multiple measurement sets, each containing one field
+    :param field: field ID to image, if fast_vis is True
+    :param predict: if True, predict the model visibilities from the image
+    :param auto_pix_fov: if True, automatically set the pixel scale to match the field of view
+    :param telescope_size: size of the telescope in meters, default 3200 (OVRO-LWA)
+    :param im_fov: field of view of the image in arcseconds, default 182*3600asec (full sky+ 2deg)
+    :param j: number of threads, default 4
+    :param weight: weighting scheme, default uniform
+    :param no_dirty: don't save dirty image, default True
+    :param niter: number of iterations, default 10000
+    :param mgain: maximum gain in each cycle, default 0.8
+    :param auto_threshold: auto threshold, default 3
+    :param auto_mask: auto mask, default 8
+    :param pol: polarization, default I
+    :param minuv_l: minimum uv distance in lambda, default 10
+    :param intervals_out: number of output images, default 1
+    :param no_reorder: don't reorder the channels, default True
     """
+
+
     logging.debug("Running WSCLEAN")
+    
+    default_kwargs={
+        'j':'4',                    # number of threads
+        'weight':'uniform',         # weighting scheme
+        'no_dirty':'',              # don't save dirty image
+        'no_update_model_required':'', # don't update model required
+        'no_negative':'',           # no negative gain for CLEAN
+        'niter':'10000',            # number of iterations
+        'mgain':'0.8',              # maximum gain in each cycle
+        'auto_threshold':'3',       # auto threshold
+        'auto_mask':'8',            # auto mask
+        'pol':'I',                  # polarization
+        'minuv_l':'10',             # minimum uv distance in lambda
+        'intervals_out':'1',        # number of output images
+        'no_reorder':'',            # don't reorder the channels
+        'beam_fitting_size':'2',    # beam fitting size
+    }
+
+    if auto_pix_fov:
+        msmd = msmetadata()
+        msmd.open(msfile)
+        freqcenter = msmd.chanfreqs(0)
+        msmd.close()
+        freq = np.median(freqcenter)
+
+        scale_num = 1.22*(3e8/freq)/telescope_size * 180/np.pi*3600 / pix_scale_factor
+        scale = str(scale_num/60)+'arcmin'
+        size = find_smallest_fftw_sz_number(im_fov/scale_num)
+        logging.debug("Auto pixel scale: " + scale+ ", size: " + str(size)+ "pix, at freq:" + str(freq/1e6) + "MHz")
+
+    default_kwargs['size']=str(size)+' '+str(size)
+    default_kwargs['scale']=scale
+
+    # remove the key if val is False from kwargs
+    for key, value in kwargs.items():
+        if value is False:
+            default_kwargs.pop(key, None)
+        elif value is True:
+            # Add the key with an empty string as value if True
+            default_kwargs[key] = ''
+        else:
+            default_kwargs[key] = str(value)
+
+
     if fast_vis==True:
         if field is None:
-           intervals_out=1
-           field='all'
-        else: 
-            intervals_out=len(field.split(','))
+            default_kwargs['intervals_out']='1'
+            default_kwargs['field']='all'
+        else:
+            default_kwargs["intervals_out"] =str(len(field.split(',')))
     else:
-        intervals_out=1
-        field='all'
-    if intervals_out!=1 and predict:
+        default_kwargs['intervals_out']='1'
+        default_kwargs['field']='all'
+    if default_kwargs['intervals_out']!='1' and predict:
         raise RuntimeError("Prediction cannot be done with multiple images.")
-        
-    if do_automask:
-        automask_handler = " -auto-mask " + str(automask_thresh)
-    else:
-        automask_handler = ""
-
-    if do_autothresh:
-        autothresh_handler = " -local-rms -auto-threshold " + str(autothreshold_rms)
-    else:
-        autothresh_handler = ""
-
+    
     time1 = timeit.default_timer()
 
-    cmd_str1=''
-    for cmd,val in zip(kwargs,kwargs.values()):
-        cmd_str1+='-'+cmd+" "+val+" "    
+    cmd_clean = "wsclean "
+    # Add additional arguments from default_params
+    for key, value in default_kwargs.items():
+        # Convert Python-style arguments to command line format
+        cli_arg = key.replace('_', '-')
+        cmd_clean += f" -{cli_arg} {value} " if value != '' else f" -{cli_arg} "
+
+    cmd_clean += " -name " + imagename + " " + msfile
     
-    os.system("wsclean -j 4 -no-dirty -no-update-model-required -no-negative -size " + str(imsize) + " " + \
-              str(imsize) + " -scale " + cell + " -weight uniform -minuv-l " + str(uvrange) + " -name " + imagename + \
-              " -niter " + str(niter) + " -mgain " + str(mgain) + \
-              automask_handler + autothresh_handler + \
-              " -beam-fitting-size 2 -pol " + pol + ' ' + "-intervals-out "+ \
-              str(intervals_out) + " -field " + field + " " + cmd_str1+msfile)
+    #TODO: put -weighting in free param
+
+    logging.debug(cmd_clean)
+    os.system(cmd_clean)
     
     for str1 in ['residual','psf']:
         os.system("rm -rf "+imagename+"*"+str1+"*.fits") 
     time2 = timeit.default_timer()
     logging.debug('Time taken for all sky imaging is {0:.1f} s'.format(time2-time1))
 
-    
-    if intervals_out!=1:
+    if default_kwargs['intervals_out']!='1':
         image_names=utils.get_fast_vis_imagenames(msfile,imagename,pol)
         for name in image_names:
             wsclean_imagename=name[0]
@@ -98,11 +152,34 @@ def run_wsclean(msfile, imagename, imsize=4096, cell='2arcmin', uvrange='10', ni
     if predict:
         logging.debug("Predicting model visibilities from " + imagename + " in " + msfile)
         time1 = timeit.default_timer()
-        os.system("wsclean -predict -pol "+pol+" "+ "-name " + imagename + " " + msfile)
+        os.system("wsclean -predict -pol "+default_kwargs['pol']+" "+ "-name " + imagename + " " + msfile)
         time2 = timeit.default_timer()
         logging.debug('Time taken for predicting the model column is {0:.1f} s'.format(time2-time1))
-        
-      
+
+
+def find_smallest_fftw_sz_number(n):
+    """
+    Find the smallest number that can be decomposed into 2,3,5,7
+    
+    :param n: input number
+    :return: the smallest number that can be decomposed into 2,3,5,7
+    """
+
+    max_a = int(np.ceil(np.log(n) / np.log(2)))
+    max_b = int(np.ceil(np.log(n) / np.log(3)))
+    max_c = int(np.ceil(np.log(n) / np.log(5)))
+    max_d = int(np.ceil(np.log(n) / np.log(7)))
+
+    smallest_fftw_sz = float('inf')
+    for a in range(max_a + 1):
+        for b in range(max_b + 1):
+            for c in range(max_c + 1):
+                for d in range(max_d + 1):
+                    fftw_sz = (2 ** a) * (3 ** b) * (5 ** c) * (7 ** d)
+                    if fftw_sz > n and fftw_sz < smallest_fftw_sz:
+                        smallest_fftw_sz = int(fftw_sz)
+    return smallest_fftw_sz
+
 
 def predict_model(msfile, outms, image="_no_sun",pol='I'):
     """

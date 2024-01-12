@@ -57,6 +57,9 @@ def get_solar_loc_pix(msfile, image="allsky"):
     head=fits.getheader(image)
     w = WCS(head)
     pix = skycoord_to_pixel(coord, w)
+    if np.isnan(pix[0]):
+        logging.warning('Sun is not in the image')
+        return None, None
     x = int(pix[0])
     y = int(pix[1])
     logging.debug('Pixel location of Sun is ' + str(x) + " " + str(y) + " in imagename " + image)
@@ -202,7 +205,7 @@ def gen_nonsolar_source_model(msfile, imagename="allsky", outimage=None, sol_are
     
 def remove_nonsolar_sources(msfile, imsize=4096, cell='2arcmin', minuv=0,
                             remove_strong_sources_only=True, pol='I', niter=50000, fast_vis=False, 
-                            fast_vis_image_model_subtraction=False, delete_tmp_files=True):
+                            fast_vis_image_model_subtraction=False, delete_tmp_files=True, auto_pix_fov=False):
     """
     Wrapping for removing the nonsolar sources from the solar measurement set
 
@@ -224,8 +227,9 @@ def remove_nonsolar_sources(msfile, imsize=4096, cell='2arcmin', minuv=0,
 
     tmpms = msfile[:-3] + "_nonsolar_subtracted.ms"
     if not fast_vis or (fast_vis and fast_vis_image_model_subtraction):
-        deconvolve.run_wsclean(msfile=msfile, imagename=tmpimg, imsize=imsize, cell=cell, uvrange=minuv, predict=False,
-                    automask_thresh=5, pol=pol, niter=niter)
+        deconvolve.run_wsclean(msfile=msfile, imagename=tmpimg, size=imsize,
+                            scale=cell, minuv_l=minuv, predict=False,
+                            auto_mask=5, pol=pol, niter=niter, auto_pix_fov=auto_pix_fov)
         image_nosun = gen_nonsolar_source_model(msfile, imagename=tmpimg,
                                                 remove_strong_sources_only=remove_strong_sources_only, pol=pol)
         deconvolve.predict_model(msfile, outms=tmpms, image=image_nosun, pol=pol)

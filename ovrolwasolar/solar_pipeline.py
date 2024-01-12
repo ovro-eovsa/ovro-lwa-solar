@@ -207,12 +207,12 @@ def image_ms(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagename='sun
         time1=timeit.default_timer()
         logging.info('Generating final solar centered image')
         if not fast_vis:
-            deconvolve.run_wsclean(outms, imagename=imagename, automask_thresh=5, uvrange='0', predict=False, 
-                                   imsize=imsize, cell=cell, pol=pol, fast_vis=fast_vis)
+            deconvolve.run_wsclean(outms, imagename=imagename, auto_mask=5, minuv_l='0', predict=False, 
+                                   size=imsize, scale=cell, pol=pol, fast_vis=fast_vis)
         else:
             num_fields=utils.get_total_fields(outms)
-            deconvolve.run_wsclean(outms, imagename=imagename, automask_thresh=5, uvrange='0', predict=False,
-                                   imsize=imsize, cell=cell, pol=pol, fast_vis=fast_vis, 
+            deconvolve.run_wsclean(outms, imagename=imagename, auto_mask=5, minuv_l='0', predict=False,
+                                   size=imsize , scale=cell, pol=pol, fast_vis=fast_vis, 
                                    field=','.join([str(i) for i in range(num_fields)]))
         
         utils.correct_primary_beam(outms, imagename, pol=pol, fast_vis=fast_vis)
@@ -249,7 +249,8 @@ def image_ms_quick(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagenam
              imsize=1024, cell='1arcmin', logfile='analysis.log', logging_level='info',
              caltable_folder='caltables/', num_phase_cal=1, num_apcal=1, freqbin=4,
              do_fluxscaling=False, do_final_imaging=True, pol='I', delete=True,
-             refant='202', niter0=600, niter_incr=200, overwrite=False):
+             refant='202', niter0=600, niter_incr=200, overwrite=False,
+             auto_pix_fov=False):
     """
     Pipeline to calibrate and imaging a solar visibility. 
     This is the version that optimizes the speed with a somewhat reduced image dynamic range.
@@ -287,7 +288,7 @@ def image_ms_quick(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagenam
         mstime_str = utils.get_timestr_from_name(solar_ms)
         success = utils.put_keyword(solar_ms, 'di_selfcal_time', mstime_str, return_status=True)
         success = selfcal.do_selfcal(solar_ms, num_phase_cal=num_phase_cal, num_apcal=num_apcal, logging_level=logging_level, pol=pol,
-            refant=refant, niter0=niter0, niter_incr=niter_incr, caltable_folder=caltable_folder)
+            refant=refant, niter0=niter0, niter_incr=niter_incr, caltable_folder=caltable_folder, auto_pix_fov=auto_pix_fov)
         outms_di = solar_ms[:-3] + "_selfcalibrated.ms"
         if do_fluxscaling:
             logging.debug('Doing a flux scaling using background strong sources')
@@ -320,7 +321,8 @@ def image_ms_quick(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagenam
     time1=time2
     if do_final_imaging:
         logging.debug('Generating final solar centered image')
-        deconvolve.run_wsclean(outms, imagename=imagename, automask_thresh=5, uvrange='0', predict=False, imsize=imsize, cell=cell,pol=pol)
+        deconvolve.run_wsclean(outms, imagename=imagename, auto_mask=5, minuv_l='0', predict=False, 
+                               size=imsize, scale=cell, pol=pol)
         logging.debug('Correcting for the primary beam at the location of Sun')
         utils.correct_primary_beam(outms, imagename, pol=pol)
         for n,pola in enumerate(['I','Q','U','V','XX','YY']):
@@ -432,6 +434,7 @@ def apply_solutions_and_image(msname, bcal, imagename):
     outms = solar_ms[:-3] + "_sun_selfcalibrated.ms"
     outms = source_subtraction.remove_nonsolar_sources(outms, remove_strong_sources_only=False)
     change_phasecenter(outms)
-    deconvolve.run_wsclean(outms, imagename=imagename, automask_thresh=5, uvrange='0', predict=False, imsize=1024, cell='1arcmin')
+    deconvolve.run_wsclean(outms, imagename=imagename, auto_mask=5, minuv_l='0', predict=False, 
+                           size=1024, scale='1arcmin')
     utils.correct_primary_beam(outms, imagename + "-image.fits")
     logging.info('Imaging completed for ' + msname)
