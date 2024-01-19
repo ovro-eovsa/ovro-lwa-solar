@@ -5,6 +5,7 @@ from casatools import image, table, msmetadata, quanta, measures
 import numpy as np
 import logging, glob
 from . import primary_beam
+from casatasks import split
 from .primary_beam import analytic_beam as beam 
 from .generate_calibrator_model import model_generation
 from . import generate_calibrator_model
@@ -432,4 +433,5 @@ def correct_primary_beam(msfile, imagename, pol='I', fast_vis=False):
                 hdu.flush()
                 hdu.close()
     return
+    
 

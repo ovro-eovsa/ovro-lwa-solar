@@ -1,4 +1,3 @@
-import numpy as np
 import math,os,logging
 from casatasks import clearcal, ft
 from casatools import table, measures, componentlist, msmetadata
