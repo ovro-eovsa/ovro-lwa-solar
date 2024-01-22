@@ -184,3 +184,129 @@ def squint_correction(msname,caltable_folder='squint_correction',output_ms=None)
         os.system("rm -rf "+ms1+".flagversions")
     
     return output_ms 
+
+def correct_Q_leakage(msname,factor, inplace=False, outms=None):
+    '''
+    This function implements a constant leakage correction for Q
+    visibilities. If corrected data column is present, the corrected
+    column is modified. If not, datacolumn is modified. However if
+    inplace is set to False, then a MS is split and then the correction
+    is done. The correction factor should be determined as
+    
+    Qfrac_beam-Qfrac_observed
+    
+    :param msname: MS to be corrected
+    :type param: str
+    :param factor: Correction factor
+    :type factor: float
+    :param inplace: Determines whether correction will be done inplace; optional
+                    default: False, which means, by default the input MS will not be
+                    modified.
+    :type inplace: Boolean
+    :param outms: If inplace is False, then outms is created and the data is modified.
+    :type outms: str
+    '''  
+    
+      
+    if outms is None:
+        outms=msname.replace(".ms","_Qleak_corrected.ms")
+    
+    present=utils.check_corrected_data_present(msname)
+    if present:
+        datacolumn='CORRECTED'
+    else:
+        datacolumn='DATA'
+        
+    if not inplace:
+        split(vis=msname,outputvis=outms,datacolumn=datacolumn)
+        datacolumn='DATA'
+        msname=outms
+    
+    if datacolumn=='CORRECTED':
+        datacolumn='CORRECTED_DATA'
+    
+    success=False
+    tb=table()
+    tb.open(msname,nomodify=False)
+    try:
+        data=tb.getcol(datacolumn)
+        data[0,...]+=0.25*factor*(data[0,...]+data[3,...])
+        data[3,...]+=-0.25*factor*(data[0,...]+data[3,...])
+        tb.putcol(datacolumn,data)
+        tb.flush()
+        success=True
+    except:
+        pass
+    finally:
+        tb.close()
+    
+    if not success:
+        logging.warning("Image based leakage correction of Stokes Q "+\
+                        "was not successfull. Please proceed with caution.")
+    return msname
+ 
+    
+        
+    
+    
+    
+def image_based_leakage_correction(msname,stokes='Q,U,V',factor=None,outms=None):
+    '''
+    This function implements an image based leakage correction.
+    However, note that this function does not determine the factor
+    by which the correction is done. It expects that the factor will
+    be provided. By default he factor is None, which means nothing will be
+    done. The order of the stokes parameters should be same as the order in
+    which the correction factors are provided. The factors should be determined
+    as follows:
+    
+    Qfrac_beam-Qfrac_observed
+    Ufrac_beam-Ufrac_observed
+    Vfrac_beam-Vfrac_observed
+    
+    :param msname: MS which has the data to be corrected
+    :type msname: str
+    :param stokes: Stokes parameters for which image based leakage correction
+                    will be done; example "Q,U,V"
+    :type stokes: str
+    :param factor: the correction factor. Should in units of I. Should be a list
+    :type factor: float
+    :param outms: Name of output MS; optional
+    :type outms: str
+    '''
+    
+    if outms is None:
+        outms=msname.replace(".ms","_image_leak_corrected.ms")
+    
+    present=utils.check_corrected_data_present(msname)
+    if present:
+        datacolumn='CORRECTED'
+    else:
+        datacolumn='DATA'
+    
+    split(vis=msname,outputvis=outms,datacolumn=datacolumn)
+    
+    if factor is None:
+        return outms
+    
+    ind_stokes=stokes.split(',') ### contains the individual stokes parameters
+    num_stokes=len(ind_stokes)
+    
+    if num_stokes!=len(factor):
+        logging.warning("The length of correction factor does not "+\
+                        "match the number of stokes parameters given."+\
+                        " I will assume all reamining correction factors "+\
+                        "to be zero. Please proceed with caution")
+    
+    
+    
+    for j,pol in enumerate(ind_stokes):
+        if pol=='Q':
+            correct_Q_leakage(outms,factor[j],inplace=True)
+        if pol=='U':
+            correct_U_leakage(outms,factor[j])
+        if pol=='V':
+            correct_V_leakage(outms,factor[j])
+    return
+    
+    
