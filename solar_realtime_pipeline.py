@@ -140,7 +140,10 @@ def list_msfiles(intime, lustre=True, file_path='slow', server=None, time_interv
         processes=[]
         for b in bands:
             pathstr = '/lustre/pipeline/{0:s}/{1:s}/{2:s}/{3:s}/'.format(file_path, b, datestr, hourstr)
-            cmd = 'ls ' + pathstr + ' | grep ' + tstr
+            if server:
+                cmd = 'ssh ' + server + ' ls ' + pathstr + ' | grep ' + tstr
+            else:
+                cmd = 'ls ' + pathstr + ' | grep ' + tstr
             p = subprocess.Popen(cmd, stdout=subprocess.PIPE, shell=True)
             processes.append(p)
             filenames = p.communicate()[0].decode('utf-8').split('\n')[:-1]
@@ -150,7 +153,7 @@ def list_msfiles(intime, lustre=True, file_path='slow', server=None, time_interv
                     tmpstr = filename[:15].replace('_', 'T')
                     timestr = tmpstr[:4] + '-' + tmpstr[4:6] + '-' + tmpstr[6:11] + ':' + tmpstr[11:13] + ':' + tmpstr[13:]
                     freqstr = filename[16:21]
-                    msfiles.append({'path': filestr, 'name': filename, 'time': timestr, 'freq': freqstr})
+                    msfiles.append({'server':server, 'path': filestr, 'name': filename, 'time': timestr, 'freq': freqstr})
     else:
         if server:
             cmd = 'ssh ' + server + ' ls ' + file_path + ' | grep ' + tstr
@@ -164,25 +167,29 @@ def list_msfiles(intime, lustre=True, file_path='slow', server=None, time_interv
                 tmpstr = filename[:15].replace('_', 'T')
                 timestr = tmpstr[:4] + '-' + tmpstr[4:6] + '-' + tmpstr[6:11] + ':' + tmpstr[11:13] + ':' + tmpstr[13:]
                 freqstr = filename[16:21]
-                msfiles.append({'path': pathstr, 'name': filename, 'time': timestr, 'freq': freqstr})
+                msfiles.append({'server': server, 'path': pathstr, 'name': filename, 'time': timestr, 'freq': freqstr})
     return msfiles
 
 def download_msfiles(msfiles, destination='/fast/bin.chen/20231014_eclipse/slow_working/', bands=None, verbose=True):
     """
     Parallelized downloading for msfiles returned from list_msfiles() to a destination.
     """
+    inmsfiles_server = [f['server'] for f in msfiles]
     inmsfiles_path = [f['path'] for f in msfiles]
     inmsfiles_name = [f['name'] for f in msfiles]
     inmsfiles_band = [f['freq'] for f in msfiles]
+    omsfiles_server = []
     omsfiles_path = []
     omsfiles_name = []
     if bands is None:
+        omsfiles_server = inmsfiles_server
         omsfiles_path = inmsfiles_path
         omsfiles_name = inmsfiles_name
     else:
         for bd in bands:
             if bd in inmsfiles_band:
                 idx = inmsfiles_band.index(bd)
+                omsfiles_server.append(inmsfiles_server[idx])
                 omsfiles_path.append(inmsfiles_path[idx])
                 omsfiles_name.append(inmsfiles_name[idx])
 
@@ -194,8 +201,12 @@ def download_msfiles(msfiles, destination='/fast/bin.chen/20231014_eclipse/slow_
     if verbose:
         print('I am going to download {0:d} files'.format(nfile))
     processes = []
-    for f in omsfiles_path:
-        p = subprocess.Popen(shlex.split('rsync -az --numeric-ids --info=progress2 --no-perms --no-owner --no-group {0:s} {1:s}'.format(f, destination)))
+    for i, f in enumerate(omsfiles_path):
+        if omsfiles_server[i]:
+            s = omsfiles_server[i]
+            p = subprocess.Popen(shlex.split('rsync -az --numeric-ids --info=progress2 --no-perms --no-owner --no-group {0:s}:{1:s} {2:s}'.format(s, f, destination)))
+        else:
+            p = subprocess.Popen(shlex.split('rsync -az --numeric-ids --info=progress2 --no-perms --no-owner --no-group {0:s} {1:s}'.format(f, destination)))
         processes.append(p)
 
     for p in processes:
@@ -209,7 +220,7 @@ def download_msfiles(msfiles, destination='/fast/bin.chen/20231014_eclipse/slow_
 
 
 def download_timerange(starttime, endtime, download_interval='1min', destination='/fast/bin.chen/20231027/slow/', 
-                file_path='slow', bands=None, verbose=True):
+                server=None, file_path='slow', bands=None, verbose=True):
     t_start = Time(starttime)
     t_end = Time(endtime)
     print('Start time: ', t_start.isot)
@@ -228,7 +239,7 @@ def download_timerange(starttime, endtime, download_interval='1min', destination
     for i in range(nt):
         intime = t_start + i * dt
         #msfiles = list_msfiles(intime, distributed=distributed, file_path=file_path, nodes=nodes, time_interval='10s')
-        msfiles = list_msfiles(intime, file_path=file_path, time_interval='10s')
+        msfiles = list_msfiles(intime, server=server, file_path=file_path, time_interval='10s', bands=bands)
         if verbose:
             print('Downloading time ', intime.isot)
         download_msfiles(msfiles, destination=destination, bands=bands, verbose=verbose)
