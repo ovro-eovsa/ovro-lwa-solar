@@ -321,7 +321,7 @@ def run_imager(msfile_slfcaled, imagedir_allch=None, ephem=None, nch_out=12):
         jones_matrices = pb.get_source_pol_factors(pb.jones_matrices[0,:,:])
         sclfactor = 1. / jones_matrices[0][0]
         helio_imagename = imagedir_allch + os.path.basename(msfile_slfcaled).replace('.ms','.sun') 
-        default_wscleancmd = ("wsclean -j 4 -mem 10 -no-reorder -no-dirty -size 1024 1024 -scale 1arcmin -weight briggs -0.5 -minuv-l 10 -auto-threshold 3 -name " + 
+        default_wscleancmd = ("wsclean -j 4 -mem 2 -no-reorder -no-dirty -size 1024 1024 -scale 1arcmin -weight briggs -0.5 -minuv-l 10 -auto-threshold 3 -name " + 
                 helio_imagename + " -niter 10000 -mgain 0.8 -beam-fitting-size 1 -pol I -join-channels -channels-out " + str(nch_out) + ' ' + msfile_slfcaled)
  
         os.system(default_wscleancmd)
@@ -599,12 +599,6 @@ def pipeline_quick(image_time=Time.now() - TimeDelta(20., format='sec'), server=
                     empty_map = pmX.Sunmap(empty_map_)
                     im = empty_map.imshow(axes=ax, cmap='hinodexrt', vmin=0, vmax=1.)
                     empty_map.draw_limb(ls='-', color='w', alpha=0.5)
-
-                    bmaj,bmin,bpa = meta['cbmaj'][bd],meta['cbmin'][bd],meta['cbpa'][bd]
-                    beam0 = Ellipse((-fov/2*0.75, -fov/2*0.75), bmaj*3600,
-                            bmin*3600, angle=(-(90-bpa)),  fc='None', lw=2, ec='w')
-                    
-                    ax.add_artist(beam0)
 
                     cbar = plt.colorbar(im)
                     cbar.set_label(r'$T_B$ (MK)')
