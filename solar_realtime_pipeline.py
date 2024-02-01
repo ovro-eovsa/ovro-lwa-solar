@@ -599,13 +599,6 @@ def pipeline_quick(image_time=Time.now() - TimeDelta(20., format='sec'), server=
                     empty_map = pmX.Sunmap(empty_map_)
                     im = empty_map.imshow(axes=ax, cmap='hinodexrt', vmin=0, vmax=1.)
                     empty_map.draw_limb(ls='-', color='w', alpha=0.5)
-
-                    bmaj,bmin,bpa = meta['cbmaj'][bd],meta['cbmin'][bd],meta['cbpa'][bd]
-                    beam0 = Ellipse((-fov/2*0.75, -fov/2*0.75), bmaj*3600,
-                            bmin*3600, angle=(-(90-bpa)),  fc='None', lw=2, ec='w')
-                    
-                    ax.add_artist(beam0)
-
                     cbar = plt.colorbar(im)
                     cbar.set_label(r'$T_B$ (MK)')
                     ax.text(0.02, 0.98, '{0:.0f} MHz (no data)'.format(freq_plt), color='w', ha='left', va='top', fontsize=12, transform=ax.transAxes)
