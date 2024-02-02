@@ -35,7 +35,7 @@ def make_fullsky_image(msfile, imagename="allsky", imsize=4096, cell='2arcmin',
     :param minuv: minimum uv to consider for imaging (in # of wavelengths)
     :return: produces wsclean images (fits), PSF, etc.
     """
-    os.system("wsclean -no-update-model-required -weight uniform" +
+    os.system("wsclean -j 4 -mem 2 -no_reorder -no-update-model-required -weight uniform" +
               " -name " + imagename + " -size " + str(imsize) + " " + str(imsize) + " -scale " + cell +
               " -minuv-l " + str(minuv) + " -niter 1000 -pol "+pol+' '+ msfile)
 

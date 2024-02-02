@@ -51,6 +51,7 @@ def run_wsclean(msfile, imagename, size:int =4096, scale='2arcmin', fast_vis=Fal
     :param telescope_size: size of the telescope in meters, default 3200 (OVRO-LWA)
     :param im_fov: field of view of the image in arcseconds, default 182*3600asec (full sky+ 2deg)
     :param j: number of threads, default 4
+    :param mem: fraction of max memory usage, default 2 
     :param weight: weighting scheme, default uniform
     :param no_dirty: don't save dirty image, default True
     :param niter: number of iterations, default 10000
@@ -68,6 +69,7 @@ def run_wsclean(msfile, imagename, size:int =4096, scale='2arcmin', fast_vis=Fal
     
     default_kwargs={
         'j':'4',                    # number of threads
+        'mem':'2',                 # fraction of memory usage
         'weight':'uniform',         # weighting scheme
         'no_dirty':'',              # don't save dirty image
         'no_update_model_required':'', # don't update model required
@@ -79,7 +81,7 @@ def run_wsclean(msfile, imagename, size:int =4096, scale='2arcmin', fast_vis=Fal
         'pol':'I',                  # polarization
         'minuv_l':'10',             # minimum uv distance in lambda
         'intervals_out':'1',        # number of output images
-        'no_reorder':'',            # don't reorder the channels
+        'no-reorder':'',            # don't reorder the channels
         'beam_fitting_size':'2',    # beam fitting size
     }
 
@@ -152,7 +154,7 @@ def run_wsclean(msfile, imagename, size:int =4096, scale='2arcmin', fast_vis=Fal
     if predict:
         logging.debug("Predicting model visibilities from " + imagename + " in " + msfile)
         time1 = timeit.default_timer()
-        os.system("wsclean -predict -pol "+default_kwargs['pol']+" "+ "-name " + imagename + " " + msfile)
+        os.system("wsclean -j 4 -mem 2 -no-reorder -predict -pol "+default_kwargs['pol']+" "+ "-name " + imagename + " " + msfile)
         time2 = timeit.default_timer()
         logging.debug('Time taken for predicting the model column is {0:.1f} s'.format(time2-time1))
 
@@ -192,7 +194,7 @@ def predict_model(msfile, outms, image="_no_sun",pol='I'):
     """
     os.system("cp -r " + msfile + " " + outms)
     clearcal(outms, addmodel=True)
-    os.system("wsclean -predict -pol "+pol+" -name " + image + " " + outms)
+    os.system("wsclean -j 4 -mem 2 -no-reorder -predict -pol "+pol+" -name " + image + " " + outms)
 
 
 
