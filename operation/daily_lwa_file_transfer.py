@@ -30,11 +30,10 @@ def copy_daily_fits(timestr, server='calim7', remote_fits_dir='/lustre/bin.chen/
         dd = daystr[8:10]
         remotefolder = remote_fits_dir + '/' + yyyy + '/' + mm + '/' + dd
         command = 'ssh {0:s} ls {1:s} | grep fits'.format(server, remotefolder)
-        print(command)
         p = subprocess.run(shlex.split(command), capture_output=True)
         filenames = p.stdout.decode('utf-8').split('\n')[:-1]
         nfiles = len(filenames)
-        print('Found {0:d} fits files under {1:s}:{2:s}'.format(nfiles, server, remotefolder))
+        print('{0:s}: Found {1:d} fits files under {2:s}:{3:s}'.format(Time.now().iso[:19], nfiles, server, remotefolder))
         if nfiles > 0:
             localfolder = local_fits_dir + '/' + yyyy + '/' + mm + '/' + dd
             if not os.path.exists(localfolder):
