@@ -156,7 +156,7 @@ def squint_correction(msname,caltable_folder='squint_correction',output_ms=None)
     success = utils.put_keyword(outms, 'di_selfcal_time', mstime_str, return_status=True)
     ### The above two lines are needed to keep the code consistent with DI and DD selfcal
     success=selfcal.do_selfcal(outms,num_phase_cal=1,num_apcal=0,applymode='calonly',\
-                                caltable_folder=caltable_folder)
+                                caltable_folder=caltable_folder,bandpass_selfcal=True)
     if not success:
         logging.error("Squint correction was not successfull")
         raise RuntimeError("Squint correction was not successfull")
