@@ -6,10 +6,13 @@ import numpy as np
 import logging, glob
 from . import primary_beam
 from casatasks import split
-from .primary_beam import analytic_beam as beam 
+from .primary_beam import woody_beam as beam 
 from . import utils
 from . import generate_calibrator_model
 from . import selfcal
+import bdsf
+from astropy import units as u
+from astropy.coordinates import AltAz
 
 
 def get_corr_type(msname):
@@ -184,6 +187,117 @@ def squint_correction(msname,caltable_folder='squint_correction',output_ms=None)
         os.system("rm -rf "+ms1+".flagversions")
     
     return output_ms 
+
+def detect_sources(imagename,adaptive_rms=True,thresh_pix=10,thresh_isl=8,imfcat=None, overwrite=False):
+    if imgcat is None:
+        imgcat=imagename.replace("-image.fits",".pybdsf")
+
+    if not os.path.isfile(imgcat) or overwrite:
+        outputs=bdsf.process_image(imagename,adaptive_rms=adaptive_rms,\
+                                thresh_pix=thresh_pix,thresh_isl=thresh_isl)
+    
+        outputs.write_catalog(outfile=imgcat,format='csv',catalog_type='srl',clobber=overwrite)
+        logging.debug("Catalogue of sources found by PyBDSF is written to ",imgcat)
+    else:
+        logging.debug("Catalogue file not written because the file existed and user does not want to overwrite")
+    end=timeit.default_timer()
+    print (end-start)    
+    return imgcat
+    
+def read_pybdsf_output(imgcat):
+    img_data=pd.read_csv(imgcat,skiprows=5,sep=', ',engine='python')
+    img_ra=img_data['RA']
+    img_dec=img_data['DEC']
+    s_code=img_data['S_Code']
+    img_flux=img_data['Total_flux']
+    return img_ra,img_dec,s_code,img_flux
+    
+def convert_to_altaz(img_coord,obstime,observer='ovro'):
+    '''
+    img_coord should be Astropy sky coordinates
+    observer will be passed to EarthLocation.of_site. If it
+    fails we assume that obbserver is already a Astropy Earth
+    location.
+    '''
+    try:
+        ovro_loc = EarthLocation.of_site('ovro')
+    except:
+        ovro_loc=observer
+    
+    
+    aa = AltAz(location=observing_location, obstime=obstime)
+    coord1=img_coord.transform_to(aa)
+    return coord1.alt.value, coord1.az.value
+    
+def get_beam_factors(alt,az,freq):
+    '''
+    alt,az is degrees
+    freq in MHz
+    '''
+    beamfac=beam(freq=freq)    
+    beamfac.srcjones(az=az,el=alt)
+    num_source=len(alt)
+    factors=np.zeros((num_source,4))
+    for i in range(num_source):
+        pol_fac=beamfac.get_source_pol_factors(beamfac.jones_matrices[i,:,:])
+        factors[i,0]=0.5*(pol_fac[0,0]+pol_fac[1,1])
+        factors[i,1]=0.5*(pol_fac[0,0]-pol_fac[1,1])
+        factors[i,2]=0.5*(pol_fac[0,1]+pol_fac[1,0])
+        factors[i,3]=1j*0.5*(pol_fac[0,1]-pol_fac[1,0])
+    return factors
+    
+def generate_polarised_skymodel(imagename,imgcat=None): 
+    '''
+    imagename should be standard WSclean format. Ensure that imagename-{I,Q,U,V}-image.fits
+    and -model.fits exist
+    '''
+    
+    imgcat= detect_sources(imagename)
+    img_ra,img_dec,s_code,img_flux=read_pybdsf_output(imgcat)
+    pos=np.where((np.isnan(img_ra)==False) & (np.isnan(img_dec)==False) & (s_code=='S'))[0]
+
+    img_ra=np.array(img_ra[pos])
+    img_dec=np.array(img_dec[pos])
+    img_flux=np.array(img_flux[pos]) 
+    
+    
+    num_sources=len(img_ra)
+    
+    img_coord=SkyCoord(img_ra*u.degree,img_dec*u.degree,frame='icrs')   
+    
+    head=fits.getheader(imagename)
+    obstime=Time(head['DATE-OBS'])
+    
+    
+    alt,az=convert_to_altaz(img_coord,obstime)
+    
+    freq=head['CRVAL3']*1e-6
+    
+    factors=get_beam_factors(alt,az,freq=freq)
+    
+    imwcs=WCS(head)
+    img_xy = imwcs.all_world2pix(list(zip(img_ra, img_dec,[header['CRVAL3']]*num_sources,[header['CRVAL4']]*num_sources)), 1)
+    
+
+    for j,stokes in enumerate(['Q','U','V']):
+        image=imagename+'-'+stokes+"-.model.fits"
+        hdu=fits.open(image,mode='update')
+        try:
+            data=hdu[0].data
+            data*=0.0
+            for i in range(num_sources):
+                x=img_xy[i,0]
+                y=img_xy[i,1]
+                data[y,x,0,0]=img_flux[i]*factors[i,j+1]
+            hdu[0].data=data
+            hdu.flush()
+        finally:
+            hdu.close()
+
+       
+            
+                              
+    
 
 def correct_Q_leakage(msname,factor, inplace=False, outms=None):
     '''
