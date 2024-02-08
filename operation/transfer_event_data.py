@@ -35,7 +35,7 @@ def download_data(t_start, t_end, destdir='/nas6/ovro-lwa-data/', interval='10s'
     # Format the date string for the destination path
     datestr = t_start.split('T')[0].replace('-', '')
     
-    destination_path = destdir + datestr + '/'
+    destination_path = destdir + datestr + '/' + slowfast + '/'
     Path(destination_path).mkdir(parents=True, exist_ok=True)  # Ensure the destination directory exists
     
     sp.download_timerange(Time(t_start), Time(t_end), 
