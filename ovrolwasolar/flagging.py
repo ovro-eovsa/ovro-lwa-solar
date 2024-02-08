@@ -352,3 +352,102 @@ def flag_bad_ants(msfile, antflagfile=None, datacolumn='DATA', thresh_core=1.0, 
         print("No flag is found. Do nothing")
     return antflagfile
 
+
+def perform_baseline_flagging(msfile,verbose=False,n_clusters = 128):
+    """
+    Perform baseline flagging using KMeans clustering and outlier removal
+
+    :param msfile: path to CASA measurement set
+    :param verbose: if True, print the percentage of flagged data
+    :param n_clusters: number of clusters to use for KMeans clustering
+    """
+
+
+    tb = table()
+    msmd = msmetadata()
+    tb.open(msfile)
+    msmd.open(msfile)
+
+    visibility_data = tb.getcol('DATA')
+
+    # Extract UVW Column
+    uvw_data = tb.getcol('UVW')
+
+    u_col = uvw_data[0, :]
+    v_col = uvw_data[1, :]
+    w_col = uvw_data[2, :]
+
+    # Extract FLAG Column
+    flag_data = tb.getcol('FLAG')
+    new_flag_data = flag_data.copy()
+
+    # Close the table
+    tb.close()
+
+    # flag the autocorr
+    flag_data[:,:,np.sqrt(u_col**2+v_col**2)<1] = True
+    if verbose:
+        print("Previously flagged {}% of the data".format(np.sum(flag_data)/flag_data.size*100))   
+
+
+    uv_data = np.column_stack((u_col, v_col))
+    kmeans = KMeans(n_clusters=n_clusters, random_state=0).fit(uv_data)
+    labels = kmeans.labels_
+
+
+    n_ch = visibility_data.shape[1]
+
+    for ch_idx in range(n_ch):
+        flg_1col = flag_data[0,ch_idx,:]
+
+        stokes_I = 0.5 * (visibility_data[0,ch_idx,:] + visibility_data[3,ch_idx,:])
+        Stokes_I_amp = np.abs(stokes_I)
+
+
+        # repeat the process to remove the outliers for each cluster
+
+        u_collect_after_rm_outliers = []
+        v_collect_after_rm_outliers = []
+        stokes_I_collect_after_rm_outliers = []
+
+        u_outliers = []
+        v_outliers = []
+        stokes_I_outliers = []
+
+        outlier_idx = []
+
+        for i in range(n_clusters):
+            this_label_idx = np.where(labels == i)
+            goodvis_this_label_idx = np.where(~flg_1col[this_label_idx])[0]
+            u_col_this_label = u_col[this_label_idx][goodvis_this_label_idx]
+            v_col_this_label = v_col[this_label_idx][~goodvis_this_label_idx]
+
+            if goodvis_this_label_idx.shape[0] > 100:
+                stokes_I_this_label = Stokes_I_amp[this_label_idx][goodvis_this_label_idx]
+                Q1 = np.percentile(stokes_I_this_label, 25)
+                Q3 = np.percentile(stokes_I_this_label, 75)
+                IQR = Q3 - Q1
+                outlier_step = 1.5 * IQR
+                outlier_list_col = ((stokes_I_this_label < Q1 - outlier_step) | (stokes_I_this_label > Q3 + outlier_step))
+                u_collect_after_rm_outliers.append(u_col_this_label[~outlier_list_col])
+                v_collect_after_rm_outliers.append(v_col_this_label[~outlier_list_col])
+                stokes_I_collect_after_rm_outliers.append(stokes_I_this_label[~outlier_list_col])
+                u_outliers.append(u_col_this_label[outlier_list_col])
+                v_outliers.append(v_col_this_label[outlier_list_col])
+                stokes_I_outliers.append(stokes_I_this_label[outlier_list_col])
+                outlier_idx.append(this_label_idx[0][goodvis_this_label_idx[outlier_list_col]])
+
+            
+        u_collect_after_rm_outliers = np.concatenate(u_collect_after_rm_outliers)
+        v_collect_after_rm_outliers = np.concatenate(v_collect_after_rm_outliers)
+        stokes_I_collect_after_rm_outliers = np.concatenate(stokes_I_collect_after_rm_outliers)
+
+        u_outliers = np.concatenate(u_outliers)
+        v_outliers = np.concatenate(v_outliers)
+        stokes_I_outliers = np.concatenate(stokes_I_outliers)
+        outlier_idx = np.concatenate(outlier_idx)
+
+        new_flag_data[0,ch_idx,outlier_idx] = True
+    
+    return new_flag_data
+
