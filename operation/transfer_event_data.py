@@ -21,10 +21,14 @@ def parse_arguments():
                         help='Destination directory for the downloaded data')
     parser.add_argument('--interval', type=str, default='10s',
                         help='Download interval (e.g., 10s, 1min, 10min)')
+    parser.add_argument('--slowfast', type=str, default='slow',
+                        help='Download slow or fast data')
+    parser.add_argument('--maxthread', type=int, default=5,
+                        help='Maximum number of threads for downloading data')
     
     return parser.parse_args()
 
-def download_data(t_start, t_end, destdir='/nas6/ovro-lwa-data/', interval='10s'):
+def download_data(t_start, t_end, destdir='/nas6/ovro-lwa-data/', interval='10s', slowfast='slow', maxthread=5):
     """
     Download LWA data for the given time range.
     """
@@ -35,8 +39,8 @@ def download_data(t_start, t_end, destdir='/nas6/ovro-lwa-data/', interval='10s'
     Path(destination_path).mkdir(parents=True, exist_ok=True)  # Ensure the destination directory exists
     
     sp.download_timerange(Time(t_start), Time(t_end), 
-                          file_path='slow', download_interval=interval, destination=destination_path, 
-                          server='calim7', maxthread=5, bands=BANDS)
+                          file_path=slowfast, download_interval=interval, destination=destination_path, 
+                          server='calim7', maxthread=maxthread, bands=BANDS)
 
 if __name__ == "__main__":
 
@@ -50,4 +54,4 @@ if __name__ == "__main__":
     """
 
     args = parse_arguments()
-    download_data(args.t_start, args.t_end, args.destdir, args.interval)
+    download_data(args.t_start, args.t_end, args.destdir, args.interval, args.slowfast, args.maxthread)
