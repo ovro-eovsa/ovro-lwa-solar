@@ -182,14 +182,13 @@ def get_freqstr_from_name(msname):
 
 def get_selfcal_time_to_apply(msname, caltables):
     mstime = get_time_from_name(msname)
-    times = np.unique(np.array(['_'.join(i.split('/')[1].split('_')[0:2]) for i in caltables]))
+    times = np.unique(np.array(['_'.join(os.path.basename(i).split('_')[0:2]) for i in caltables]))
 
     if len(times) > 0:
         sep = np.zeros(len(times))
         for n, t1 in enumerate(times):
             caltime = get_time_from_name(t1)
             sep[n] = abs((caltime - mstime).value * 86400)
-
         time_to_apply = times[np.argsort(sep)[0]]
         return time_to_apply
     return 'none'

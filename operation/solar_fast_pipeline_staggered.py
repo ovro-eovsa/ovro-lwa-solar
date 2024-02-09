@@ -6,8 +6,9 @@ import os, sys, glob, getopt
 #sys.path.append('/opt/devel/bin.chen/ovro-lwa-solar')
 from ovrolwasolar import solar_pipeline as sp
 from ovrolwasolar.primary_beam import analytic_beam as beam
+from ovrolwasolar import calibration, flagging
 from ovrolwasolar import utils,deconvolve
-from casatasks import clearcal, applycal, flagdata, tclean, exportfits, imsubimage
+from casatasks import clearcal, applycal, flagdata, tclean, exportfits, imsubimage,applycal,ft, uvsub
 from casatools import msmetadata, quanta, measures
 from suncasa.utils import helioimage2fits as hf
 from suncasa.io import ndfits
@@ -31,6 +32,8 @@ from time import sleep
 import socket
 from matplotlib.patches import Ellipse
 import argparse
+from ovrolwasolar.generate_calibrator_model import model_generation
+
 matplotlib.use('agg')
 
 msmd = msmetadata()
@@ -260,50 +263,92 @@ def download_timerange(starttime, endtime, download_interval='1min', destination
         print('====Downloading all {0:d} times took {1:.1f} s===='.format(nt, time_completed-time_bg))
 
 
-def run_calib(msfile, msfiles_cal=None, bcal_tables=None, do_selfcal=True, num_phase_cal=0, num_apcal=1, caltable_folder=None, logger_file=None, visdir_slfcaled=None):
+def run_calib(msfile, msfiles_cal=None, bcal_tables=None, do_selfcal=True, caltable_folder=None, logger_file=None,\
+                 visdir_slfcaled=None, strong_source_subtraction=False):
     from casatasks import split
+    start=timeit.default_timer()
     outputvis=msfile.replace('.ms','_4chan_avg.ms')
-    split(vis=msfile,outputvis=outputvis,datacolumn='data',width=4,correlation='XX,YY')
+    if not os.path.isdir(outputvis):
+        split(vis=msfile,outputvis=outputvis,datacolumn='data',width=4,correlation='XX,YY')
+    end=timeit.default_timer()
+    logging.info("Split done in {0:.1f}".format(end-start))
+    
+    start=end
     msfile=outputvis
-    msmd.open(msfile)
-    trange = msmd.timerangeforobs(0)
-    btime = qa.time(trange['begin']['m0'],form='fits')[0]
-    etime = qa.time(trange['end']['m0'],form='fits')[0]
-    msmd.close()
     cfreqidx = os.path.basename(msfile).find('MHz') - 2
     cfreq = os.path.basename(msfile)[cfreqidx:cfreqidx+2]+'MHz'
     msfile_cal_ = [m for m in msfiles_cal if cfreq in m]
     bcal_tables_ = [m for m in bcal_tables if cfreq in m]
     #### Generate calibrations ####
-    imagename = os.path.basename(msfile)[:-3]+'_sun_selfcal'
+    ##### Now I am producing the bandpass table for the fast visibilities
     if len(bcal_tables_) > 0:
         bcal_table = bcal_tables_[0]
         print('Found calibration table {0:s}'.format(bcal_table))
         try:
             msfile_cal=msfile_cal_[0]
-            outms, tmp = sp.image_ms(msfile, calib_ms=msfile_cal, bcal=bcal_table, do_selfcal=do_selfcal, imagename=imagename, logging_level='info', 
-                        logfile=logger_file, caltable_folder=caltable_folder, do_final_imaging=False, fast_vis=True, source_subtraction_required=False)
-            os.system('cp -r '+ outms + ' ' + visdir_slfcaled + '/')
-            msfile_slfcaled = visdir_slfcaled + '/' + os.path.basename(outms)
-            return msfile_slfcaled
-        #except Exception as e:
-        except RuntimeError:
+            bcal_fast=calibration.make_fast_caltb_from_slow(msfile_cal,msfile, bcal_table, caltable_fold=caltable_folder)
+        except Exception as e:
             logging.error(e)
             return -1
     elif len(msfile_cal_) > 0:
         msfile_cal = msfile_cal_[0]
         try:
-            outms, tmp = sp.image_ms(msfile, calib_ms=msfile_cal, do_selfcal=do_selfcal, imagename=imagename, logging_level='info', 
-                        logfile=logger_file, caltable_folder=caltable_folder, do_final_imaging=False,  fast_vis=True, source_subtraction_required=False)
-            os.system('cp -r '+ outms + ' ' + visdir_slfcaled + '/')
-            msfile_slfcaled = visdir_slfcaled + '/' + os.path.basename(outms)
-            return msfile_slfcaled
+            flagging.flag_bad_ants(msfile_cal)
+            bcal_table = calibration.gen_calibration(msfile_cal, caltable_fold=caltable_folder)
+            bcal_fast=calibration.make_fast_caltb_from_slow(msfile_cal,msfile, bcal_table, caltable_fold=caltable_folder)
         except Exception as e:
             logging.error(e)
             return -1
     else:
         print('No night time ms or caltable available for {0:s}. Skip...'.format(msfile))
         return -1
+    try:
+        if do_selfcal:
+            selfcal_tables=get_selfcal_table_to_apply(msfile,msfile_cal,caltable_folder)
+        else:
+            selfcal_tables=[]
+        selfcal_tables.append(bcal_fast)
+        applycal(vis=msfile,gaintable=selfcal_tables)
+        flagdata(vis=msfile, mode='rflag', datacolumn='corrected')
+        end=timeit.default_timer()
+        logging.info("Calibration done in {0:.1f}".format(end-start))
+        if strong_source_subtraction:
+            start=end
+            md = model_generation(vis=msfile, separate_pol=True) 	    
+            modelcl, ft_needed = md.gen_model_cl()
+            if ft_needed:
+                ft(vis=msfile, complist=modelcl,usescratch=True)
+            uvsub(msfile)
+            end=timeit.default_timer()
+            logging.info("Strong source subtraction done in {0:.1f}".format(end-start))
+        os.system('cp -r '+ msfile + ' ' + visdir_slfcaled + '/')
+        msfile_slfcaled = visdir_slfcaled + '/' + os.path.basename(msfile)
+        return msfile_slfcaled
+    except Exception as e:
+        logging.error(e)
+        return -1
+    
+        
+
+def convert_caltables_for_fast_vis(solar_ms,calib_ms,caltables):
+    fast_caltables=[]
+    for caltb in caltables:
+        fast_caltables.append(calibration.make_fast_caltb_from_slow(calib_ms, solar_ms, caltb))
+    return fast_caltables
+    
+def get_selfcal_table_to_apply(msname,slow_ms,caltable_folder):
+    mstime = utils.get_time_from_name(msname)
+    mstime_str = utils.get_timestr_from_name(msname)
+    msfreq_str = utils.get_freqstr_from_name(msname)
+
+    caltables = glob.glob(caltable_folder + "/*" + msfreq_str + "*.gcal")
+    if len(caltables) == 0:
+        return []
+    selfcal_time = utils.get_selfcal_time_to_apply(msname, caltables) ### Real time pipeline does not do DD cal.
+                                                                    ### Hence caltables will only contain DI caltables
+    caltables = glob.glob(caltable_folder + "/" + selfcal_time + "*" + msfreq_str + "*.gcal")
+    di_cal=convert_caltables_for_fast_vis(msname,slow_ms,caltables)
+    return di_cal
 
 
 def run_imager(msfile_slfcaled, imagedir_allch=None, ephem=None, nch_out=12):
@@ -323,7 +368,7 @@ def run_imager(msfile_slfcaled, imagedir_allch=None, ephem=None, nch_out=12):
                                 fast_vis=True, predict=False, field=','.join([str(i) for i in range(num_fields)]),\
                                 intervals_out='10')
         #print ("Calling primary beam correction")
-        utils.correct_primary_beam(msfile_slfcaled, helio_imagename, fast_vis=True)
+        #utils.correct_primary_beam(msfile_slfcaled, helio_imagename, fast_vis=True)
         #print ("primary beam corrected")
         #image_list=helio_imagename+"-image.fits"
         end=timeit.default_timer()
@@ -357,7 +402,7 @@ def run_imager(msfile_slfcaled, imagedir_allch=None, ephem=None, nch_out=12):
     
 
 def pipeline_quick(image_time=Time.now() - TimeDelta(20., format='sec'), server='lwacalim', file_path='fast', 
-            distributed=True, min_nband=1, nch_out=12, do_selfcal=True, num_phase_cal=0, num_apcal=1, overwrite_ms=False, delete_ms_slfcaled=False,
+            distributed=True, min_nband=1, nch_out=12, do_selfcal=True, strong_source_subtraction=False, overwrite_ms=False, delete_ms_slfcaled=False,
             logger_file=None, compress_fits=True,
             proc_dir = '/fast/bin.chen/realtime_pipeline/',
             save_img_dir = '/lustre/bin.chen/realtime_pipeline/',
@@ -478,8 +523,8 @@ def pipeline_quick(image_time=Time.now() - TimeDelta(20., format='sec'), server=
             time_cal1 = timeit.default_timer()
             pool = multiprocessing.pool.Pool(processes=len(msfiles))
             #result = pool.map_async(run_calib, msfiles)
-            run_calib_partial = partial(run_calib, msfiles_cal=msfiles_cal, bcal_tables=bcal_tables, do_selfcal=do_selfcal, num_phase_cal=num_phase_cal, num_apcal=num_apcal, 
-                    logger_file=logger_file, caltable_folder=caltable_folder, visdir_slfcaled=visdir_slfcaled)
+            run_calib_partial = partial(run_calib, msfiles_cal=msfiles_cal, bcal_tables=bcal_tables, do_selfcal=do_selfcal,
+                    logger_file=logger_file, caltable_folder=caltable_folder, visdir_slfcaled=visdir_slfcaled, strong_source_subtraction=strong_source_subtraction)
             result = pool.map_async(run_calib_partial, msfiles)
             timeout = 2000.
             result.wait(timeout=timeout)
@@ -551,9 +596,7 @@ def pipeline_quick(image_time=Time.now() - TimeDelta(20., format='sec'), server=
             #os.system('rm -rf '+ caltable_folder + '/' + timestr + '_*MHz*')
             return False
 
-        if delete_ms_slfcaled:
-            os.system('rm -rf '+ visdir_slfcaled + '/' + timestr + '_*MHz*.ms')
-            #os.system('rm -rf '+ caltable_folder + '/' + timestr + '_*MHz*')
+        
         
         
         if 'fitsfiles' in locals() and len(fitsfiles) >=1 and len(fitsfiles[0])>1:
@@ -601,6 +644,16 @@ def pipeline_quick(image_time=Time.now() - TimeDelta(20., format='sec'), server=
             ndfits.wrap(fitsfiles_fch, outfitsfile=fits_fch)
             print ("completing wrap")
             os.system('rm -rf '+imagedir_allch + '*')
+            
+            msfiles_slfcaled = glob.glob(visdir_slfcaled + '/' + timestr + '_*MHz*.ms')
+            
+            
+            utils.correct_primary_beam(msfiles_slfcaled[0],imagename=fits_fch)
+            
+            if delete_ms_slfcaled:
+                os.system('rm -rf '+ visdir_slfcaled + '/' + timestr + '_*MHz*.ms')
+                #os.system('rm -rf '+ caltable_folder + '/' + timestr + '_*MHz*')
+
 
             '''
             # Plot mfs images (1 image per subband)
@@ -670,7 +723,7 @@ def pipeline_quick(image_time=Time.now() - TimeDelta(20., format='sec'), server=
 
 
 
-def run_pipeline(time_start=Time.now(), time_interval=10, delay_from_now=180., do_selfcal=True, num_phase_cal=0, num_apcal=1, 
+def run_pipeline(time_start=Time.now(), time_interval=10, delay_from_now=180., do_selfcal=True, strong_source_subtraction= False, 
         server='lwacalim', file_path='fast', multinode=True, nodes=10, firstnode=0, delete_ms_slfcaled=True, 
         logger_file='/fast/bin.chen/realtime_pipeline/realtime_calib-imaging_parallel.log',
         proc_dir = '/fast/bin.chen/realtime_pipeline/',
@@ -706,7 +759,7 @@ def run_pipeline(time_start=Time.now(), time_interval=10, delay_from_now=180., d
     #while time_start > t_rise and time_start < Time.now() - TimeDelta(15.,format='sec'): 
     # find out when the Sun is high enough in the sky
     (t_rise, t_set) = sun_riseset(time_start)
-    t_set=Time('2024-02-07T20:45:00')
+    t_set=Time('2024-02-07T20:30:30')
     if time_start < t_rise:
         twait = t_rise - time_start
         logging.info('{0:s}: Start time {1:s} is before sunrise. Wait for {2:.1f} hours to start.'.format(socket.gethostname(), time_start.isot, twait.value * 24.))
@@ -724,16 +777,16 @@ def run_pipeline(time_start=Time.now(), time_interval=10, delay_from_now=180., d
             logging.info('{0:s}: Start time {1:s} is too close to current time. Wait {2:.1f} m to start.'.format(socket.gethostname(), time_start.isot, (twait.sec + delay_from_now) / 60.))
             sleep(twait.sec + delay_from_now)
         logging.info('{0:s}: Start processing {1:s}'.format(socket.gethostname(), time_start.isot))
-        res = pipeline_quick(time_start, do_selfcal=do_selfcal, num_phase_cal=num_phase_cal, num_apcal=num_apcal, server=server, file_path=file_path, 
+        res = pipeline_quick(time_start, do_selfcal=do_selfcal, strong_source_subtraction=strong_source_subtraction, server=server, file_path=file_path, 
                 delete_ms_slfcaled=delete_ms_slfcaled, logger_file=logger_file, proc_dir=proc_dir, save_img_dir=save_img_dir, calib_file=calib_file)
         time2 = timeit.default_timer()
         if res:
-            logging.info('{0:s}: Processing {1:s} was successful within {2:.1f}m'.format(socket.gethostname(), time_start.isot, (time2-time1)/60.))
+            logging.info('{0:s}: Processing {1:s} was successful within {2:.1f}m'.format(socket.gethostname(), time_start.isot, (time2-time1)))
         else:
             logging.info('{0:s}: Processing {1:s} was unsuccessful!!!'.format(socket.gethostname(), time_start.isot))
 
         if (time_interval - (time2-time1)) < 0:
-            logging.info('{0:s}: Warning!! Processing {1:s} took {2:.1f}m to complete. This node may be falling behind'.format(socket.gethostname(), time_start.isot, (time2-time1)/60.))
+            logging.info('{0:s}: Warning!! Processing {1:s} took {2:.1f}s to complete. This node may be falling behind'.format(socket.gethostname(), time_start.isot, (time2-time1)))
 
         time_start += TimeDelta(time_interval, format='sec')
 
@@ -770,7 +823,8 @@ if __name__=='__main__':
     args = parser.parse_args()
     try:
         run_pipeline(args.prefix, time_interval=float(args.interval), nodes=int(args.nodes), delay_from_now=float(args.delay),
-                     proc_dir=args.proc_dir, save_img_dir=args.save_img_dir, calib_file=args.calib_file, logger_file=args.logger_file,multinode=False)
+                     proc_dir=args.proc_dir, save_img_dir=args.save_img_dir, calib_file=args.calib_file, logger_file=args.logger_file,multinode=False,\
+                     strong_source_subtraction=False)
     except Exception as e:
         logging.error(e)
         raise e

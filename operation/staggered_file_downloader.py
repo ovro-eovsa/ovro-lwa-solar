@@ -6,6 +6,7 @@ from time import sleep
 import argparse
 import timeit
 import shlex, subprocess
+from casatasks import split
 
 def sun_riseset(date=Time.now(), observatory='ovro'):
     '''
@@ -73,6 +74,9 @@ def download_msfiles(msfiles, destination='/fast/bin.chen/20231014_eclipse/slow_
     if verbose:
         print('Downloading {0:d} files took in {1:.1f} s'.format(nfile, time_completed-time_bg))
     omsfiles = [destination + n for n in omsfiles_name]
+    for msfile in omsfiles:
+    	outputvis=msfile.replace('.ms','_4chan_avg.ms')
+    	split(vis=msfile,outputvis=outputvis,datacolumn='data',width=4,correlation='XX,YY')
     return omsfiles
     
         
