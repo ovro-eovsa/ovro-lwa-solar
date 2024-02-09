@@ -6,7 +6,7 @@ import os, sys, glob, getopt
 #sys.path.append('/opt/devel/bin.chen/ovro-lwa-solar')
 from ovrolwasolar import solar_pipeline as sp
 from ovrolwasolar.primary_beam import analytic_beam as beam
-from ovrolwasolar import utils
+from ovrolwasolar import utils,deconvolve
 from casatasks import clearcal, applycal, flagdata, tclean, exportfits, imsubimage
 from casatools import msmetadata, quanta, measures
 from suncasa.utils import helioimage2fits as hf
@@ -114,8 +114,8 @@ def list_msfiles_old(intime, server='lwacalim', distributed=True, file_path='slo
     return msfiles
 
 def list_msfiles(intime, lustre=True, file_path='slow', server=None, time_interval='10s', 
-    #             bands=['32MHz', '36MHz', '41MHz', '46MHz', '50MHz', '55MHz', '59MHz', '64MHz', '69MHz', '73MHz', '78MHz', '82MHz']):
-                 bands=['82MHz']):
+                # bands=['32MHz', '36MHz', '41MHz', '46MHz', '50MHz', '55MHz', '59MHz', '64MHz', '69MHz', '73MHz', '78MHz', '82MHz']):
+                bands=['82MHz']):
     """
     Return a list of visibilities to be copied for pipeline processing for a given time
     :param intime: astropy Time object
@@ -137,6 +137,7 @@ def list_msfiles(intime, lustre=True, file_path='slow', server=None, time_interv
         tstr = intimestr[:-3]
 
     msfiles = []
+    print (file_path)
     if lustre:
         processes=[]
         for b in bands:
@@ -164,12 +165,17 @@ def list_msfiles(intime, lustre=True, file_path='slow', server=None, time_interv
         filenames = p.stdout.decode('utf-8').split('\n')[:-1]
         for filename in filenames:
             if filename[-6:] == 'MHz.ms':
-                pathstr = '{0:s}:{1:s}/{2:s}'.format(server, file_path, filename)
+                if server:
+                    pathstr = '{0:s}:{1:s}/{2:s}'.format(server, file_path, filename)
+                else:
+                    pathstr = '{0:s}/{1:s}'.format(file_path, filename)
                 tmpstr = filename[:15].replace('_', 'T')
                 timestr = tmpstr[:4] + '-' + tmpstr[4:6] + '-' + tmpstr[6:11] + ':' + tmpstr[11:13] + ':' + tmpstr[13:]
                 freqstr = filename[16:21]
                 msfiles.append({'path': pathstr, 'name': filename, 'time': timestr, 'freq': freqstr})
+    print (msfiles)
     return msfiles
+
 
 def download_msfiles_cmd(msfile_path, server, destination):
     if server:
@@ -179,6 +185,7 @@ def download_msfiles_cmd(msfile_path, server, destination):
     std_out, std_err = p.communicate()
     if std_err:
         print(std_err)
+
 
 def download_msfiles(msfiles, destination='/fast/bin.chen/20231014_eclipse/slow_working/', bands=None, verbose=True, server=None, maxthread=5):
     from multiprocessing.pool import ThreadPool
@@ -210,8 +217,9 @@ def download_msfiles(msfiles, destination='/fast/bin.chen/20231014_eclipse/slow_
         print('I am going to download {0:d} files'.format(nfile))
 
     tp = ThreadPool(maxthread)
-    for omsfile_path in omsfiles_path:
-        tp.apply_async(download_msfiles_cmd, args=(omsfile_path, server, destination))
+    for omsfile_name,omsfile_path in zip(omsfiles_name,omsfiles_path):
+        if not os.path.isdir(os.path.join(destination,omsfile_name)):
+            tp.apply_async(download_msfiles_cmd, args=(omsfile_path, server, destination))
 
     tp.close()
     tp.join()
@@ -253,6 +261,10 @@ def download_timerange(starttime, endtime, download_interval='1min', destination
 
 
 def run_calib(msfile, msfiles_cal=None, bcal_tables=None, do_selfcal=True, num_phase_cal=0, num_apcal=1, caltable_folder=None, logger_file=None, visdir_slfcaled=None):
+    from casatasks import split
+    outputvis=msfile.replace('.ms','_4chan_avg.ms')
+    split(vis=msfile,outputvis=outputvis,datacolumn='data',width=4,correlation='XX,YY')
+    msfile=outputvis
     msmd.open(msfile)
     trange = msmd.timerangeforobs(0)
     btime = qa.time(trange['begin']['m0'],form='fits')[0]
@@ -268,21 +280,21 @@ def run_calib(msfile, msfiles_cal=None, bcal_tables=None, do_selfcal=True, num_p
         bcal_table = bcal_tables_[0]
         print('Found calibration table {0:s}'.format(bcal_table))
         try:
-            outms, tmp = sp.image_ms_quick(msfile, calib_ms=None, bcal=bcal_table, do_selfcal=do_selfcal, imagename=imagename, logging_level='info', 
-                        num_phase_cal=num_phase_cal, num_apcal=num_apcal,
-                        logfile=logger_file, caltable_folder=caltable_folder, do_final_imaging=False, do_fluxscaling=False, freqbin=1)
+            msfile_cal=msfile_cal_[0]
+            outms, tmp = sp.image_ms(msfile, calib_ms=msfile_cal, bcal=bcal_table, do_selfcal=do_selfcal, imagename=imagename, logging_level='info', 
+                        logfile=logger_file, caltable_folder=caltable_folder, do_final_imaging=False, fast_vis=True, source_subtraction_required=False)
             os.system('cp -r '+ outms + ' ' + visdir_slfcaled + '/')
             msfile_slfcaled = visdir_slfcaled + '/' + os.path.basename(outms)
             return msfile_slfcaled
-        except Exception as e:
+        #except Exception as e:
+        except RuntimeError:
             logging.error(e)
             return -1
     elif len(msfile_cal_) > 0:
         msfile_cal = msfile_cal_[0]
         try:
-            outms, tmp = sp.image_ms_quick(msfile, calib_ms=msfile_cal, do_selfcal=do_selfcal, imagename=imagename, logging_level='info', 
-                        num_phase_cal=num_phase_cal, num_apcal=num_apcal,
-                        logfile=logger_file, caltable_folder=caltable_folder, do_final_imaging=False, do_fluxscaling=False, freqbin=1)
+            outms, tmp = sp.image_ms(msfile, calib_ms=msfile_cal, do_selfcal=do_selfcal, imagename=imagename, logging_level='info', 
+                        logfile=logger_file, caltable_folder=caltable_folder, do_final_imaging=False,  fast_vis=True, source_subtraction_required=False)
             os.system('cp -r '+ outms + ' ' + visdir_slfcaled + '/')
             msfile_slfcaled = visdir_slfcaled + '/' + os.path.basename(outms)
             return msfile_slfcaled
@@ -298,46 +310,53 @@ def run_imager(msfile_slfcaled, imagedir_allch=None, ephem=None, nch_out=12):
     blc = int(512 - 128)
     trc = int(512 + 128 - 1)
     region='box [ [ {0:d}pix , {1:d}pix] , [{2:d}pix, {3:d}pix ] ]'.format(blc, blc, trc, trc)
+    start=timeit.default_timer() 
     try:
-        msmd.open(msfile_slfcaled)
-        trange = msmd.timerangeforobs(0)
-        msmd.close()
-        btime = Time(trange['begin']['m0']['value'], format='mjd')
-        etime = Time(trange['end']['m0']['value'], format='mjd')
-        tref_mjd = (btime.mjd + etime.mjd) / 2. 
-        tref = Time(tref_mjd, format='mjd')
-        tref_str = btime.isot+'~'+etime.isot
-        msinfo = hf.read_msinfo(msfile_slfcaled, verbose=True)
-        timeutc = me.epoch('UTC', '%fd' % tref.mjd)
-        ovro = me.observatory('OVRO_MMA')
-        me.doframe(ovro)
-        me.doframe(timeutc)
-        d0 = me.direction('SUN')
-        d0_j2000 = me.measure(d0, 'J2000')
-        azel = me.measure(d0, 'AZEL')
-        elev = np.degrees(azel['m1']['value'])
-        az = np.degrees(azel['m0']['value'])
-        pb = beam(msfile_slfcaled)
-        pb.srcjones(az=[az],el=[elev])
-        jones_matrices = pb.get_source_pol_factors(pb.jones_matrices[0,:,:])
-        sclfactor = 1. / jones_matrices[0][0]
-        helio_imagename = imagedir_allch + os.path.basename(msfile_slfcaled).replace('.ms','.sun') 
-        default_wscleancmd = ("wsclean -j 4 -mem 2 -no-reorder -no-dirty -size 1024 1024 -scale 1arcmin -weight briggs -0.5 -minuv-l 10 -auto-threshold 3 -name " + 
-                helio_imagename + " -niter 10000 -mgain 0.8 -beam-fitting-size 1 -pol I -join-channels -channels-out " + str(nch_out) + ' ' + msfile_slfcaled)
- 
-        os.system(default_wscleancmd)
+        timestr=utils.get_timestr_from_name(msfile_slfcaled)
+        freqstr=utils.get_freqstr_from_name(msfile_slfcaled)
+        helio_imagename = os.path.join(imagedir_allch,"sun_only_"+timestr+"_"+freqstr)
+        if helio_imagename[-1]=='/':
+            helio_imagename=helio_imagename[:-1]
+        num_fields=utils.get_total_fields(msfile_slfcaled)
+        deconvolve.run_wsclean(msfile=msfile_slfcaled,imagename=helio_imagename,\
+                                size=512, scale='1arcmin', niter=500, weight='briggs 0',\
+                                fast_vis=True, predict=False, field=','.join([str(i) for i in range(num_fields)]),\
+                                intervals_out='10')
+        #print ("Calling primary beam correction")
+        utils.correct_primary_beam(msfile_slfcaled, helio_imagename, fast_vis=True)
+        #print ("primary beam corrected")
+        #image_list=helio_imagename+"-image.fits"
+        end=timeit.default_timer()
+        logging.info("Imaging and primary beam correction done in {0:.1f}s".format(end-start))
+        start=end
+        image_names=utils.get_fast_vis_imagenames(msfile_slfcaled, helio_imagename,'I')
 
-        outfits = glob.glob(helio_imagename + '*-image.fits')
-        outfits.sort()
-        outfits_helio = hf.imreg(msfile_slfcaled, outfits, ephem=ephem, msinfo=msinfo, timerange=[tref_str] * len(outfits), 
-                usephacenter=True, verbose=True, toTb=True, subregion=region, sclfactor=sclfactor)
+        names=[i[1] for i in image_names]
+        
+        return names
+        '''
+        helio_image_list=[]
+        for name in image_names:
+            if os.path.isfile(name[1]):
+                outfits_helio = utils.convert_to_heliocentric_coords(msfile_slfcaled, name[1],ephem=ephem) 
+
+                if outfits_helio is not None:
+                    helio_image_list.append(outfits_helio)
+        end=timeit.default_timer()
+        logging.info("Heliocentric image conversion done in "+str(end-start)+"s")
+        num_converted=len(helio_image_list)
+        if num_converted==0:
+            logging.error("Heliocentric image conversion failed")
+            return -1
         return outfits_helio
+        '''
     except Exception as e:
         logging.error(e)
         #logging.error('{0:s}: Imaging for {1:s} failed'.format(socket.gethostname(), msfile_slfcaled))
         return -1
+    
 
-def pipeline_quick(image_time=Time.now() - TimeDelta(20., format='sec'), server='lwacalim', file_path='slow', 
+def pipeline_quick(image_time=Time.now() - TimeDelta(20., format='sec'), server='lwacalim', file_path='fast', 
             distributed=True, min_nband=1, nch_out=12, do_selfcal=True, num_phase_cal=0, num_apcal=1, overwrite_ms=False, delete_ms_slfcaled=False,
             logger_file=None, compress_fits=True,
             proc_dir = '/fast/bin.chen/realtime_pipeline/',
@@ -360,16 +379,17 @@ def pipeline_quick(image_time=Time.now() - TimeDelta(20., format='sec'), server=
 
     visdir_calib = proc_dir + 'slow_calib/'
     caltable_folder = proc_dir + 'caltables/'
-    visdir_work = proc_dir + 'slow_working/'
-    visdir_slfcaled = proc_dir + 'slow_slfcaled/'
-    imagedir_allch = proc_dir + 'images_allch/'
+    visdir_work = proc_dir + 'fast_working/'
+    visdir_slfcaled = proc_dir + 'fast_slfcaled/'
+    imagedir_allch = proc_dir + 'fast_images_allch/'
 
     imagedir_allch_combined = save_img_dir + 'fits/'
     fig_mfs_dir = save_img_dir + 'figs_mfs/'
 
-    ## Night-time MS files used for calibration ##
-    msfiles_cal = glob.glob(visdir_calib + calib_file + '_*MHz.ms')
+    ## Night-time MS files used for calibration ##  We need to keep these files for fast vis analysis.
+    msfiles_cal = ['/fast/msurajit/fast_vis/20240207/20240207_173058_82MHz_slow.ms']#glob.glob(visdir_calib + calib_file + '_*MHz.ms')
     msfiles_cal.sort()
+    print (msfiles_cal)
 
     bcal_tables = glob.glob(caltable_folder + calib_file + '_*MHz.bcal')
     bcal_tables.sort()
@@ -395,30 +415,41 @@ def pipeline_quick(image_time=Time.now() - TimeDelta(20., format='sec'), server=
     try:
         print(socket.gethostname(), '=======Processing Time {0:s}======='.format(image_time.isot))
         #logging.info('=======Processing Time {0:s}======='.format(image_time.isot))
-        msfiles0 = list_msfiles(image_time, file_path=file_path)
-        if len(msfiles0) < min_nband:
+        
+        msfiles0 = list_msfiles(image_time,lustre=False,server=None,\
+                                file_path=visdir_work,time_interval='10s')
+        num_trial=0
+        while len(msfiles0) < min_nband and num_trial<10:
             print('This time only has {0:d} subbands. Check nearby +-10s time.'.format(len(msfiles0)))
-            image_time_before = image_time - TimeDelta(10., format='sec')
-            msfiles0_before = list_msfiles(image_time_before, file_path=file_path)
-            image_time_after = image_time + TimeDelta(10., format='sec')
-            msfiles0_after = list_msfiles(image_time_after, file_path=file_path)
-            if len(msfiles0_before) < min_nband and len(msfiles0_after) < min_nband:
-                print('I cannot find a nearby time with at least {0:d} available subbands. Abort and wait for next time interval.'.format(min_nband))
-                return False
-            else:
-                if len(msfiles0_before) > len(msfiles0_after):
-                    msfiles0 = msfiles0_before
-                    image_time = image_time_before
-                else:
-                    msfiles0 = msfiles0_after
-                    image_time = image_time_after
+            image_time0 = image_time + TimeDelta(int(num_trial+1), format='sec')  ### first searches ahead and then backward
+            print (image_time0)
+            msfiles0 = list_msfiles(image_time0, lustre=False,server=None,\
+                                            file_path=visdir_work,time_interval='10s')
+            if len(msfiles0)>min_nband:
+                image_time=image_time0
+                break
+            num_trial+=1
+        num_trial=0
+        while len(msfiles0)<min_nband and num_trial<10:
+            print('This time only has {0:d} subbands. Check nearby +-10s time.'.format(len(msfiles0)))
+            image_time0 = image_time - TimeDelta(int(num_trial+1), format='sec')  ### first searches ahead and then backward
+            print (image_time0)
+            msfiles0 = list_msfiles(image_time0, lustre=False,server=None,\
+                                            file_path=visdir_work,time_interval='10s')
+            if len(msfiles0)>min_nband:
+                image_time=image_time0
+                break
+            num_trial+=1
+        if len(msfiles0) < min_nband:
+            print('I cannot find a nearby time with at least {0:d} available subbands. Abort and wait for next time interval.'.format(min_nband))
+            return False
+            
+        
         
         msfiles0_freq = [f['freq'] for f in msfiles0]
         msfiles0_name = [f['name'] for f in msfiles0]
+        
         timestr = msfiles0_name[0][:15]
-        
-        prev_calfiles=glob.glob(os.path.join(caltable_folder,"*.gcal"))#### these files will be deleted in this cycle
-        
         msfiles_slfcaled = glob.glob(visdir_slfcaled + '/' + timestr + '_*MHz*.ms')
         msfiles_slfcaled.sort()
         if len(msfiles_slfcaled) == 0 or overwrite_ms:
@@ -517,19 +548,15 @@ def pipeline_quick(image_time=Time.now() - TimeDelta(20., format='sec'), server=
         else:
             logging.error('For time {0:s}, less than 4 bands out of {1:d} bands were calibrated successfully. Abort....'.format(timestr, len(bands)))
             os.system('rm -rf '+ visdir_slfcaled + '/' + timestr + '_*MHz*.ms')
-            os.system('rm -rf '+ caltable_folder + '/' + timestr + '_*MHz*')
+            #os.system('rm -rf '+ caltable_folder + '/' + timestr + '_*MHz*')
             return False
 
         if delete_ms_slfcaled:
             os.system('rm -rf '+ visdir_slfcaled + '/' + timestr + '_*MHz*.ms')
-            for calfile in prev_calfiles:
-                #os.system('rm -rf '+ caltable_folder + '/' + timestr + '_*MHz*')
-                freq=os.path.basename(calfile).split('_')[2]
-                if len(glob.glob(os.path.join(caltable_folder,timestr+"_"+freq+"*.gcal")))!=0:
-                    os.system('rm -rf '+calfile) ### I am only deleting the previous calfile and
-                                             ### and that also when this round has exited successfully.
-
-        if 'fitsfiles' in locals() and len(fitsfiles) > 1:
+            #os.system('rm -rf '+ caltable_folder + '/' + timestr + '_*MHz*')
+        
+        
+        if 'fitsfiles' in locals() and len(fitsfiles) >=1 and len(fitsfiles[0])>1:
             ## define subdirectories for storing the fits and png files
             datedir = btime.isot[:10].replace('-','/')+'/'
             imagedir_allch_combined_sub = imagedir_allch_combined + '/' + datedir
@@ -541,8 +568,10 @@ def pipeline_quick(image_time=Time.now() - TimeDelta(20., format='sec'), server=
 
             ## Wrap images
             timestr_iso = btime.isot[:-4].replace(':','')+'Z'
+            print ("folders made")
+            '''
             # multi-frequency synthesis images
-            fits_mfs = imagedir_allch_combined_sub + '/ovro-lwa.lev1_mfs_10s.' + timestr_iso + '.image.fits' 
+            fits_mfs = imagedir_allch_combined_sub + '/ovro-lwa_fast.lev1_mfs_10s.' + timestr_iso + '.image.fits' 
             #fitsfiles_mfs = glob.glob(imagedir_allch + '/' + timestr+ '*MFS-image.fits')
             fitsfiles_mfs = []
             for f in fitsfiles:
@@ -554,8 +583,11 @@ def pipeline_quick(image_time=Time.now() - TimeDelta(20., format='sec'), server=
             fitsfiles_mfs.sort()
             #ndfits.wrap(fitsfiles_mfs, outfitsfile=fits_mfs, docompress=compress_fits)
             ndfits.wrap(fitsfiles_mfs, outfitsfile=fits_mfs)
+            '''
+            
+            
             # fine channel spectral images
-            fits_fch = imagedir_allch_combined_sub + '/ovro-lwa.lev1_fch_10s.' + timestr_iso + '.image.fits' 
+            fits_fch = imagedir_allch_combined_sub + '/ovro-lwa_fast.lev1_fch_10s.' + timestr_iso + '.image.fits' 
             #fitsfiles_fch = list(set(glob.glob(imagedir_allch + '/' + timestr + '*-image.fits'))-set(glob.glob(imagedir_allch + '/' + timestr + '*MFS-image.fits')))
             fitsfiles_fch = []
             for f in fitsfiles:
@@ -565,9 +597,12 @@ def pipeline_quick(image_time=Time.now() - TimeDelta(20., format='sec'), server=
                     continue
             fitsfiles_fch.sort()
             #ndfits.wrap(fitsfiles_fch, outfitsfile=fits_fch, docompress=compress_fits)
+            print ("trying wrap")
             ndfits.wrap(fitsfiles_fch, outfitsfile=fits_fch)
+            print ("completing wrap")
             os.system('rm -rf '+imagedir_allch + '*')
 
+            '''
             # Plot mfs images (1 image per subband)
             fig = plt.figure(figsize=(15., 8.))
             fov = 8000
@@ -618,23 +653,25 @@ def pipeline_quick(image_time=Time.now() - TimeDelta(20., format='sec'), server=
             text2 = fig.text(0.99, 0.01, 'OVRO Long Wavelength Array (Caltech)', fontsize=12, ha='right', va='bottom')
             fig.savefig(fig_mfs_dir_sub + '/' + os.path.basename(fits_mfs).replace('.image.fits', '.png'))
             plt.close()
+            '''
             time_completed= timeit.default_timer() 
-            logging.debug('====All processing for time {0:s} is done in {1:.1f} minutes'.format(timestr, (time_completed-time_begin)/60.))
+            logging.debug('====All processing for time {0:s} is done in {1:.1f} seconds'.format(timestr, (time_completed-time_begin)))
             return True
         else:
             time_exit = timeit.default_timer()
-            logging.error('====Processing for time {0:s} failed in {1:.1f} minutes'.format(timestr, (time_exit-time_begin)/60.))
+            logging.error('====Processing for time {0:s} failed in {1:.1f} seconds'.format(timestr, (time_exit-time_begin)))
             return False
     except Exception as e:
         logging.error(e)
+        raise (e)
         time_exit = timeit.default_timer()
-        logging.error('====Processing for time {0:s} failed in {1:.1f} minutes'.format(timestr, (time_exit-time_begin)/60.))
+        logging.error('====Processing for time {0:s} failed in {1:.1f} seconds'.format(timestr, (time_exit-time_begin)))
         return False
 
 
 
-def run_pipeline(time_start=Time.now(), time_interval=600., delay_from_now=180., do_selfcal=True, num_phase_cal=0, num_apcal=1, 
-        server='lwacalim', file_path='slow', multinode=True, nodes=10, firstnode=0, delete_ms_slfcaled=True, 
+def run_pipeline(time_start=Time.now(), time_interval=10, delay_from_now=180., do_selfcal=True, num_phase_cal=0, num_apcal=1, 
+        server='lwacalim', file_path='fast', multinode=True, nodes=10, firstnode=0, delete_ms_slfcaled=True, 
         logger_file='/fast/bin.chen/realtime_pipeline/realtime_calib-imaging_parallel.log',
         proc_dir = '/fast/bin.chen/realtime_pipeline/',
         save_img_dir = '/lustre/bin.chen/realtime_pipeline/',
@@ -669,6 +706,7 @@ def run_pipeline(time_start=Time.now(), time_interval=600., delay_from_now=180.,
     #while time_start > t_rise and time_start < Time.now() - TimeDelta(15.,format='sec'): 
     # find out when the Sun is high enough in the sky
     (t_rise, t_set) = sun_riseset(time_start)
+    t_set=Time('2024-02-07T20:45:00')
     if time_start < t_rise:
         twait = t_rise - time_start
         logging.info('{0:s}: Start time {1:s} is before sunrise. Wait for {2:.1f} hours to start.'.format(socket.gethostname(), time_start.isot, twait.value * 24.))
@@ -732,7 +770,7 @@ if __name__=='__main__':
     args = parser.parse_args()
     try:
         run_pipeline(args.prefix, time_interval=float(args.interval), nodes=int(args.nodes), delay_from_now=float(args.delay),
-                     proc_dir=args.proc_dir, save_img_dir=args.save_img_dir, calib_file=args.calib_file, logger_file=args.logger_file, multinode=False)
+                     proc_dir=args.proc_dir, save_img_dir=args.save_img_dir, calib_file=args.calib_file, logger_file=args.logger_file,multinode=False)
     except Exception as e:
         logging.error(e)
         raise e

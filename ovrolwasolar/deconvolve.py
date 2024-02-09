@@ -83,6 +83,7 @@ def run_wsclean(msfile, imagename, size:int =4096, scale='2arcmin', fast_vis=Fal
         'intervals_out':'1',        # number of output images
         'no-reorder':'',            # don't reorder the channels
         'beam_fitting_size':'2',    # beam fitting size
+        'quiet':'',
     }
 
     if auto_pix_fov:
@@ -116,7 +117,10 @@ def run_wsclean(msfile, imagename, size:int =4096, scale='2arcmin', fast_vis=Fal
             default_kwargs['intervals_out']='1'
             default_kwargs['field']='all'
         else:
-            default_kwargs["intervals_out"] =str(len(field.split(',')))
+            if default_kwargs['intervals_out']=='1':
+                default_kwargs["intervals_out"] =str(len(field.split(',')))
+            default_kwargs['field']=field
+
     else:
         default_kwargs['intervals_out']='1'
         default_kwargs['field']='all'
@@ -145,7 +149,7 @@ def run_wsclean(msfile, imagename, size:int =4096, scale='2arcmin', fast_vis=Fal
     logging.debug('Time taken for all sky imaging is {0:.1f} s'.format(time2-time1))
 
     if default_kwargs['intervals_out']!='1':
-        image_names=utils.get_fast_vis_imagenames(msfile,imagename,pol)
+        image_names=utils.get_fast_vis_imagenames(msfile,imagename,default_kwargs['pol'])
         for name in image_names:
             wsclean_imagename=name[0]
             final_imagename=name[1]

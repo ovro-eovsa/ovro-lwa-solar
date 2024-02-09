@@ -207,8 +207,9 @@ def apply_calibration(msfile, gaintable=None, doantflag=False, doflag=False, ant
     if doflag == True:
         logging.debug("Running rflag on corrected data")
         flagdata(vis=msfile, mode='rflag', datacolumn='corrected')
-    sunpos = utils.get_sun_pos(msfile)
+    
     if do_solar_imaging:
+        sunpos = utils.get_sun_pos(msfile)
         tclean(msfile, imagename=imagename, imsize=[512], cell=['1arcmin'],
                weighting='uniform', phasecenter=sunpos, niter=500)
         print('Solar image made {0:s}.image'.format(imagename))

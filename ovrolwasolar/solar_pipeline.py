@@ -104,7 +104,7 @@ def image_ms(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagename='sun
              full_dd_selfcal_rounds=[1, 1], partial_dd_selfcal_rounds=[0, 1], do_final_imaging=True, pol='I', 
              solint_full_DI_selfcal=14400, solint_partial_DI_selfcal=3600, solint_full_DD_selfcal=1800, solint_partial_DD_selfcal=600,
              fast_vis=False, fast_vis_image_model_subtraction=False, delete=True,
-             refant='202', overwrite=False, do_fluxscaling=False):
+             refant='202', overwrite=False, do_fluxscaling=False, source_subtraction_required=True):
 
     """
     Pipeline to calibrate and imaging a solar visibility
@@ -148,12 +148,17 @@ def image_ms(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagename='sun
         if not overwrite:
             return None, imagename + "-image.helio.fits"
             
-    utils.make_wsclean_compatible(solar_ms)
+    
+    if fast_vis:
+    	utils.make_wsclean_compatible(solar_ms)
+    	utils.swap_fastms_pols(solar_ms)
+    	utils.correct_fastms_amplitude_scale(solar_ms)
 
     logging.info('==========Working on a new solar ms file {0:s}============='.format(solar_ms))
     time_begin=timeit.default_timer()
     time1=timeit.default_timer()
     solar_ms = calibration.do_bandpass_correction(solar_ms, calib_ms=calib_ms, bcal=bcal, caltable_folder=caltable_folder, fast_vis=fast_vis)
+    print ("Bandpass calibration done")
     time2=timeit.default_timer()
     logging.info('Time taken to do the bandpass correction is: {0:.1f} s'.format(time2-time1))
     time1=time2
@@ -163,18 +168,22 @@ def image_ms(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagename='sun
                               partial_di_selfcal_rounds=partial_di_selfcal_rounds, pol=pol, refant=refant, do_fluxscaling=do_fluxscaling,
                               solint_full_selfcal=solint_full_DI_selfcal, solint_partial_selfcal=solint_partial_DI_selfcal, 
                               fast_vis=fast_vis,calib_ms=calib_ms)
-
+        print ("Selfcal done")
         time2=timeit.default_timer()
         logging.info('Time taken for DI selfcal and fluxscaling is: {0:.1f} s'.format(time2-time1))
         time1=time2
-        print (outms_di)
-        logging.info('Removing the strong sources in the sky')
-        outms_di_ = source_subtraction.remove_nonsolar_sources(outms_di,pol=pol, fast_vis=fast_vis,\
-                                        fast_vis_image_model_subtraction=fast_vis_image_model_subtraction)
-        time2=timeit.default_timer()
-        logging.info('Time taken for strong source removal is: {0:.1f} s'.format(time2-time1)) 
+
+        if source_subtraction_required:
+            logging.info('Removing the strong sources in the sky')
+            outms_di_ = source_subtraction.remove_nonsolar_sources(outms_di,pol=pol, fast_vis=fast_vis,\
+                                            fast_vis_image_model_subtraction=fast_vis_image_model_subtraction)
+            time2=timeit.default_timer()
+            logging.info('Time taken for strong source removal is: {0:.1f} s'.format(time2-time1)) 
+            logging.info('The strong source subtracted MS is ' + outms_di_)
+        else:
+            outms_di_= outms_di
         time1=time2
-        logging.info('The strong source subtracted MS is ' + outms_di_)
+        
         logging.info('Starting to do Stokes I selfcal towards direction of sun')
         
         if not fast_vis:
@@ -184,13 +193,17 @@ def image_ms(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagename='sun
             time2=timeit.default_timer()
             logging.info('Time taken for DD selfcal is: {0:.1f} s'.format(time2-time1))
             time1=time2
-            logging.info('Removing almost all sources in the sky except Sun')
-            print ('Removing almost all sources in the sky except Sun')
-            outms = source_subtraction.remove_nonsolar_sources(outms_dd, remove_strong_sources_only=False, pol=pol)
-            time2=timeit.default_timer()
-            logging.info('Time taken for weak source removal is: {0:.1f} s'.format(time2-time1)) 
-            time1=time2
-            logging.info('The source subtracted MS is ' + outms)
+            
+            if source_subtraction_required:
+                logging.info('Removing almost all sources in the sky except Sun')
+                print ('Removing almost all sources in the sky except Sun')
+                outms = source_subtraction.remove_nonsolar_sources(outms_dd, remove_strong_sources_only=False, pol=pol)
+                time2=timeit.default_timer()
+                logging.info('Time taken for weak source removal is: {0:.1f} s'.format(time2-time1)) 
+                time1=time2
+                logging.info('The source subtracted MS is ' + outms)
+            else:
+                outms=outms_dd
         else:
             outms = selfcal.DD_selfcal(outms_di_, logging_level=logging_level, full_dd_selfcal_rounds=full_dd_selfcal_rounds,
                                   partial_dd_selfcal_rounds=partial_dd_selfcal_rounds, pol=pol, refant=refant, 

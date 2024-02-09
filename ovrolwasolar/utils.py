@@ -198,6 +198,7 @@ def get_selfcal_time_to_apply(msname, caltables):
 def get_keyword(caltable, keyword, return_status=False):
     tb = table()
     success = False
+    val=None
     try:
         tb.open(caltable)
         val = tb.getkeyword(keyword)
@@ -230,17 +231,26 @@ def put_keyword(caltable, keyword, val, return_status=False):
 def get_obs_time_interval(msfile):
     msmd = msmetadata()
     msmd.open(msfile)
-    trange = msmd.timerangeforobs(0)
-    btime = Time(trange['begin']['m0']['value'],format='mjd').isot
-    etime = Time(trange['end']['m0']['value'],format='mjd').isot
-    msmd.close()
+    try:
+        num_field=len(msmd.fieldnames())
+        trange1 = msmd.timerangeforobs(0)
+        trange2 = msmd.timerangeforobs(num_field-1)
+        btime = Time(trange1['begin']['m0']['value'],format='mjd').isot
+        etime = Time(trange2['end']['m0']['value'],format='mjd').isot
+    finally:
+        msmd.close()
     return btime+'~'+etime
     
-def convert_to_heliocentric_coords(msname, imagename, helio_imagename=None, reftime=''):
+def convert_to_heliocentric_coords(msname, imagename, helio_imagename=None, \
+                                    reftime='',subregion='',ephem=None):
     '''
     The imagename, helio_imagename and reftime all can be a list.
     If reftime is not provided, it is assumed to the the center
     of the observation time given in the MS
+    
+    :param subregion: This is a str in the CASA region format. This parameter will be used to cut a small
+                        region of the input image. Example: 'box[[20pix,20pix,120pix,120pix]]'
+    : type subregion: str
     '''
     import datetime as dt
     from suncasa.utils import helioimage2fits as hf
@@ -286,9 +296,11 @@ def convert_to_heliocentric_coords(msname, imagename, helio_imagename=None, reft
 
     try:
         hf.imreg(vis=msname, imagefile=temp_image_list, timerange=reftime,
-                 fitsfile=helio_imagename, usephacenter=True, verbose=True, toTb=True)
+                 fitsfile=helio_imagename, usephacenter=True, verbose=True, \
+                 toTb=True,subregion=subregion,ephem=ephem)
         return helio_imagename
-    except:
+    except OSError:
+        raise OSError
         logging.warning("Could not convert to helicentric coordinates")
         return None
         
@@ -416,6 +428,7 @@ def correct_primary_beam(msfile, imagename, pol='I', fast_vis=False):
             if os.path.isfile(name[1]):
                 if pol=='I':
                     scale=md.primary_beam_value(0,jones_matrices)
+                    
                 else:
                     pola=name[1].split('-')[-1]
                     if pola=='I' or pola=='XX' or pola=='YY':
@@ -432,4 +445,127 @@ def correct_primary_beam(msfile, imagename, pol='I', fast_vis=False):
                 hdu.flush()
                 hdu.close()
     return
+
+
+def swap_fastms_pols(msname):
+    '''
+    This function corrects for the polarisation swap present in the fast MS data
+    correction_date provides the date on which the swap was corrected in the 
+    X engine itself. Details of this isse has been discussed in 
+    https://github.com/ovro-lwa/lwa-issues/issues/486
+    
+    
+    :param msname: Name of MS
+    : type msname: str
+    :param correction_date: Datetime of correction in X-engine
+    :type correction_date: Can be anything which is acceptable by Astropy Time
+    '''
+    swap_ok=get_keyword(msname,"swap_ok")
+    if swap_ok is not None:
+        logging.debug("Swap correction done/tried earlier. Returning")
+        return
+        
+    correction_date='2024-02-07T17:30:00'  #### this is the date on which the
+                                            ### changes were propagated to the 
+                                            ### X-engine, to solve this issue.
+                                            ### DO NOT CHANGE THIS UNLESS YOU
+                                            ### ARE AN EXPERT 
+        
+    correction_time=Time(correction_date)
+    msmd=msmetadata()
+    try:
+        msmd.open(msname)
+        antids = msmd.antennaids()
+        times=msmd.timesforfield(0)
+    finally:
+        msmd.done()
+    num_ants=len(antids)
+    print (num_ants)
+    if num_ants>48:
+        logging.info("Not a fast visibility MS from OVRO-LWA. Doing nothing")
+        put_keyword(msname,"swap_ok","1")
+        return
+    obstime=Time(times[0],format='mjd')
+    if obstime>correction_time:
+        logging.debug("MS time is after the time when X-engine was updated. Doing nothing.")
+        put_keyword(msname,"swap_ok","1")
+        return
+    
+    tb=table()
+    tb.open(msname,nomodify=False)
+    try:
+        data=tb.getcol('DATA')
+        data1=np.zeros_like(data)
+        data1[...]=data[...]
+        data1[2,...]=data[3,...]
+        data1[3,...]=data[2,...]
+        tb.putcol('DATA',data1)
+        tb.flush()
+        logging.info("Polarization swap is corrected")
+    finally:
+        tb.close()
+    put_keyword(msname,"swap_ok","1")
+    return
+    
+def correct_fastms_amplitude_scale(msname):
+    '''
+    This function corrects for the amplitude correction present in the fast MS data
+    correction_dates provides the date on which the ampltiude correction was done in
+    data recorder itself. The amplitude of fast vis data was initially off by a factor 
+    of 4. On December 18, when trying to correct for this, this factor became 16. As of 
+    February 7, 2024, this has not been corrected. Details of this issue has been discussed 
+    in https://github.com/ovro-lwa/lwa-issues/issues/501
+    
+    :param msname: Name of MS
+    : type msname: str
+    :param correction_date: Datetime of correction in X-engine
+    :type correction_dates: Is a list of anything which is acceptable by Astropy Time
+    '''
+    amp_ok=get_keyword(msname,"amp_ok")
+    if amp_ok is not None:
+        logging.debug("Amplitude correction done/tried earlier. Returning")
+        return
+    
+    correction_dates=['2023-12-18T23:00:00','2024-03-01T01:00:00']
+    
+    correction_time=Time(correction_dates)
+    msmd=msmetadata()
+    try:
+        msmd.open(msname)
+        antids = msmd.antennaids()
+        times=msmd.timesforfield(0)
+    finally:
+        msmd.done()
+    num_ants=len(antids)
+    if num_ants>48:
+        logging.info("Not a fast visibility MS from OVRO-LWA. Doing nothing")
+        put_keyword(msname,"amp_ok","1")
+        return
+    obstime=Time(times[0],format='mjd')
+    if obstime>correction_time[1]:
+        logging.debug("MS time is after the time when data recorders were updated. Doing nothing.")
+        put_keyword(msname,"amp_ok","1")
+        return
+    elif obstime<correction_time[0]:
+        correction_factor=4
+    else:
+        correction_factor=16
+    
+    tb=table()
+    
+    tb.open(msname,nomodify=False)
+    try:
+        data=tb.getcol('DATA')
+        data/=correction_factor
+        tb.putcol('DATA',data)
+        tb.flush()
+        logging.debug("Fast MS amplitude correction done successfully")
+    finally:
+        tb.close()
+    put_keyword(msname,"amp_ok","1")
+    return
+    
+    
+    
+    
 
