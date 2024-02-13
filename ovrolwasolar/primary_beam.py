@@ -49,7 +49,8 @@ class woody_beam():
         self.Qbeam=None
         self.Vbeam=None
         self.freq=freq
-        self.msfile=msfile
+        if self.freq is None:
+            self.msfile=msfile
         
     def ctrl_freq(self):
         if self.freq is not None:
@@ -167,7 +168,8 @@ class jones_beam:
         except:
             self._beam_file_path=None
         self.freq=freq
-        self.msfile=msfile
+        if self.freq is None:
+            self.msfile=msfile
         self.num_theta=181
         self.num_phi=361
         self.start_freq=10

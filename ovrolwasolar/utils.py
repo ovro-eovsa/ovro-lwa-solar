@@ -35,6 +35,33 @@ def get_sun_pos(msfile, str_output=True):
         return d0_j2000_str
     return d0_j2000
 
+def get_solar_azel(msfile):
+    '''
+    Returns az ,el of sun in degrees.
+    
+    :param msfile: Name of MS 
+    :type msfile: str
+    
+    :return: az,el in degrees
+    '''
+    me=measures()
+    m = get_sun_pos(msfile, str_output=False)
+    logging.debug('Solar ra: ' + str(m['m0']['value']))
+    logging.debug('Solar dec: ' + str(m['m1']['value']))
+    tb=table()
+    tb.open(msfile)
+    t0 = tb.getcell('TIME', 0)
+    tb.close()
+    ovro = me.observatory('OVRO_MMA')
+    timeutc = me.epoch('UTC', '%fs' % t0)
+    me.doframe(ovro)
+    me.doframe(timeutc)
+    d = me.measure(m, 'AZEL')
+    logging.debug('Solar azimuth: ' + str(d['m0']['value']))
+    logging.debug('Solar elevation: ' + str(d['m1']['value']))
+    elev = d['m1']['value']*180/np.pi
+    az=d['m0']['value']*180/np.pi
+    return az,elev
 
 def get_msinfo(msfile):
     """
@@ -350,23 +377,8 @@ def correct_primary_beam(msfile, imagename, pol='I', fast_vis=False):
     provide full name of files. No addition to filename is done.
     If single file is provided, we can add '.image.fits' to it. 
     '''
-    me=measures()
-    m = get_sun_pos(msfile, str_output=False)
-    logging.debug('Solar ra: ' + str(m['m0']['value']))
-    logging.debug('Solar dec: ' + str(m['m1']['value']))
-    tb=table()
-    tb.open(msfile)
-    t0 = tb.getcell('TIME', 0)
-    tb.close()
-    ovro = me.observatory('OVRO_MMA')
-    timeutc = me.epoch('UTC', '%fs' % t0)
-    me.doframe(ovro)
-    me.doframe(timeutc)
-    d = me.measure(m, 'AZEL')
-    logging.debug('Solar azimuth: ' + str(d['m0']['value']))
-    logging.debug('Solar elevation: ' + str(d['m1']['value']))
-    elev = d['m1']['value']*180/np.pi
-    az=d['m0']['value']*180/np.pi
+    
+    az,elev=get_solar_azel(msfile)
     pb=beam(msfile=msfile)
     pb.srcjones(az=[az],el=[elev])
     jones_matrices=pb.get_source_pol_factors(pb.jones_matrices[0,:,:])

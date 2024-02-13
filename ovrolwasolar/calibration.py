@@ -269,14 +269,14 @@ def do_bandpass_correction(solar_ms, calib_ms=None, bcal=None, caltable_folder='
     return solar_ms
     
 def find_bandpass_sol(msname,caltable=None,uvrange='',timerange='',minsnr=3,apmode='p',refant='202'):
-    from casatools import calibrater()
+    from casatools import calibrater
     cb=calibrater()
-	cb.open(msname)
-	cb.selectvis(chanmode='none',uvrange=uvrange,time=timerange)
-	if caltable is None:
-	    caltable=msname[:-3]+'_align_V.cal'
-	cb.setsolve(type='B',t='inf',refant=str(refant),apmode='p',table=caltable,append=False,minsnr=minsnr,\
-	            solnorm=True,)
-	cb.solve()
-	cb.close()
+    cb.open(msname)
+    cb.selectvis(chanmode='none',uvrange=uvrange,time=timerange)
+    if caltable is None:
+        caltable=msname[:-3]+'_align_V.cal'
+    cb.setsolve(type='B',t='inf',refant=str(refant),apmode='p',table=caltable,append=False,minsnr=minsnr,\
+                solnorm=True,)
+    cb.solve()
+    cb.close()
 

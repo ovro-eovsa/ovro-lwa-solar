@@ -10,9 +10,13 @@ from .primary_beam import woody_beam as beam
 from . import utils
 from . import generate_calibrator_model
 from . import selfcal
-import bdsf
+#import bdsf
 from astropy import units as u
-from astropy.coordinates import AltAz
+from astropy.coordinates import AltAz, EarthLocation
+import pandas as pd
+from astropy.coordinates import SkyCoord
+from astropy.wcs import WCS
+from astropy.convolution import Gaussian2DKernel, convolve_fft
 
 
 def get_corr_type(msname):
@@ -188,7 +192,7 @@ def squint_correction(msname,caltable_folder='squint_correction',output_ms=None)
     
     return output_ms 
 
-def detect_sources(imagename,adaptive_rms=True,thresh_pix=10,thresh_isl=8,imfcat=None, overwrite=False):
+def detect_sources(imagename,adaptive_rms=True,thresh_pix=10,thresh_isl=8,imgcat=None, overwrite=False):
     if imgcat is None:
         imgcat=imagename.replace("-image.fits",".pybdsf")
 
@@ -199,9 +203,7 @@ def detect_sources(imagename,adaptive_rms=True,thresh_pix=10,thresh_isl=8,imfcat
         outputs.write_catalog(outfile=imgcat,format='csv',catalog_type='srl',clobber=overwrite)
         logging.debug("Catalogue of sources found by PyBDSF is written to ",imgcat)
     else:
-        logging.debug("Catalogue file not written because the file existed and user does not want to overwrite")
-    end=timeit.default_timer()
-    print (end-start)    
+        logging.debug("Catalogue file not written because the file existed and user does not want to overwrite")   
     return imgcat
     
 def read_pybdsf_output(imgcat):
@@ -220,12 +222,12 @@ def convert_to_altaz(img_coord,obstime,observer='ovro'):
     location.
     '''
     try:
-        ovro_loc = EarthLocation.of_site('ovro')
+        ovro_loc = EarthLocation.of_site(observer)
     except:
         ovro_loc=observer
     
     
-    aa = AltAz(location=observing_location, obstime=obstime)
+    aa = AltAz(location=ovro_loc, obstime=obstime)
     coord1=img_coord.transform_to(aa)
     return coord1.alt.value, coord1.az.value
     
@@ -240,11 +242,11 @@ def get_beam_factors(alt,az,freq):
     factors=np.zeros((num_source,4))
     for i in range(num_source):
         pol_fac=beamfac.get_source_pol_factors(beamfac.jones_matrices[i,:,:])
-        factors[i,0]=0.5*(pol_fac[0,0]+pol_fac[1,1])
-        factors[i,1]=0.5*(pol_fac[0,0]-pol_fac[1,1])
-        factors[i,2]=0.5*(pol_fac[0,1]+pol_fac[1,0])
-        factors[i,3]=1j*0.5*(pol_fac[0,1]-pol_fac[1,0])
-    return factors
+        factors[i,0]=np.real(0.5*(pol_fac[0,0]+pol_fac[1,1]))
+        factors[i,1]=np.real(0.5*(pol_fac[0,0]-pol_fac[1,1]))
+        factors[i,2]=np.real(0.5*(pol_fac[0,1]+pol_fac[1,0]))
+        factors[i,3]=np.real(1j*0.5*(pol_fac[0,1]-pol_fac[1,0]))
+    return factors/np.expand_dims(factors[:,0],axis=1) ## all factors are in respect to I value
     
 def generate_polarised_skymodel(imagename,imgcat=None): 
     '''
@@ -252,7 +254,8 @@ def generate_polarised_skymodel(imagename,imgcat=None):
     and -model.fits exist
     '''
     
-    imgcat= detect_sources(imagename)
+    if imgcat is None:
+        imgcat= detect_sources(imagename+"-I-image.fits")
     img_ra,img_dec,s_code,img_flux=read_pybdsf_output(imgcat)
     pos=np.where((np.isnan(img_ra)==False) & (np.isnan(img_dec)==False) & (s_code=='S'))[0]
 
@@ -265,54 +268,299 @@ def generate_polarised_skymodel(imagename,imgcat=None):
     
     img_coord=SkyCoord(img_ra*u.degree,img_dec*u.degree,frame='icrs')   
     
-    head=fits.getheader(imagename)
+    head=fits.getheader(imagename+"-I-image.fits")
     obstime=Time(head['DATE-OBS'])
     
-    
     alt,az=convert_to_altaz(img_coord,obstime)
+    
     
     freq=head['CRVAL3']*1e-6
     
     factors=get_beam_factors(alt,az,freq=freq)
     
+    
     imwcs=WCS(head)
-    img_xy = imwcs.all_world2pix(list(zip(img_ra, img_dec,[header['CRVAL3']]*num_sources,[header['CRVAL4']]*num_sources)), 1)
+    img_xy = imwcs.all_world2pix(list(zip(img_ra, img_dec,[head['CRVAL3']]*num_sources,[head['CRVAL4']]*num_sources)), 1)
     
 
     for j,stokes in enumerate(['Q','U','V']):
-        image=imagename+'-'+stokes+"-.model.fits"
+        image=imagename+'-'+stokes+"-model.fits"
         hdu=fits.open(image,mode='update')
         try:
             data=hdu[0].data
             data*=0.0
             for i in range(num_sources):
-                x=img_xy[i,0]
-                y=img_xy[i,1]
-                data[y,x,0,0]=img_flux[i]*factors[i,j+1]
+                x=int(img_xy[i,0])
+                y=int(img_xy[i,1])
+                data[0,0,y,x]=img_flux[i]*factors[i,j+1]
             hdu[0].data=data
             hdu.flush()
         finally:
             hdu.close()
 
-       
+        
+def add_solar_model(imagename,msfile,sol_area=400.):            
+    me=measures()
+    m = utils.get_sun_pos(msfile, str_output=False)
+    solar_ra=m['m0']['value']*180/np.pi
+    solar_dec=m['m1']['value']*180/np.pi
+    solar_az,solar_el=utils.get_solar_azel(msfile)
+    
+    head=fits.getheader(imagename+"-I-image.fits")
+    freq=head['CRVAL3']*1e-6
+    imwcs=WCS(head) 
+    solar_xy = imwcs.all_world2pix(list(zip([solar_ra], [solar_dec],[head['CRVAL3']],[head['CRVAL4']])), 1)      
+    
+    if head['cunit1'] == 'deg':
+        dx = np.abs(head['cdelt1'] * 60.)
+    else:
+        print(head['cunit1'] + ' not recognized as "deg". Model could be wrong.')
+    if head['cunit2'] == 'deg':
+        dy = np.abs(head['cdelt2'] * 60.)
+    else:
+        print(head['cunit2'] + ' not recognized as "deg". Model could be wrong.')                   
+    sol_area_xpix = int(sol_area / dx)
+    sol_area_ypix = int(sol_area / dy)
+    
+    factors=get_beam_factors([solar_el],[solar_az],freq=freq)
+
+    
+    solx=int(solar_xy[0][0])
+    soly=int(solar_xy[0][1])
+    
+    img_data=fits.getdata(imagename+'-I-model.fits')
+    
+    for j,stokes in enumerate(['Q','U','V']):
+        image=imagename+'-'+stokes+"-model.fits"
+        hdu=fits.open(image,mode='update')
+        try:
+            data=hdu[0].data
+           
+            data[0, 0, soly - sol_area_ypix // 2:soly + sol_area_ypix // 2 + 1,
+                    solx - sol_area_xpix // 2:solx + sol_area_xpix // 2 + 1] = \
+                                            img_data[0, 0, soly - sol_area_ypix // 2:soly + sol_area_ypix // 2 + 1,
+                                            solx - sol_area_xpix // 2:solx + sol_area_xpix // 2 + 1]*factors[0,j+1]
+            hdu[0].data=data
+            hdu.flush()
+        finally:
+            hdu.close()
             
-                              
+def get_conv_kernel(head):
+    
+    bmaj=head['BMAJ']
+    bmin=head['BMIN']
+    bpa=head['BPA']
+    dx=abs(head['CDELT1'])
+    
+    
+    sigma_major=bmaj/(2*np.sqrt(2*np.log(2)))
+    sigma_minor=bmin/(2*np.sqrt(2*np.log(2)))
+    
+    sigma_major_pix=sigma_major/dx
+    sigma_minor_pix=sigma_minor/dx
+    
+    theta=90-bpa  ### CASA angle increases clockwise
+    
+    kernel=Gaussian2DKernel(sigma_major_pix,sigma_minor_pix,theta=theta)
+    return kernel
+    
+def get_img_correction_factor(imagename,stokes,msfile,imgcat,sol_area=400.,src_area=200,thresh=5,limit_frac=0.2):
+    '''
+    This function determines the correction factor using an image based method. It calculates the difference between ratio of 
+    predicted Q/I,U/I,V/I values and their observed values for each source detected. For all sources other than Sun,
+    the model is essentially a point. To get the I flux, we search for the peak within a 200arcmin region around
+    the detected source. For the Sun, we have put in a scaled copy of the I model. Hence we do a average of the
+    ratios between a 400arcmin region around the Sun. Then it does a weighted average of
+    the differences. The weighting is done by the Stokes I fluxes. Thus the difference of the brightest source gets the
+    highest weight. If the resultant mean is small, then wo do no bother to do an image based correction. The way the
+    correction fraction is determined implies that the corrected image should be
+    Q_corrected=Q_obs+correction_factor*Iobs
+    U_corrected=U_obs+correction_factor*Iobs
+    V_corrected=V_obs+correction_factor*Iobs
+    
+    :param imagename: Prefix of the image. This means imagename-I-image.fits, imagename-Q-image.fits etc should exist
+    :type imagename: str
+    :param stokes: Stokes of the image. Can be either Q,U,V
+    :type stokes: str
+    :param msfile: MS name, which is used to determine the solar loc
+    :type msfile: str
+    :param imgcat: Catalog of the source list returned by PyBDSF
+    :type imgcat: str
+    :param sol_area: Diameter of region around Sun which will be used to calculate correction factor
+    :type sol_area: integer
+    :param src_area: Diameter of region around other sources which will be used to calculate correction factor
+    :type src_area: integer
+    :param thresh: Threshold in terms of rms which will be used to determine a source detection in Stokes images
+    :type thresh: float
+    :param limit_frac: If absolute of the correction factor is less than this, the image plane correction will
+                        not be done. This function will return 0 in that case
+    :type limit_frac: float
+    '''
+    me=measures()
+    m = utils.get_sun_pos(msfile, str_output=False)
+    solar_ra=m['m0']['value']*180/np.pi
+    solar_dec=m['m1']['value']*180/np.pi
+    
+    head=fits.getheader(imagename+"-I-image.fits")
+    Idata=fits.getdata(imagename+"-I-image.fits")
+    freq=head['CRVAL3']*1e-6
+    imwcs=WCS(head) 
+    solar_xy = imwcs.all_world2pix(list(zip([solar_ra], [solar_dec],[head['CRVAL3']],[head['CRVAL4']])), 1)   
+    
+    if head['cunit1'] == 'deg':
+        dx = np.abs(head['cdelt1'] * 60.)
+    else:
+        print(head['cunit1'] + ' not recognized as "deg". Model could be wrong.')
+    if head['cunit2'] == 'deg':
+        dy = np.abs(head['cdelt2'] * 60.)
+    else:
+        print(head['cunit2'] + ' not recognized as "deg". Model could be wrong.')                   
+    sol_area_xpix = int(sol_area / dx)
+    sol_area_ypix = int(sol_area / dy)
+    
+    src_area_xpix = int(src_area / dx)
+    src_area_ypix = int(src_area / dy)
+    
+    solx=int(solar_xy[0][0])
+    soly=int(solar_xy[0][1])
+    
+    model=imagename+"-"+stokes+"-model.fits"
+    img=imagename+"-"+stokes+"-image.fits"
+    
+    model_data=fits.getdata(model)
+    img_data=fits.getdata(img)
+    
+    
+    
+    
+    img_ra,img_dec,s_code,img_flux=read_pybdsf_output(imgcat)
+    pos=np.where((np.isnan(img_ra)==False) & (np.isnan(img_dec)==False) & (s_code=='S'))[0]
+
+    img_ra=np.array(img_ra[pos])
+    img_dec=np.array(img_dec[pos])
+    img_flux=np.array(img_flux[pos]) 
+    
+    
+    num_sources=len(img_ra)
+    
+    obstime=Time(head['DATE-OBS'])
+    
+    img_coord=SkyCoord(img_ra*u.degree,img_dec*u.degree,frame='icrs')   
+    
+    alt,az=convert_to_altaz(img_coord,obstime)
+    
+    
+    freq=head['CRVAL3']*1e-6
+    
+    factors=get_beam_factors(alt,az,freq=freq)
+    
+    if stokes=='Q':
+        factors=factors[:,1]
+    elif stokes=='U':
+        factors=factors[:,2]
+    elif stokes=='V':   
+        factors=factors[:,3]
+    
+    img_coord=SkyCoord(img_ra*u.degree,img_dec*u.degree,frame='icrs')  
+    
+    img_xy = imwcs.all_world2pix(list(zip(img_ra, img_dec,[head['CRVAL3']]*num_sources,[head['CRVAL4']]*num_sources)), 1)
+    
+    diff_frac=[]
+    weights=[]
+    
+    rms=np.nanstd(img_data)
+            
+    for i in range(num_sources):
+        x=int(img_xy[i,0])
+        y=int(img_xy[i,1])
+
+
+        if x>sol_area_xpix//2-solx and x<sol_area_xpix//2+solx and \
+            y>sol_area_ypix//2-solx and y<sol_area_xpix//2+soly:
+            continue
+        Ival=np.nanmax(Idata[0,0,y-src_area_ypix//2:y+src_area_ypix//2,\
+                                x-src_area_xpix//2:x+src_area_xpix//2])
+
+        model_val=model_data[0,0,y,x]
+        
+
+        
+        img_val1=np.nanmax(img_data[0,0,y-src_area_ypix//2:y+src_area_ypix//2,\
+                                x-src_area_xpix//2:x+src_area_xpix//2])
+        img_val2=np.nanmin(img_data[0,0,y-src_area_ypix//2:y+src_area_ypix//2,\
+                                x-src_area_xpix//2:x+src_area_xpix//2])
+        
+        
+        if img_val1>abs(img_val2):
+            img_val=img_val1
+        else:
+            img_val=img_val2
+        
+
+        if abs(img_val)>thresh*rms and (not (abs(weights-Ival)<1e-3).any()):
+            diff_frac.append(factors[i]-img_val/Ival)
+            weights.append(Ival)
+            
+   
+
+    pos=np.where(abs(img_data)<thresh*rms)
+    img_data[pos]=np.nan
+   
+    
+    rms=np.nanstd(Idata)
+    pos=np.where(abs(Idata)<thresh*rms)
+    Idata[pos]=np.nan
+    
+    
+    
+    solar_az,solar_el=utils.get_solar_azel(msfile)        
+    factors=get_beam_factors([solar_el],[solar_az],freq=freq)
+    
+    if stokes=='Q':
+        solar_model_frac=factors[0,1]
+    elif stokes=='U':
+        solar_model_frac=factors[0,2]
+    elif stokes=='V':   
+        solar_model_frac=factors[0,3]
+    
+    
+    solar_obs_frac=np.nanmedian(img_data[0, 0, soly - sol_area_ypix // 2:soly + sol_area_ypix // 2 + 1,
+                                            solx - sol_area_xpix // 2:solx + sol_area_xpix // 2 + 1]/
+                                            Idata[0, 0, soly - sol_area_ypix // 2:soly + sol_area_ypix // 2 + 1,
+                                            solx - sol_area_xpix // 2:solx + sol_area_xpix // 2 + 1])
+
+    if not np.isnan(solar_obs_frac):
+        diff_frac.append(solar_model_frac-solar_obs_frac)
+        weights.append(np.nanmax(Idata[0, 0, soly - sol_area_ypix // 2:soly + sol_area_ypix // 2 + 1,
+                                            solx - sol_area_xpix // 2:solx + sol_area_xpix // 2 + 1]))
+    
+    diff_frac=np.array(diff_frac)
+    weight=np.array(weights)
+    print (diff_frac)
+    print (weights)
+    frac=np.average(diff_frac,weights=weights)
+    if abs(frac)<limit_frac:
+        frac=0.0
+    return frac
+    
+            
+            
+    
     
 
-def correct_Q_leakage(msname,factor, inplace=False, outms=None):
+def correct_image_leakage(msname,factor, inplace=False, outms=None):
     '''
-    This function implements a constant leakage correction for Q
+    This function implements a constant leakage correction for
     visibilities. If corrected data column is present, the corrected
     column is modified. If not, datacolumn is modified. However if
     inplace is set to False, then a MS is split and then the correction
-    is done. The correction factor should be determined as
-    
-    Qfrac_beam-Qfrac_observed
+    is done. The correction factor should be determined using the function
+    get_img_correction_factor
     
     :param msname: MS to be corrected
     :type param: str
     :param factor: Correction factor
-    :type factor: float
+    :type factor: array of floats of size 3 [Qfac,Ufac,Vfac]
     :param inplace: Determines whether correction will be done inplace; optional
                     default: False, which means, by default the input MS will not be
                     modified.
@@ -323,7 +571,7 @@ def correct_Q_leakage(msname,factor, inplace=False, outms=None):
     
       
     if outms is None:
-        outms=msname.replace(".ms","_Qleak_corrected.ms")
+        outms=msname.replace(".ms","_img_leak_corrected.ms")
     
     present=utils.check_corrected_data_present(msname)
     if present:
@@ -339,13 +587,22 @@ def correct_Q_leakage(msname,factor, inplace=False, outms=None):
     if datacolumn=='CORRECTED':
         datacolumn='CORRECTED_DATA'
     
+    
     success=False
+    
+    Qfac=factor[0]
+    Ufac=factor[1]
+    Vfac=factor[2]
+    
     tb=table()
     tb.open(msname,nomodify=False)
     try:
         data=tb.getcol(datacolumn)
-        data[0,...]+=0.25*factor*(data[0,...]+data[3,...])
-        data[3,...]+=-0.25*factor*(data[0,...]+data[3,...])
+        Isum=0.5*(data[0,...]+data[3,...])
+        data[0,...]+=Qfac*Isum
+        data[3,...]+=-Qfac*Isum
+        data[1,...]+=(Ufac-1j*Vfac)*Isum
+        data[2,...]+=(Ufac+1j*Vfac)*Isum
         tb.putcol(datacolumn,data)
         tb.flush()
         success=True
@@ -355,15 +612,12 @@ def correct_Q_leakage(msname,factor, inplace=False, outms=None):
         tb.close()
     
     if not success:
-        logging.warning("Image based leakage correction of Stokes Q "+\
+        logging.warning("Image based leakage correction "+\
                         "was not successfull. Please proceed with caution.")
     return msname
  
     
-        
-    
-    
-    
+#TODO This function needs rewritting. 
 def image_based_leakage_correction(msname,stokes='Q,U,V',factor=None,outms=None):
     '''
     This function implements an image based leakage correction.
