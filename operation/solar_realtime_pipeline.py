@@ -6,9 +6,9 @@ import os, sys, glob, getopt
 #sys.path.append('/opt/devel/bin.chen/ovro-lwa-solar')
 from ovrolwasolar import solar_pipeline as sp
 from ovrolwasolar.primary_beam import analytic_beam as beam
-from ovrolwasolar import utils
+from ovrolwasolar import utils, calibration, flagging
 from casatasks import clearcal, applycal, flagdata, tclean, exportfits, imsubimage
-from casatools import msmetadata, quanta, measures
+from casatools import msmetadata, quanta, measures, table
 from suncasa.utils import helioimage2fits as hf
 from suncasa.io import ndfits
 from ovrolwasolar import file_handler
@@ -36,6 +36,7 @@ matplotlib.use('agg')
 msmd = msmetadata()
 qa = quanta()
 me = measures()
+tb = table()
 
 def sun_riseset(date=Time.now(), observatory='ovro'):
     '''
@@ -179,7 +180,7 @@ def download_msfiles_cmd(msfile_path, server, destination):
     if std_err:
         print(std_err)
 
-def download_msfiles(msfiles, destination='/fast/bin.chen/20231014_eclipse/slow_working/', bands=None, verbose=True, server=None, maxthread=5):
+def download_msfiles(msfiles, destination='/fast/bin.chen/realtime_pipeline/slow_working/', bands=None, verbose=True, server=None, maxthread=6):
     from multiprocessing.pool import ThreadPool
     """
     Parallelized downloading for msfiles returned from list_msfiles() to a destination.
@@ -251,7 +252,79 @@ def download_timerange(starttime, endtime, download_interval='1min', destination
         print('====Downloading all {0:d} times took {1:.1f} s===='.format(nt, time_completed-time_bg))
 
 
-def run_calib(msfile, msfiles_cal=None, bcal_tables=None, do_selfcal=True, num_phase_cal=0, num_apcal=1, caltable_folder=None, logger_file=None, visdir_slfcaled=None):
+def download_calibms(calib_time, download_fold = '/lustre/bin.chen/realtime_pipeline/ms_calib/', doflag=True,
+        bands=['13MHz', '18MHz', '23MHz', '27MHz', '32MHz', '36MHz', '41MHz', '46MHz', '50MHz', '55MHz', '59MHz', '64MHz', '69MHz', '73MHz', '78MHz', '82MHz']):
+    """
+    Function to download calibration ms files for all or selected bands based on a given time
+    :param calib_time: time selected for generating the calibration tables in astropy Time format
+    :param download_fold: directory to hold the downloaded msfiles 
+    :param bands: band selection. Default to use all 16 bands.
+    """
+    if type(calib_time) == str:
+        try:
+            calib_time = Time(calib_time)
+        except:
+            print('The input time needs to be astropy.time.Time format')
+    print(socket.gethostname(), '=======Calibrating Time {0:s}======='.format(calib_time.isot))
+    ms_calib0 = list_msfiles(calib_time, file_path='slow', bands=bands)
+    ms_calib = download_msfiles(ms_calib0, destination=download_fold, bands=bands)
+    ms_calib.sort()
+    if doflag:
+        for ms_calib_ in ms_calib:
+           antflagfile = flagging.flag_bad_ants(ms_calib_)
+    return ms_calib
+
+def gen_caltables(ms_calib, caltable_fold = '/lustre/bin.chen/realtime_pipeline/caltables/',
+        bcaltb=None, uvrange='>10lambda', refant='202',
+        make_beam_cal=True, doflag=True):
+    """
+    Function to generate calibration tables for a list of calibration ms files
+    :param calib_time: time selected for generating the calibration tables in astropy Time format
+    :param caltable_fold: directory to hold these calibration tables
+    :param bcaltb: name of the calibration tables. Use the default if None
+    :param download_fold: directory to hold the downloaded msfiles 
+    :param uvrange: uv range to be used, default to '>10lambda'
+    :param refant: reference antenna, default to '202'
+    :param bands: band selection. Default to use all 16 bands.
+    :param make_beam_cal: if True, flag all outrigger antennas. These would be used for beamforming.
+    """
+    bcaltbs = []
+    # TODO: somehow the parallel processing failed if flagging has run. I have no idea why. Returning to the slow serial processing.
+    #pool = multiprocessing.pool.Pool(processes=len(ms_calib))
+    #gen_calib_partial = partial(calibration.gen_calibration, uvrange=uvrange, caltable_fold=caltable_fold,
+    #                refant=refant)
+    #result = pool.map_async(gen_calib_partial, ms_calib)
+    #timeout = 2000.
+    #result.wait(timeout=timeout)
+    #bcaltbs = result.get()
+    #pool.close()
+    #pool.join()
+    for ms_calib_ in ms_calib:
+        bcaltb = calibration.gen_calibration(ms_calib_, uvrange=uvrange, caltable_fold=caltable_fold, refant=refant)
+        bcaltbs.append(bcaltb)
+
+    if make_beam_cal:
+        core_ant_ids, exp_ant_ids = flagging.get_antids(ms_calib[0])
+        bcaltbs_bm = []
+        for bcaltb in bcaltbs:
+            bcaltb_bm = bcaltb + '_bm'
+            os.system('cp -r ' + bcaltb + ' ' + bcaltb_bm)
+            tb.open(bcaltb_bm, nomodify=False)
+            flags = tb.getcol('FLAG')
+            npol, nch, nant = flags.shape
+            for exp_ant_id in exp_ant_ids:
+                flags[:, :, exp_ant_id] = True
+            tb.putcol('FLAG', flags)
+            tb.close()
+            bcaltbs_bm.append(bcaltb_bm)
+
+        return bcaltbs, bcaltbs_bm
+    else:
+        return bcaltbs
+
+
+
+def run_calib(msfile, msfiles_cal=None, bcal_tables=None, do_selfcal=True, num_phase_cal=0, num_apcal=1, caltable_folder=None, logger_file=None, visdir_slfcaled=None, flagdir=None):
     msmd.open(msfile)
     trange = msmd.timerangeforobs(0)
     btime = qa.time(trange['begin']['m0'],form='fits')[0]
@@ -271,6 +344,8 @@ def run_calib(msfile, msfiles_cal=None, bcal_tables=None, do_selfcal=True, num_p
                         num_phase_cal=num_phase_cal, num_apcal=num_apcal,
                         logfile=logger_file, caltable_folder=caltable_folder, do_final_imaging=False, do_fluxscaling=False, freqbin=1)
             os.system('cp -r '+ outms + ' ' + visdir_slfcaled + '/')
+            if os.path.exists(msfile.replace('.ms', '.badants')):
+                os.system('cp '+ msfile.replace('.ms', '.badants') + ' ' + flagdir + '/')
             msfile_slfcaled = visdir_slfcaled + '/' + os.path.basename(outms)
             return msfile_slfcaled
         except Exception as e:
@@ -340,7 +415,7 @@ def pipeline_quick(image_time=Time.now() - TimeDelta(20., format='sec'), server=
             distributed=True, min_nband=6, nch_out=12, do_selfcal=True, num_phase_cal=0, num_apcal=1, overwrite_ms=False, delete_ms_slfcaled=False,
             logger_file=None, compress_fits=True,
             proc_dir = '/fast/bin.chen/realtime_pipeline/',
-            save_img_dir = '/lustre/bin.chen/realtime_pipeline/',
+            save_dir = '/lustre/bin.chen/realtime_pipeline/',
             calib_file = '20240117_145752'):
     """
     Pipeline for processing and imaging slow visibility data
@@ -362,9 +437,10 @@ def pipeline_quick(image_time=Time.now() - TimeDelta(20., format='sec'), server=
     visdir_work = proc_dir + 'slow_working/'
     visdir_slfcaled = proc_dir + 'slow_slfcaled/'
     imagedir_allch = proc_dir + 'images_allch/'
+    flagdir = save_dir + 'flags/'
 
-    imagedir_allch_combined = save_img_dir + 'fits/'
-    fig_mfs_dir = save_img_dir + 'figs_mfs/'
+    imagedir_allch_combined = save_dir + 'fits/'
+    fig_mfs_dir = save_dir + 'figs_mfs/'
 
     ## Night-time MS files used for calibration ##
     msfiles_cal = glob.glob(visdir_calib + calib_file + '_*MHz.ms')
@@ -381,6 +457,9 @@ def pipeline_quick(image_time=Time.now() - TimeDelta(20., format='sec'), server=
 
     if not os.path.exists(caltable_folder):
         os.makedirs(caltable_folder)
+
+    if not os.path.exists(flagdir):
+        os.makedirs(flagdir)
 
     if not os.path.exists(imagedir_allch):
         os.makedirs(imagedir_allch)
@@ -444,7 +523,7 @@ def pipeline_quick(image_time=Time.now() - TimeDelta(20., format='sec'), server=
             pool = multiprocessing.pool.Pool(processes=len(msfiles))
             #result = pool.map_async(run_calib, msfiles)
             run_calib_partial = partial(run_calib, msfiles_cal=msfiles_cal, bcal_tables=bcal_tables, do_selfcal=do_selfcal, num_phase_cal=num_phase_cal, num_apcal=num_apcal, 
-                    logger_file=logger_file, caltable_folder=caltable_folder, visdir_slfcaled=visdir_slfcaled)
+                    logger_file=logger_file, caltable_folder=caltable_folder, visdir_slfcaled=visdir_slfcaled, flagdir=flagdir)
             result = pool.map_async(run_calib_partial, msfiles)
             timeout = 2000.
             result.wait(timeout=timeout)
@@ -628,7 +707,7 @@ def run_pipeline(time_start=Time.now(), time_interval=600., delay_from_now=180.,
         server='lwacalim', file_path='slow', multinode=True, nodes=10, firstnode=0, delete_ms_slfcaled=True, 
         logger_file='/fast/bin.chen/realtime_pipeline/realtime_calib-imaging_parallel.log',
         proc_dir = '/fast/bin.chen/realtime_pipeline/',
-        save_img_dir = '/lustre/bin.chen/realtime_pipeline/',
+        save_dir = '/lustre/bin.chen/realtime_pipeline/',
         calib_file = '20240117_145752'):
     '''
     Main routine to run the pipeline. Note each time stamp takes about 8.5 minutes to complete.
@@ -678,7 +757,7 @@ def run_pipeline(time_start=Time.now(), time_interval=600., delay_from_now=180.,
             sleep(twait.sec + delay_from_now)
         logging.info('{0:s}: Start processing {1:s}'.format(socket.gethostname(), time_start.isot))
         res = pipeline_quick(time_start, do_selfcal=do_selfcal, num_phase_cal=num_phase_cal, num_apcal=num_apcal, server=server, file_path=file_path, 
-                delete_ms_slfcaled=delete_ms_slfcaled, logger_file=logger_file, proc_dir=proc_dir, save_img_dir=save_img_dir, calib_file=calib_file)
+                delete_ms_slfcaled=delete_ms_slfcaled, logger_file=logger_file, proc_dir=proc_dir, save_dir=save_dir, calib_file=calib_file)
         time2 = timeit.default_timer()
         if res:
             logging.info('{0:s}: Processing {1:s} was successful within {2:.1f}m'.format(socket.gethostname(), time_start.isot, (time2-time1)/60.))
@@ -716,14 +795,14 @@ if __name__=='__main__':
     parser.add_argument('--nodes', default=10, help='Number of nodes to use')
     parser.add_argument('--delay', default=60, help='Delay from current time in seconds')
     parser.add_argument('--proc_dir', default='/fast/bin.chen/realtime_pipeline/', help='Directory for processing')
-    parser.add_argument('--save_img_dir', default='/lustre/bin.chen/realtime_pipeline/', help='Directory for saving fits files')
+    parser.add_argument('--save_dir', default='/lustre/bin.chen/realtime_pipeline/', help='Directory for saving fits files')
     parser.add_argument('--calib_file', default='20240117_145752', help='Calibration file to be used yyyymmdd_hhmmss')
     parser.add_argument('--logger_file', default='/fast/bin.chen/realtime_pipeline/realtime_calib-imaging_parallel.log', help='Directory for saving fits files')
                         
     args = parser.parse_args()
     try:
         run_pipeline(args.prefix, time_interval=float(args.interval), nodes=int(args.nodes), delay_from_now=float(args.delay),
-                     proc_dir=args.proc_dir, save_img_dir=args.save_img_dir, calib_file=args.calib_file, logger_file=args.logger_file)
+                     proc_dir=args.proc_dir, save_dir=args.save_dir, calib_file=args.calib_file, logger_file=args.logger_file)
     except Exception as e:
         logging.error(e)
         raise e
