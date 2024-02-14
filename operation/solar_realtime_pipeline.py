@@ -275,18 +275,17 @@ def download_calibms(calib_time, download_fold = '/lustre/bin.chen/realtime_pipe
     return ms_calib
 
 def gen_caltables(ms_calib, caltable_fold = '/lustre/bin.chen/realtime_pipeline/caltables/',
-        bcaltb=None, uvrange='>10lambda', refant='202',
-        make_beam_cal=True, doflag=True):
+        bcaltb=None, uvrange='>10lambda', refant='202', flag_outrigger=True,
+        beam_caltable_fold = '/lustre/bin.chen/realtime_pipeline/caltables_beam/'):
     """
     Function to generate calibration tables for a list of calibration ms files
-    :param calib_time: time selected for generating the calibration tables in astropy Time format
+    :param ms_calib: list of ms files used for calibration
     :param caltable_fold: directory to hold these calibration tables
     :param bcaltb: name of the calibration tables. Use the default if None
-    :param download_fold: directory to hold the downloaded msfiles 
     :param uvrange: uv range to be used, default to '>10lambda'
     :param refant: reference antenna, default to '202'
-    :param bands: band selection. Default to use all 16 bands.
-    :param make_beam_cal: if True, flag all outrigger antennas. These would be used for beamforming.
+    :param flag_outrigger: if True, flag all outrigger antennas. These would be used for beamforming.
+    :param beam_caltable_fold: directory to hold the calibration tables for beamforming (after flagging the outriggers).
     """
     bcaltbs = []
     # TODO: somehow the parallel processing failed if flagging has run. I have no idea why. Returning to the slow serial processing.
@@ -303,11 +302,11 @@ def gen_caltables(ms_calib, caltable_fold = '/lustre/bin.chen/realtime_pipeline/
         bcaltb = calibration.gen_calibration(ms_calib_, uvrange=uvrange, caltable_fold=caltable_fold, refant=refant)
         bcaltbs.append(bcaltb)
 
-    if make_beam_cal:
+    if flag_outrigger:
         core_ant_ids, exp_ant_ids = flagging.get_antids(ms_calib[0])
         bcaltbs_bm = []
         for bcaltb in bcaltbs:
-            bcaltb_bm = bcaltb + '_bm'
+            bcaltb_bm = beam_caltable_fold + '/' + os.path.basename(bcaltb)
             os.system('cp -r ' + bcaltb + ' ' + bcaltb_bm)
             tb.open(bcaltb_bm, nomodify=False)
             flags = tb.getcol('FLAG')
