@@ -386,7 +386,7 @@ class model_generation():
             return
         os.system("wsclean -predict -pol "+self.pol+" -name "+self.outpath+"calibrator " + self.vis)
         
-    def gen_dummy_image(self,imagename):
+    def   _dummy_image(self,imagename):
         os.system("wsclean -no-dirty -no-update-model-required -size 4096 4096 " + \
                       "-scale 2arcmin -niter 10 -pol "+self.pol+" -name " + imagename + " " + self.vis)            
         
