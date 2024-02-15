@@ -11,9 +11,6 @@ from astropy.io import fits
 import matplotlib.pyplot as plt
 from . import utils,flagging,calibration,selfcal,deconvolve
 import logging, glob
-from .file_handler import File_Handler
-from .primary_beam import analytic_beam as beam 
-from . import primary_beam
 from .generate_calibrator_model import model_generation
 from .  import generate_calibrator_model
 tb = table()
@@ -140,15 +137,21 @@ def gen_nonsolar_source_model(msfile, imagename="allsky", outimage=None, sol_are
     :param remove_strong_sources_only: If True, remove only known strong sources.
         If False, remove everything other than Sun.
     :param verbose: Toggle to print out more information
+    :param pol: specifies which pol it is. should be 'I,Q,U,V,XX,YY'. It is 
+                important that the entries are comma separated.
     :return: FITS image with non-solar sources removed
     """
     imagename1=imagename 
-    if pol=='I':
+    pols=pol.split(',')
+    num_pol=len(pols)
+    if num_pol==1:
         imagename=imagename+"-image.fits"
     else:
-        imagename=imagename+"-XX-image.fits"
+        imagename=imagename+"-"+pols[0]+"-image.fits"
     if os.path.isfile(imagename)==False:
-        imagename=imagename+"-I-image.fits"
+        logging.error("Image does not exist.")
+        raise IOError("Image does not exist")
+        
     solx, soly = get_solar_loc_pix(msfile, imagename)
     srcs = get_nonsolar_sources_loc_pix(msfile, imagename)
     
@@ -163,16 +166,11 @@ def gen_nonsolar_source_model(msfile, imagename="allsky", outimage=None, sol_are
         print(head['cunit2'] + ' not recognized as "deg". Model could be wrong.')
    
     imagename=imagename1
-    for pola in ['I','XX','YY']:
-        if pol=='I' and pola=='I':
+    for pola in pols:
+        if num_pol==0:
             prefix=''
-        elif pola=='XX' and pol!='I':
-            prefix='-XX'
-        elif pola=='YY' and pol!='I':
-            prefix='-YY'
         else:
-            continue
-        print (pola,pol) 
+            prefix="-"+pola
         data = fits.getdata(imagename + prefix+"-model.fits")
         head=fits.getheader(imagename + prefix+"-model.fits")
         if remove_strong_sources_only:

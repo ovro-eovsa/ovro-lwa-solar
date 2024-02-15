@@ -17,7 +17,8 @@ import pandas as pd
 from astropy.coordinates import SkyCoord
 from astropy.wcs import WCS
 from astropy.convolution import Gaussian2DKernel, convolve_fft
-
+from ovrolwasolar import deconvolve
+from scipy.optimize import minimize_scalar
 
 def get_corr_type(msname):
     '''
@@ -247,8 +248,33 @@ def get_beam_factors(alt,az,freq):
         factors[i,2]=np.real(0.5*(pol_fac[0,1]+pol_fac[1,0]))
         factors[i,3]=np.real(1j*0.5*(pol_fac[0,1]-pol_fac[1,0]))
     return factors/np.expand_dims(factors[:,0],axis=1) ## all factors are in respect to I value
+
+def get_good_sources(imagename, imgcat=None, min_alt=5):
+
+    img_ra,img_dec,s_code,img_flux=read_pybdsf_output(imgcat)
     
-def generate_polarised_skymodel(imagename,imgcat=None): 
+    pos=np.where((np.isnan(img_ra)==False) & (np.isnan(img_dec)==False) & (s_code=='S'))[0]
+
+    img_ra=np.array(img_ra[pos])
+    img_dec=np.array(img_dec[pos])
+    img_flux=np.array(img_flux[pos]) 
+    
+    
+    
+    img_coord=SkyCoord(img_ra*u.degree,img_dec*u.degree,frame='icrs')   
+    
+    head=fits.getheader(imagename+"-I-image.fits")
+    obstime=Time(head['DATE-OBS'])
+    
+    alt,az=convert_to_altaz(img_coord,obstime)
+    pos=np.where(alt>min_alt)
+    
+    img_ra=np.array(img_ra[pos])
+    img_dec=np.array(img_dec[pos])
+    img_flux=np.array(img_flux[pos]) 
+    return img_ra,img_dec,img_flux
+    
+def generate_polarised_skymodel(imagename,imgcat=None, min_alt=5): 
     '''
     imagename should be standard WSclean format. Ensure that imagename-{I,Q,U,V}-image.fits
     and -model.fits exist
@@ -256,13 +282,8 @@ def generate_polarised_skymodel(imagename,imgcat=None):
     
     if imgcat is None:
         imgcat= detect_sources(imagename+"-I-image.fits")
-    img_ra,img_dec,s_code,img_flux=read_pybdsf_output(imgcat)
-    pos=np.where((np.isnan(img_ra)==False) & (np.isnan(img_dec)==False) & (s_code=='S'))[0]
-
-    img_ra=np.array(img_ra[pos])
-    img_dec=np.array(img_dec[pos])
-    img_flux=np.array(img_flux[pos]) 
-    
+        
+    img_ra,img_dec,img_flux=get_good_sources(imagename,imgcat)
     
     num_sources=len(img_ra)
     
@@ -272,6 +293,7 @@ def generate_polarised_skymodel(imagename,imgcat=None):
     obstime=Time(head['DATE-OBS'])
     
     alt,az=convert_to_altaz(img_coord,obstime)
+    
     
     
     freq=head['CRVAL3']*1e-6
@@ -433,21 +455,18 @@ def get_img_correction_factor(imagename,stokes,msfile,imgcat,sol_area=400.,src_a
     
     
     
-    img_ra,img_dec,s_code,img_flux=read_pybdsf_output(imgcat)
-    pos=np.where((np.isnan(img_ra)==False) & (np.isnan(img_dec)==False) & (s_code=='S'))[0]
-
-    img_ra=np.array(img_ra[pos])
-    img_dec=np.array(img_dec[pos])
-    img_flux=np.array(img_flux[pos]) 
-    
+    img_ra,img_dec,img_flux=get_good_sources(imagename,imgcat)
     
     num_sources=len(img_ra)
     
-    obstime=Time(head['DATE-OBS'])
-    
     img_coord=SkyCoord(img_ra*u.degree,img_dec*u.degree,frame='icrs')   
     
+    head=fits.getheader(imagename+"-I-image.fits")
+    obstime=Time(head['DATE-OBS'])
+    
     alt,az=convert_to_altaz(img_coord,obstime)
+    
+    
     
     
     freq=head['CRVAL3']*1e-6
@@ -601,8 +620,8 @@ def correct_image_leakage(msname,factor, inplace=False, outms=None):
         Isum=0.5*(data[0,...]+data[3,...])
         data[0,...]+=Qfac*Isum
         data[3,...]+=-Qfac*Isum
-        data[1,...]+=(Ufac-1j*Vfac)*Isum
-        data[2,...]+=(Ufac+1j*Vfac)*Isum
+        data[1,...]+=(Ufac+1j*Vfac)*Isum
+        data[2,...]+=(Ufac-1j*Vfac)*Isum
         tb.putcol(datacolumn,data)
         tb.flush()
         success=True
@@ -615,8 +634,222 @@ def correct_image_leakage(msname,factor, inplace=False, outms=None):
         logging.warning("Image based leakage correction "+\
                         "was not successfull. Please proceed with caution.")
     return msname
- 
+
+
+
+def correlation_based_leakage_correction(msname,imagename, slope=None,outms=None,sol_area=400,thresh=7,correlation_thresh=10):
+    '''
+    This function calculates the correlation of Q,U and V with I, after taking into account the leakage of the beam. Any
+    residual correlation should come from leakage. We determine the correlation factor and then use the image based
+    leakage correction method to apply this to the data.
     
+    :param msname: Name of MS
+    :param imagename: Prefix of the image which shall be used to calculate the correlation parameters
+    :param slope: The linear correlation between I and various Stokes parameters. Should be in order of [Q,U,V]
+    :param outms: Name of the MS which will be output after correction.
+    :param sol_area: The area around Sun in arcminutes which will be considered for determining the correction factor
+    :param thresh: thresh x rms is the threshold which will be used to ignore low SNR points during correlation 
+                    calculation
+    :param correlation_thresh: The correlation should be determined with at least this SNR for it to be considered
+                                as real.
+    :return outms: The MS after correction
+    :rtype : str
+    '''
+    if slope is None:
+        me=measures()
+        m = utils.get_sun_pos(msname, str_output=False)
+        solar_ra=m['m0']['value']*180/np.pi
+        solar_dec=m['m1']['value']*180/np.pi
+        
+        head=fits.getheader(imagename+"-I-image.fits")
+
+        freq=head['CRVAL3']*1e-6
+        imwcs=WCS(head) 
+        solar_xy = imwcs.all_world2pix(list(zip([solar_ra], [solar_dec],[head['CRVAL3']],[head['CRVAL4']])), 1)   
+        
+        if head['cunit1'] == 'deg':
+            dx = np.abs(head['cdelt1'] * 60.)
+        else:
+            print(head['cunit1'] + ' not recognized as "deg". Model could be wrong.')
+        if head['cunit2'] == 'deg':
+            dy = np.abs(head['cdelt2'] * 60.)
+        else:
+            print(head['cunit2'] + ' not recognized as "deg". Model could be wrong.')                   
+        sol_area_xpix = int(sol_area / dx)
+        sol_area_ypix = int(sol_area / dy)
+        
+        solx=int(solar_xy[0][0])
+        soly=int(solar_xy[0][1])
+        
+        ymin=soly - sol_area_ypix // 2
+        ymax=soly + sol_area_ypix // 2 + 1
+        xmin=solx - sol_area_xpix // 2
+        xmax=solx + sol_area_xpix // 2 + 1
+        
+
+        
+        Idata=fits.getdata(imagename+"-I-image.fits")
+        Qdata=fits.getdata(imagename+"-Q-image.fits")[0,0,ymin:ymax,xmin:xmax]
+        Udata=fits.getdata(imagename+"-U-image.fits")[0,0,ymin:ymax,xmin:xmax]
+        Vdata=fits.getdata(imagename+"-V-image.fits")[0,0,ymin:ymax,xmin:xmax]
+        
+        rms=np.nanstd(Idata)
+        pos=np.where(Idata<thresh*rms)
+        Idata[pos]=np.nan
+        
+        Idata=Idata[0,0,ymin:ymax,xmin:xmax]
+        
+        solar_az,solar_el=utils.get_solar_azel(msname)        
+        factors=get_beam_factors([solar_el],[solar_az],freq=freq)
+        
+
+        
+        Qdata_true=Qdata-factors[0,1]*Idata
+        Udata_true=Udata-factors[0,2]*Idata
+        Vdata_true=Vdata-factors[0,3]*Idata
+        
+        slope=np.zeros(3)
+        error=np.zeros(3)
+        
+        pos=np.where(np.isnan(Idata)==False)
+        p,cov=np.polyfit(Idata[pos],Qdata_true[pos],deg=1,cov=True)
+        
+        if abs(p[0])>correlation_thresh*np.sqrt(cov[0,0]):
+            slope[0]=p[0]
+            error[0]=cov[0,0]
+        
+        p,cov=np.polyfit(Idata[pos],Udata_true[pos],deg=1,cov=True)
+        if abs(p[0])>correlation_thresh*np.sqrt(cov[0,0]):
+            slope[1]=p[0]
+            error[1]=cov[0,0]
+        
+        
+        p,cov=np.polyfit(Idata[pos],Vdata_true[pos],deg=1,cov=True)
+        if abs(p[0])>correlation_thresh*np.sqrt(cov[0,0]):
+            slope[2]=p[0]
+            error[2]=cov[0,0]
+        
+        slope=np.array(slope)*(-1)
+    
+    if outms is None:
+        outms=msname.replace(".ms","_correlation_leak_corrected.ms")
+
+    outms=correct_image_leakage(msname,slope,outms=outms)
+    return outms
+    
+def remove_flags(caltable):
+    tb=table()
+    tb.open(caltable,nomodify=False)
+    
+    try:
+        flag=tb.getcol('FLAG')
+        flag[...]=False
+        tb.putcol('FLAG',flag)
+        tb.flush()
+    finally:
+        tb.close()
+    return
+
+def update_caltable(caltable,crosshand_phase):
+    tb=table()
+    tb.open(caltable,nomodify=False)
+    try:
+        data=tb.getcol('CPARAM')
+        data[...]=np.cos(crosshand_phase)+1j*np.sin(crosshand_phase)
+        tb.putcol('CPARAM',data)
+        tb.flush()
+    finally:
+        tb.close()
+    return
+
+def apply_correction(msname,caltable):
+    from casatasks import applycal
+    applycal(vis=msname,gaintable=caltable,applymode='calonly')
+    return
+    
+def crosshand_phase_optimising_func(crosshand_phase,msname=None,caltable=None,\
+                                    thresh=7,correlation_thresh=10,sol_area=400,):
+    update_caltable(caltable,crosshand_phase)
+    apply_correction(msname,caltable)
+    imagename=msname.replace(".ms","_temp")
+    
+    deconvolve.run_wsclean(msname,imagename,size=512,scale='1arcmin',weight='briggs 0',niter=1000,pol='I,U,V',predict=False)
+    
+    me=measures()
+    m = utils.get_sun_pos(msname, str_output=False)
+    solar_ra=m['m0']['value']*180/np.pi
+    solar_dec=m['m1']['value']*180/np.pi
+    
+    head=fits.getheader(imagename+"-I-image.fits")
+
+    freq=head['CRVAL3']*1e-6
+    imwcs=WCS(head) 
+    solar_xy = imwcs.all_world2pix(list(zip([solar_ra], [solar_dec],[head['CRVAL3']],[head['CRVAL4']])), 1)   
+    
+    if head['cunit1'] == 'deg':
+        dx = np.abs(head['cdelt1'] * 60.)
+    else:
+        print(head['cunit1'] + ' not recognized as "deg". Model could be wrong.')
+    if head['cunit2'] == 'deg':
+        dy = np.abs(head['cdelt2'] * 60.)
+    else:
+        print(head['cunit2'] + ' not recognized as "deg". Model could be wrong.')                   
+    sol_area_xpix = int(sol_area / dx)
+    sol_area_ypix = int(sol_area / dy)
+    
+    solx=int(solar_xy[0][0])
+    soly=int(solar_xy[0][1])
+    
+    ymin=soly - sol_area_ypix // 2
+    ymax=soly + sol_area_ypix // 2 + 1
+    xmin=solx - sol_area_xpix // 2
+    xmax=solx + sol_area_xpix // 2 + 1
+    
+
+    
+    Idata=fits.getdata(imagename+"-I-image.fits")
+    Udata=fits.getdata(imagename+"-U-image.fits")[0,0,ymin:ymax,xmin:xmax]
+    Vdata=fits.getdata(imagename+"-V-image.fits")[0,0,ymin:ymax,xmin:xmax]
+    
+    rms=np.nanstd(Idata)
+    pos=np.where(Idata<thresh*rms)
+    Idata[pos]=np.nan
+    
+    Idata=Idata[0,0,ymin:ymax,xmin:xmax]
+    
+    solar_az,solar_el=utils.get_solar_azel(msname)        
+    factors=get_beam_factors([solar_el],[solar_az],freq=freq)
+    
+
+    
+    Udata_true=Udata-factors[0,2]*Idata
+    Vdata_true=Vdata-factors[0,3]*Idata
+    
+    pos=np.where(np.isnan(Idata)==False)
+    
+    p,cov=np.polyfit(Udata_true[pos],Vdata_true[pos],deg=1,cov=True)
+    print (p[0])
+    if abs(p[0])>correlation_thresh*np.sqrt(cov[0,0]):
+        return abs(p[0])
+    return 0
+    
+    
+def correct_crosshand_phase(msname):
+    from casatasks import polcal
+    
+    caltable=msname.replace(".ms","_dummy.xf")
+    if not os.path.isdir(caltable):
+        polcal(vis=msname,caltable=caltable,poltype='Xf')
+    remove_flags(caltable)
+    
+    res=minimize_scalar(crosshand_phase_optimising_func,bounds=(-3.14159,3.14159),\
+                    method='bounded',args=(msname,caltable))
+    print (res)
+    
+  
+    
+
+
 #TODO This function needs rewritting. 
 def image_based_leakage_correction(msname,stokes='Q,U,V',factor=None,outms=None):
     '''
