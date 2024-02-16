@@ -136,13 +136,17 @@ def make_fast_caltb_from_slow(calib_ms, solar_ms, caltb, \
     msmd.done()
     return caltb_fast
     
-def gen_calibration(msfile, modelcl=None, uvrange='', bcaltb=None, logging_level='info', caltable_fold='caltables',refant='202'):
+def gen_calibration(msfile, modelcl=None, uvrange='>10lambda', bcaltb=None, logging_level='info', caltable_fold='caltables', 
+        refant='202'):
     """
     This function is for doing initial self-calibrations using strong sources that are above the horizon
-    It is recommended to use a dataset observed at night when the Sun is not in the field of view
+    It is recommended to use a dataset observed at night when the Sun is not in the field of view with the same attenuator settings
     :param uvrange: uv range to consider for calibration. Following CASA's syntax, e.g., '>1lambda'
     :param msfile: input CASA ms visibility for calibration
     :param modelcl: input model of strong sources as a component list, produced from gen_model_cl()
+    :param bcaltb: name of the output bandpass calibration table
+    :param caltable_fold: directory to store the bandpass calibration table
+    :param refant: reference antenna to be used
     """
 	
     time1=timeit.default_timer()
@@ -164,6 +168,7 @@ def gen_calibration(msfile, modelcl=None, uvrange='', bcaltb=None, logging_level
 
     if not bcaltb:
         bcaltb = caltable_fold + "/" + os.path.basename(msfile).replace('.ms', '.bcal')
+
 
     logging.info("Generating bandpass solution")
     bandpass(msfile, caltable=bcaltb, uvrange=uvrange, combine='scan,field,obs', fillgaps=0,refant=refant)
