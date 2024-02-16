@@ -525,7 +525,7 @@ def correct_fastms_amplitude_scale(msname):
         logging.debug("Amplitude correction done/tried earlier. Returning")
         return
     
-    correction_dates=['2023-12-18T23:00:00','2024-03-01T01:00:00']
+    correction_dates=['2023-12-18T23:00:00','2024-02-15T23:00:00']
     
     correction_time=Time(correction_dates)
     msmd=msmetadata()
