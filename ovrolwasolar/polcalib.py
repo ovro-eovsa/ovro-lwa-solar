@@ -488,6 +488,8 @@ def get_img_correction_factor(imagename,stokes,msfile,imgcat,sol_area=400.,src_a
     weights=[]
     
     rms=np.nanstd(img_data)
+    pos=np.where(abs(img_data)<10*rms)
+    rms=np.nanstd(img_data[pos])
             
     for i in range(num_sources):
         x=int(img_xy[i,0])
