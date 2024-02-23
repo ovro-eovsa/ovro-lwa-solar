@@ -274,6 +274,7 @@ def download_calibms(calib_time, download_fold = '/lustre/bin.chen/realtime_pipe
            antflagfile = flagging.flag_bad_ants(ms_calib_)
     return ms_calib
 
+
 def gen_caltables(ms_calib, caltable_fold = '/lustre/bin.chen/realtime_pipeline/caltables/',
         bcaltb=None, uvrange='>10lambda', refant='202', flag_outrigger=True,
         beam_caltable_fold = '/lustre/bin.chen/realtime_pipeline/caltables_beam/'):
@@ -287,7 +288,9 @@ def gen_caltables(ms_calib, caltable_fold = '/lustre/bin.chen/realtime_pipeline/
     :param flag_outrigger: if True, flag all outrigger antennas. These would be used for beamforming.
     :param beam_caltable_fold: directory to hold the calibration tables for beamforming (after flagging the outriggers).
     """
+    import pandas as pd
     bcaltbs = []
+    chan_freqs = []
     # TODO: somehow the parallel processing failed if flagging has run. I have no idea why. Returning to the slow serial processing.
     #pool = multiprocessing.pool.Pool(processes=len(ms_calib))
     #gen_calib_partial = partial(calibration.gen_calibration, uvrange=uvrange, caltable_fold=caltable_fold,
@@ -299,12 +302,22 @@ def gen_caltables(ms_calib, caltable_fold = '/lustre/bin.chen/realtime_pipeline/
     #pool.close()
     #pool.join()
     for ms_calib_ in ms_calib:
-        bcaltb = calibration.gen_calibration(ms_calib_, uvrange=uvrange, caltable_fold=caltable_fold, refant=refant)
-        bcaltbs.append(bcaltb)
+        try:
+            bcaltb = calibration.gen_calibration(ms_calib_, uvrange=uvrange, caltable_fold=caltable_fold, refant=refant)
+            msmd.open(ms_calib_)
+            chan_freqs.append(msmd.chanfreqs(0))
+            msmd.done()
+            bcaltbs.append(bcaltb)
+        except Exception as e:
+            print('Something is wrong when making calibrations for ', ms_calib_)
+            print(e)
+        
+    chan_freqs = np.concatenate(chan_freqs)
 
     if flag_outrigger:
         core_ant_ids, exp_ant_ids = flagging.get_antids(ms_calib[0])
         bcaltbs_bm = []
+        bmcalfac = []
         for bcaltb in bcaltbs:
             bcaltb_bm = beam_caltable_fold + '/' + os.path.basename(bcaltb)
             os.system('cp -r ' + bcaltb + ' ' + bcaltb_bm)
@@ -313,11 +326,19 @@ def gen_caltables(ms_calib, caltable_fold = '/lustre/bin.chen/realtime_pipeline/
             npol, nch, nant = flags.shape
             for exp_ant_id in exp_ant_ids:
                 flags[:, :, exp_ant_id] = True
+            num_ant_per_chan = nant - np.min(np.sum(flags, axis=2), axis=0)
+            bmcalfac_per_chan = num_ant_per_chan ** 2
+            bmcalfac.append(bmcalfac_per_chan)
             tb.putcol('FLAG', flags)
             tb.close()
             bcaltbs_bm.append(bcaltb_bm)
 
-        return bcaltbs, bcaltbs_bm
+        bmcalfac = np.concatenate(bmcalfac)
+        # write channel frequencies and corresponding beam scaling factors into a csv file
+        df = pd.DataFrame({"chan_freqs":chan_freqs, "beam_calfac":bmcalfac})
+        bcalfac_file = beam_caltable_fold + '/' + os.path.basename(bcaltb)[:15] + '_bmcalfac.csv'
+        df.to_csv(bcalfac_file, index=False)
+        return bcaltbs, bcaltbs_bm, bcalfac_file
     else:
         return bcaltbs
 
