@@ -415,7 +415,8 @@ def pipeline_quick(image_time=Time.now() - TimeDelta(20., format='sec'), server=
             logger_file=None, compress_fits=True,
             proc_dir = '/fast/bin.chen/realtime_pipeline/',
             save_dir = '/lustre/bin.chen/realtime_pipeline/',
-            calib_file = '20240117_145752'):
+            calib_file = '20240117_145752',
+            delete_working_ms=True):
     """
     Pipeline for processing and imaging slow visibility data
     :param time_start: start time of the visibility data to be processed
@@ -426,6 +427,18 @@ def pipeline_quick(image_time=Time.now() - TimeDelta(20., format='sec'), server=
     :param distributed: if true, assume the data is on distributed lwacalim nodes
     :param min_nband: minimum number of bands to be processed. Will skip if less than that.
     :param calib_file: calibration file to be used. Format yyyymmdd_hhmmss
+    :param nch_out: number of channels to be imaged
+    :param do_selfcal: if True, do selfcalibration
+    :param num_phase_cal: number of phase calibration iterations
+    :param num_apcal: number of amplitude calibration iterations
+    :param overwrite_ms: if True, overwrite the ms files in the working directory
+    :param delete_ms_slfcaled: if True, delete the selfcalibrated ms files after imaging
+    :param logger_file: name of the log file
+    :param compress_fits: if True, compress the fits (not loseless, reduce bitlen, but it's OK to do this in most of the cases of solar imaging) files after imaging
+    :param proc_dir: directory to hold the working files
+    :param save_dir: directory to hold the final products
+    :param calib_file: calibration file to be used. Format yyyymmdd_hhmmss
+    :param delete_working_ms: if True, delete the working ms files after imaging (set False for debugging purpose)
     """
 
     time_begin = timeit.default_timer() 
@@ -536,10 +549,12 @@ def pipeline_quick(image_time=Time.now() - TimeDelta(20., format='sec'), server=
             msfiles_slfcaled = result.get()
             pool.close()
             pool.join()
-            os.system('rm -rf '+ visdir_work + '/' + timestr + '*')
+            if delete_working_ms:
+                os.system('rm -rf '+ visdir_work + '/' + timestr + '*')
         else:
             logging.debug('=====Selfcalibrated ms already exist for {0:s}. Proceed with imaging.========'.format(timestr)) 
-            os.system('rm -rf '+ visdir_work + '/' + timestr + '*')
+            if delete_working_ms:
+                os.system('rm -rf '+ visdir_work + '/' + timestr + '*')
 
 
         # Do imaging
@@ -707,7 +722,7 @@ def run_pipeline(time_start=Time.now(), time_interval=600., delay_from_now=180.,
         logger_file='/fast/bin.chen/realtime_pipeline/realtime_calib-imaging_parallel.log',
         proc_dir = '/fast/bin.chen/realtime_pipeline/',
         save_dir = '/lustre/bin.chen/realtime_pipeline/',
-        calib_file = '20240117_145752'):
+        calib_file = '20240117_145752', delete_working_ms=True):
     '''
     Main routine to run the pipeline. Note each time stamp takes about 8.5 minutes to complete.
     "time_interval" needs to be set to something greater than that. 600 is recommended.
@@ -756,7 +771,8 @@ def run_pipeline(time_start=Time.now(), time_interval=600., delay_from_now=180.,
             sleep(twait.sec + delay_from_now)
         logging.info('{0:s}: Start processing {1:s}'.format(socket.gethostname(), time_start.isot))
         res = pipeline_quick(time_start, do_selfcal=do_selfcal, num_phase_cal=num_phase_cal, num_apcal=num_apcal, server=server, file_path=file_path, 
-                delete_ms_slfcaled=delete_ms_slfcaled, logger_file=logger_file, proc_dir=proc_dir, save_dir=save_dir, calib_file=calib_file)
+                delete_ms_slfcaled=delete_ms_slfcaled, logger_file=logger_file, proc_dir=proc_dir, save_dir=save_dir, calib_file=calib_file, 
+                delete_working_ms=delete_working_ms)
         time2 = timeit.default_timer()
         if res:
             logging.info('{0:s}: Processing {1:s} was successful within {2:.1f}m'.format(socket.gethostname(), time_start.isot, (time2-time1)/60.))
