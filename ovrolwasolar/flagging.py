@@ -8,6 +8,8 @@ import matplotlib.pyplot as plt
 from . import utils
 import logging, glob
 from . import primary_beam
+from sklearn.cluster import KMeans
+
 
 tb = table()
 me = measures()
@@ -353,7 +355,8 @@ def flag_bad_ants(msfile, antflagfile=None, datacolumn='DATA', thresh_core=1.0, 
     return antflagfile
 
 
-def perform_baseline_flagging(msfile,verbose=False,n_clusters = 128):
+def func_baseline_flagging(msfile,verbose=False,n_clusters = 128,extend_flg=True,
+                           combine_chans=True):
     """
     Perform baseline flagging using KMeans clustering and outlier removal
 
@@ -361,8 +364,6 @@ def perform_baseline_flagging(msfile,verbose=False,n_clusters = 128):
     :param verbose: if True, print the percentage of flagged data
     :param n_clusters: number of clusters to use for KMeans clustering
     """
-
-
     tb = table()
     msmd = msmetadata()
     tb.open(msfile)
@@ -396,15 +397,22 @@ def perform_baseline_flagging(msfile,verbose=False,n_clusters = 128):
 
 
     n_ch = visibility_data.shape[1]
+    n_times = visibility_data.shape[2]
 
-    for ch_idx in range(n_ch):
-        flg_1col = flag_data[0,ch_idx,:]
+    labels_allch = np.tile(labels, n_ch)
+    u_col_allch = np.tile(u_col, n_ch)
+    v_col_allch = np.tile(v_col, n_ch)
 
-        stokes_I = 0.5 * (visibility_data[0,ch_idx,:] + visibility_data[3,ch_idx,:])
+    if combine_chans:
+        flg_combincol = flag_data[0,:,:].reshape(n_ch*n_times)
+
+        stokes_I = 0.5 * (visibility_data[0,:,:] + visibility_data[3,:,:])
         Stokes_I_amp = np.abs(stokes_I)
+        stokes_I_amp_combincol = Stokes_I_amp.reshape(n_ch*n_times)
 
-
-        # repeat the process to remove the outliers for each cluster
+        labels_allch_combincol = labels_allch.reshape(n_ch*n_times)
+        u_col_combincol = u_col_allch.reshape(n_ch*n_times)
+        v_col_combincol = v_col_allch.reshape(n_ch*n_times)
 
         u_collect_after_rm_outliers = []
         v_collect_after_rm_outliers = []
@@ -417,17 +425,17 @@ def perform_baseline_flagging(msfile,verbose=False,n_clusters = 128):
         outlier_idx = []
 
         for i in range(n_clusters):
-            this_label_idx = np.where(labels == i)
-            goodvis_this_label_idx = np.where(~flg_1col[this_label_idx])[0]
-            u_col_this_label = u_col[this_label_idx][goodvis_this_label_idx]
-            v_col_this_label = v_col[this_label_idx][~goodvis_this_label_idx]
+            this_label_idx = np.where(labels_allch_combincol == i)
+            goodvis_this_label_idx = np.where(~flg_combincol[this_label_idx])[0]
+            u_col_this_label = u_col_combincol[this_label_idx][goodvis_this_label_idx]
+            v_col_this_label = v_col_combincol[this_label_idx][goodvis_this_label_idx]
 
             if goodvis_this_label_idx.shape[0] > 100:
-                stokes_I_this_label = Stokes_I_amp[this_label_idx][goodvis_this_label_idx]
+                stokes_I_this_label = stokes_I_amp_combincol[this_label_idx][goodvis_this_label_idx]
                 Q1 = np.percentile(stokes_I_this_label, 25)
                 Q3 = np.percentile(stokes_I_this_label, 75)
                 IQR = Q3 - Q1
-                outlier_step = 1.5 * IQR
+                outlier_step = 1.2 * IQR
                 outlier_list_col = ((stokes_I_this_label < Q1 - outlier_step) | (stokes_I_this_label > Q3 + outlier_step))
                 u_collect_after_rm_outliers.append(u_col_this_label[~outlier_list_col])
                 v_collect_after_rm_outliers.append(v_col_this_label[~outlier_list_col])
@@ -447,7 +455,89 @@ def perform_baseline_flagging(msfile,verbose=False,n_clusters = 128):
         stokes_I_outliers = np.concatenate(stokes_I_outliers)
         outlier_idx = np.concatenate(outlier_idx)
 
-        new_flag_data[0,ch_idx,outlier_idx] = True
-    
+        flg_combincol[outlier_idx] = True
+        flg_chs = flg_combincol.reshape(n_ch,n_times)
+        new_flag_data[0,:,:] = (flg_chs +new_flag_data[0,:,:])>0.5
+
+    else:
+        for ch_idx in range(n_ch):
+            flg_1col = flag_data[0,ch_idx,:]
+
+            stokes_I = 0.5 * (visibility_data[0,ch_idx,:] + visibility_data[3,ch_idx,:])
+            Stokes_I_amp = np.abs(stokes_I)
+
+
+            # repeat the process to remove the outliers for each cluster
+
+            u_collect_after_rm_outliers = []
+            v_collect_after_rm_outliers = []
+            stokes_I_collect_after_rm_outliers = []
+
+            u_outliers = []
+            v_outliers = []
+            stokes_I_outliers = []
+
+            outlier_idx = []
+
+            for i in range(n_clusters):
+                this_label_idx = np.where(labels == i)
+                goodvis_this_label_idx = np.where(~flg_1col[this_label_idx])[0]
+                u_col_this_label = u_col[this_label_idx][goodvis_this_label_idx]
+                v_col_this_label = v_col[this_label_idx][goodvis_this_label_idx]
+
+                if goodvis_this_label_idx.shape[0] > 100:
+                    stokes_I_this_label = Stokes_I_amp[this_label_idx][goodvis_this_label_idx]
+                    Q1 = np.percentile(stokes_I_this_label, 25)
+                    Q3 = np.percentile(stokes_I_this_label, 75)
+                    IQR = Q3 - Q1
+                    outlier_step = 1.2 * IQR
+                    outlier_list_col = ((stokes_I_this_label < Q1 - outlier_step) | (stokes_I_this_label > Q3 + outlier_step))
+                    u_collect_after_rm_outliers.append(u_col_this_label[~outlier_list_col])
+                    v_collect_after_rm_outliers.append(v_col_this_label[~outlier_list_col])
+                    stokes_I_collect_after_rm_outliers.append(stokes_I_this_label[~outlier_list_col])
+                    u_outliers.append(u_col_this_label[outlier_list_col])
+                    v_outliers.append(v_col_this_label[outlier_list_col])
+                    stokes_I_outliers.append(stokes_I_this_label[outlier_list_col])
+                    outlier_idx.append(this_label_idx[0][goodvis_this_label_idx[outlier_list_col]])
+
+                
+            u_collect_after_rm_outliers = np.concatenate(u_collect_after_rm_outliers)
+            v_collect_after_rm_outliers = np.concatenate(v_collect_after_rm_outliers)
+            stokes_I_collect_after_rm_outliers = np.concatenate(stokes_I_collect_after_rm_outliers)
+
+            u_outliers = np.concatenate(u_outliers)
+            v_outliers = np.concatenate(v_outliers)
+            stokes_I_outliers = np.concatenate(stokes_I_outliers)
+            outlier_idx = np.concatenate(outlier_idx)
+
+            new_flag_data[0,ch_idx,outlier_idx] = True
+
+    for idx in new_flag_data.shape[0]:
+        new_flag_data[idx,:,:] = new_flag_data[0,:,:]
+
+    if extend_flg:
+        e_new_flag = new_flag_data.copy()
+        idx_extend  = np.mean(new_flag_data, axis=1)[0]>0.50
+        e_new_flag[:,:,idx_extend] = True
+
+    for idx in new_flag_data.shape[0]:
+        new_flag_data[idx,ch_idx,outlier_idx] = True
+
+    if verbose:
+        print("Flagged {}% of the data".format(np.sum(new_flag_data)/new_flag_data.size*100))
+
     return new_flag_data
 
+
+def perform_baseline_flagging(msfile, overwrite=True, new_msfile=None, verbose=True, 
+                              n_clusters=128, combine_chans=True, extend_flg=False):
+    new_flag_data=func_baseline_flagging(msfile,verbose,n_clusters,combine_chans=True) 
+    if new_msfile is None:
+        ms_new = msfile.replace('.ms', '_bflagged.ms')
+    else:
+        ms_new = new_msfile
+    if overwrite:
+        ms_new = msfile
+    tb.open(ms_new, nomodify=False)
+    tb.putcol('FLAG', new_flag_data)
+    tb.close()
