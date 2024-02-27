@@ -11,9 +11,9 @@ def func_elip_gauss(uv, a, b, theta, amp):
                                   - 2*np.pi**2 * ((u)*np.sin(theta) - (v)*np.cos(theta))**2 * (b**2))
     #return amp/2/np.pi * np.exp(-0.5 * (a**2 * (u*np.cos(theta) - v*np.sin(theta))**2 + b**2*(u*np.sin(theta) + v*np.cos(theta))**2))
 
-def func_phase_sin(uv, u0, v0):
+def func_phase_sin(uv, l0, m0):
     u, v = uv
-    return (np.sin(2*np.pi*(u*u0 + v*v0)))
+    return (np.sin(2*np.pi*(u*l0 + v*m0)))
 
 from scipy.optimize import curve_fit
 
@@ -74,13 +74,11 @@ def fast_vis_1gauss(fname_ms,
     chan_freqs = spTB.getcol('CHAN_FREQ')
     spTB.close()
 
-    wavelen = 3e8 / np.mean(chan_freqs)
     tb.open(fname_ms + '/FIELD')
     ref_ra_dec = tb.getcol('PHASE_DIR').squeeze()
     tb.close()
     # convert the uvw to wavelength lambda
 
-    uvw = uvw / wavelen
 
     stokes_I_all_ch = (0.5 * (data[0,:,:] + data[1,:,:])).squeeze()
 
@@ -93,6 +91,9 @@ def fast_vis_1gauss(fname_ms,
     scan_unique = np.unique(scan)
     print(stokes_I_all_ch.shape)
     for i in range(stokes_I_all_ch.shape[0]): # channel
+
+        wavelen = 3e8 / (chan_freqs[i])
+        uvw = uvw / wavelen
 
         popt_list_tmp = []
         popt_phase_list_tmp = []
