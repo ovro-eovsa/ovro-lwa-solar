@@ -362,6 +362,8 @@ def perform_baseline_flagging(msfile,verbose=False,n_clusters = 128):
     :param n_clusters: number of clusters to use for KMeans clustering
     """
 
+    from sklearn.cluster import KMeans
+
 
     tb = table()
     msmd = msmetadata()

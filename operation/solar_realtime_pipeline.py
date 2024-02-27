@@ -723,7 +723,7 @@ def pipeline_quick(image_time=Time.now() - TimeDelta(20., format='sec'), server=
 
 
 
-def run_pipeline(time_start=Time.now(), time_interval=600., delay_from_now=180., do_selfcal=True, num_phase_cal=0, num_apcal=1, 
+def run_pipeline(time_start=Time.now(), time_end=None, time_interval=600., delay_from_now=180., do_selfcal=True, num_phase_cal=0, num_apcal=1, 
         server='lwacalim', file_path='slow', multinode=True, nodes=10, firstnode=0, delete_ms_slfcaled=True, 
         logger_file='/fast/bin.chen/realtime_pipeline/realtime_calib-imaging_parallel.log',
         proc_dir = '/fast/bin.chen/realtime_pipeline/',
@@ -733,6 +733,8 @@ def run_pipeline(time_start=Time.now(), time_interval=600., delay_from_now=180.,
     Main routine to run the pipeline. Note each time stamp takes about 8.5 minutes to complete.
     "time_interval" needs to be set to something greater than that. 600 is recommended.
     :param time_start: time for starting the pipeline. astropy.time.Time object.
+    :param time_end: time for ending the pipeline. astropy.time.Time object. 
+                If not specified (default), it will never end until being killed manually.
     :param time_interval: interval between adjacent processing times in seconds for each session
     :param delay_from_now: delay of the newest time to process compared to now.
     :param delete_ms_slfcaled: whether or not to delete the self-calibrated measurement sets.
@@ -770,6 +772,11 @@ def run_pipeline(time_start=Time.now(), time_interval=600., delay_from_now=180.,
     logging.info('{0:s}: Delay {1:.1f} min to {2:s}'.format(socket.gethostname(), delay_by_node / 60., time_start.isot))
     sleep(delay_by_node)
     while True:
+        if time_end:
+            if time_start > Time(time_end):
+                logging.info('The new imaging time now passes the provided end time. Ending the pipeline.'.format(Time(time_start).isot, Time(time_end).isot))
+                print('The new imaging time now passes the provided end time. Ending the pipeline.'.format(Time(time_start).isot, Time(time_end).isot))
+                break
         time1 = timeit.default_timer()
         if time_start > Time.now() - TimeDelta(delay_from_now, format='sec'):
             twait = time_start - Time.now()
@@ -811,6 +818,7 @@ if __name__=='__main__':
     """
     parser = argparse.ArgumentParser(description='Solar realtime pipeline')
     parser.add_argument('prefix', type=str, help='Timestamp for the start time. Format YYYY-MM-DDTHH:MM')
+    parser.add_argument('--end_time', default=None, help='End time in format YYYY-MM-DDTHH:MM')
     parser.add_argument('--interval', default=600., help='Time interval in seconds')
     parser.add_argument('--nodes', default=10, help='Number of nodes to use')
     parser.add_argument('--delay', default=60, help='Delay from current time in seconds')
@@ -821,7 +829,7 @@ if __name__=='__main__':
                         
     args = parser.parse_args()
     try:
-        run_pipeline(args.prefix, time_interval=float(args.interval), nodes=int(args.nodes), delay_from_now=float(args.delay),
+        run_pipeline(args.prefix, time_end=Time(args.end_time), time_interval=float(args.interval), nodes=int(args.nodes), delay_from_now=float(args.delay),
                      proc_dir=args.proc_dir, save_dir=args.save_dir, calib_file=args.calib_file, logger_file=args.logger_file)
     except Exception as e:
         logging.error(e)
