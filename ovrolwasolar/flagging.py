@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 from . import utils
 import logging, glob
 from . import primary_beam
-from sklearn.cluster import KMeans
+#from sklearn.cluster import KMeans
 
 
 tb = table()
@@ -364,6 +364,7 @@ def func_baseline_flagging(msfile,verbose=False,n_clusters = 128,extend_flg=True
     :param verbose: if True, print the percentage of flagged data
     :param n_clusters: number of clusters to use for KMeans clustering
     """
+    from sklearn.cluster import KMeans
     tb = table()
     msmd = msmetadata()
     tb.open(msfile)
