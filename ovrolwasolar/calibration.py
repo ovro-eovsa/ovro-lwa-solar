@@ -138,7 +138,7 @@ def make_fast_caltb_from_slow(calib_ms, solar_ms, caltb, \
     return caltb_fast
     
 def gen_calibration(msfile, modelcl=None, uvrange='>10lambda', bcaltb=None, logging_level='info', caltable_fold='caltables', 
-        refant='202'):
+        refant='202', dobaselineflag=False):
     """
     This function is for doing initial self-calibrations using strong sources that are above the horizon
     It is recommended to use a dataset observed at night when the Sun is not in the field of view with the same attenuator settings
@@ -177,6 +177,9 @@ def gen_calibration(msfile, modelcl=None, uvrange='>10lambda', bcaltb=None, logg
     applycal(vis=msfile, gaintable=bcaltb)
     logging.debug("Doing a rflag run on corrected data")
     flagdata(vis=msfile, mode='rflag', datacolumn='corrected')
+    if dobaselineflag:
+        logging.debug("Doing a baseline flagging")
+        flagging.perform_baseline_flagging(msfile, overwrite=True)
     logging.debug("Finding updated and final bandpass table")
     bandpass(msfile, caltable=bcaltb, uvrange=uvrange, combine='scan,field,obs', fillgaps=0,refant=refant)
 
