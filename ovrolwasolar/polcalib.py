@@ -10,7 +10,6 @@ from .primary_beam import woody_beam as beam
 from . import utils
 from . import generate_calibrator_model
 from . import selfcal
-#import bdsf
 from astropy import units as u
 from astropy.coordinates import AltAz, EarthLocation
 import pandas as pd
@@ -84,6 +83,9 @@ def change_visibility_basis(msname):
     
     :param msname: Name of the input MS
     :type msname: str
+    
+    :return: outms
+    :rtype: str
     '''
     present=utils.check_corrected_data_present(msname)
     if present:
@@ -148,6 +150,9 @@ def squint_correction(msname,caltable_folder='squint_correction',output_ms=None)
     :type caltable_folder: str
     :param output_ms: Name of output MS. If not provided, squint_corrected will be appended
     :type output_ms: str,optional
+    
+    :return: output_ms
+    :rtype: str
     '''
     corr_type=get_corr_type(msname)
     if corr_type!='RL':
@@ -194,6 +199,24 @@ def squint_correction(msname,caltable_folder='squint_correction',output_ms=None)
     return output_ms 
 
 def detect_sources(imagename,adaptive_rms=True,thresh_pix=10,thresh_isl=8,imgcat=None, overwrite=False):
+    '''
+    This function uses PyBDSF to detect and write a CSV file containing the information of the detected
+    sources. This function will only work as intended for Stokes I images. All parameters except provided
+    below are same as those used by PyBDSF.
+    :param imagename: Name of the image. This should be the full name and not the image prefix provided
+                        to WSClean
+    :type imagename: str
+    :param overwrite: The image catalogue will be overwritten if True. Default: False
+    :type overwrite: Boolean
+    :param imgcat: Name of the image catalogue. Default is None. If not provided, the imgcat will
+                    replace "-image.fits" by ".pybdsf"
+    :type imgcat: str
+    
+    :return: imgcat
+    :rtype: str
+    '''
+    import bdsf
+    
     if imgcat is None:
         imgcat=imagename.replace("-image.fits",".pybdsf")
 
@@ -208,6 +231,15 @@ def detect_sources(imagename,adaptive_rms=True,thresh_pix=10,thresh_isl=8,imgcat
     return imgcat
     
 def read_pybdsf_output(imgcat):
+    '''
+    This just reads the source catalogue produced by PyBDSF
+    
+    :param imgcat: source catalogue produced by PyBDSF
+    :type imgcat: str
+    
+    :return: img_ra,img_dec,source_code, integrated_flux
+    :rtype: float,float, str, float
+    '''
     img_data=pd.read_csv(imgcat,skiprows=5,sep=', ',engine='python')
     img_ra=img_data['RA']
     img_dec=img_data['DEC']
@@ -217,10 +249,19 @@ def read_pybdsf_output(imgcat):
     
 def convert_to_altaz(img_coord,obstime,observer='ovro'):
     '''
-    img_coord should be Astropy sky coordinates
-    observer will be passed to EarthLocation.of_site. If it
-    fails we assume that obbserver is already a Astropy Earth
-    location.
+    This function will convert a sky coordinate to alt-az coordinates
+    
+    :param img_coord: Sky coordinate of the source
+    :type img_coord: Astropy SkyCoord
+    :param obstime: Observative time
+    :type obstime: Astropy Time object
+    :param observer: observer will be passed to EarthLocation.of_site.
+                     If it fails we assume that observer is already a 
+                     Astropy Earth location.
+    :type observer: str or Astropy Earth location
+    
+    :return: alt,az in degrees
+    :rtype: float, float
     '''
     try:
         ovro_loc = EarthLocation.of_site(observer)
@@ -232,10 +273,23 @@ def convert_to_altaz(img_coord,obstime,observer='ovro'):
     coord1=img_coord.transform_to(aa)
     return coord1.alt.value, coord1.az.value
     
-def get_beam_factors(alt,az,freq):
+def get_beam_factors(alt,az,freq,normalise=True):
     '''
-    alt,az is degrees
-    freq in MHz
+    This function will take alt,az and freq and return the primary beam values
+    
+    :param alt: Altitude in degrees
+    :type alt: float
+    :param az: Azimuth in degrees
+    :type az: float
+    :param freq: Frequency in MHz
+    :type freq: float
+    :param normalise: If True, we will normalise all values by the calculated 
+                        I beam value. Default: True
+    :type normalise: Boolean
+    
+    :return: array containing [I,Q,U,V]
+    :rtype: float
+    
     '''
     beamfac=beam(freq=freq)    
     beamfac.srcjones(az=az,el=alt)
@@ -247,9 +301,28 @@ def get_beam_factors(alt,az,freq):
         factors[i,1]=np.real(0.5*(pol_fac[0,0]-pol_fac[1,1]))
         factors[i,2]=np.real(0.5*(pol_fac[0,1]+pol_fac[1,0]))
         factors[i,3]=np.real(1j*0.5*(pol_fac[0,1]-pol_fac[1,0]))
-    return factors/np.expand_dims(factors[:,0],axis=1) ## all factors are in respect to I value
+    
+    if normalise:
+        return factors/np.expand_dims(factors[:,0],axis=1) ## all factors are in respect to I value
+    else:
+        return factors
 
-def get_good_sources(imagename, imgcat=None, min_alt=5):
+def get_good_sources(imagename, imgcat, min_alt=5):
+    '''
+    This function will choose good sources from the source catalog.
+    
+    :param imagename: Name of image. Should not be the prefix of the imagename
+                        supplied to WSClean
+    :type imagename: str
+    :param imgcat: Name of source catalog
+    :type imgcat: str
+    :param min_alt: Minimum altitude at which the sources should be to be considered
+    :type min_alt: float
+    
+    :return: img_ra,img_dec, integrated_flux
+    :rtype: float,float, float 
+    
+    '''
 
     img_ra,img_dec,s_code,img_flux=read_pybdsf_output(imgcat)
     
@@ -263,7 +336,7 @@ def get_good_sources(imagename, imgcat=None, min_alt=5):
     
     img_coord=SkyCoord(img_ra*u.degree,img_dec*u.degree,frame='icrs')   
     
-    head=fits.getheader(imagename+"-I-image.fits")
+    head=fits.getheader(imagename)
     obstime=Time(head['DATE-OBS'])
     
     alt,az=convert_to_altaz(img_coord,obstime)
@@ -276,14 +349,23 @@ def get_good_sources(imagename, imgcat=None, min_alt=5):
     
 def generate_polarised_skymodel(imagename,imgcat=None, min_alt=5): 
     '''
-    imagename should be standard WSclean format. Ensure that imagename-{I,Q,U,V}-image.fits
-    and -model.fits exist
+    This will generate the polarised sky model using the model image.
+    We assume that the sky in entirely unpolarised, and the only polarisation
+    arises because of the primary beam
+    
+    :param imagename: imagename should be standard WSclean format. Ensure that 
+                        imagename-{I,Q,U,V}-image.fits and -model.fits exist
+    :type imagename: str
+    :param imgcat: Name of source catalog. Default: None
+    :type imgcat: str or None
+    :param min_alt: Minimum altitude
+    :type min_alt: float
     '''
     
     if imgcat is None:
         imgcat= detect_sources(imagename+"-I-image.fits")
         
-    img_ra,img_dec,img_flux=get_good_sources(imagename,imgcat)
+    img_ra,img_dec,img_flux=get_good_sources(imagename+"-I-image.fits",imgcat)
     
     num_sources=len(img_ra)
     
@@ -321,7 +403,19 @@ def generate_polarised_skymodel(imagename,imgcat=None, min_alt=5):
             hdu.close()
 
         
-def add_solar_model(imagename,msfile,sol_area=400.):            
+def add_solar_model(imagename,msfile,sol_area=400.):  
+    '''
+    This will add the polarised solar model.
+    :param imagename:  imagename should be standard WSclean format. Ensure that 
+                        imagename-{I,Q,U,V}-image.fits and -model.fits exist
+    :type imagename: str
+    :param msfile: Name of MS. This is used to get the solar ra-dec
+    :type msfile: str
+    :param sol_area: This is area of the sky around the sun, inside which
+                        sun is guaranteed to be present. This is the diameter
+                        of the region
+    :type sol_area: float
+    '''          
     me=measures()
     m = utils.get_sun_pos(msfile, str_output=False)
     solar_ra=m['m0']['value']*180/np.pi
@@ -386,7 +480,7 @@ def get_conv_kernel(head):
     kernel=Gaussian2DKernel(sigma_major_pix,sigma_minor_pix,theta=theta)
     return kernel
     
-def get_img_correction_factor(imagename,stokes,msfile,imgcat,sol_area=400.,src_area=200,thresh=5,limit_frac=0.2):
+def get_img_correction_factor(imagename,stokes,msfile,imgcat,sun_only=False, sol_area=400.,src_area=200,thresh=5,limit_frac=0.05):
     '''
     This function determines the correction factor using an image based method. It calculates the difference between ratio of 
     predicted Q/I,U/I,V/I values and their observed values for each source detected. For all sources other than Sun,
@@ -399,6 +493,9 @@ def get_img_correction_factor(imagename,stokes,msfile,imgcat,sol_area=400.,src_a
     Q_corrected=Q_obs+correction_factor*Iobs
     U_corrected=U_obs+correction_factor*Iobs
     V_corrected=V_obs+correction_factor*Iobs
+    
+    Please also ensure that the Stokes I and other parameters are correlated before running 
+    this function for that Stokes parameter.
     
     :param imagename: Prefix of the image. This means imagename-I-image.fits, imagename-Q-image.fits etc should exist
     :type imagename: str
@@ -417,6 +514,8 @@ def get_img_correction_factor(imagename,stokes,msfile,imgcat,sol_area=400.,src_a
     :param limit_frac: If absolute of the correction factor is less than this, the image plane correction will
                         not be done. This function will return 0 in that case
     :type limit_frac: float
+    :param sun_only: Other sources will be ignored when finding the leakage correction factor.
+    :type sun_only: Boolean. Default: False
     '''
     me=measures()
     m = utils.get_sun_pos(msfile, str_output=False)
@@ -453,36 +552,8 @@ def get_img_correction_factor(imagename,stokes,msfile,imgcat,sol_area=400.,src_a
     img_data=fits.getdata(img)
     
     
-    
-    
-    img_ra,img_dec,img_flux=get_good_sources(imagename,imgcat)
-    
-    num_sources=len(img_ra)
-    
-    img_coord=SkyCoord(img_ra*u.degree,img_dec*u.degree,frame='icrs')   
-    
     head=fits.getheader(imagename+"-I-image.fits")
     obstime=Time(head['DATE-OBS'])
-    
-    alt,az=convert_to_altaz(img_coord,obstime)
-    
-    
-    
-    
-    freq=head['CRVAL3']*1e-6
-    
-    factors=get_beam_factors(alt,az,freq=freq)
-    
-    if stokes=='Q':
-        factors=factors[:,1]
-    elif stokes=='U':
-        factors=factors[:,2]
-    elif stokes=='V':   
-        factors=factors[:,3]
-    
-    img_coord=SkyCoord(img_ra*u.degree,img_dec*u.degree,frame='icrs')  
-    
-    img_xy = imwcs.all_world2pix(list(zip(img_ra, img_dec,[head['CRVAL3']]*num_sources,[head['CRVAL4']]*num_sources)), 1)
     
     diff_frac=[]
     weights=[]
@@ -490,37 +561,69 @@ def get_img_correction_factor(imagename,stokes,msfile,imgcat,sol_area=400.,src_a
     rms=np.nanstd(img_data)
     pos=np.where(abs(img_data)<10*rms)
     rms=np.nanstd(img_data[pos])
+    
+    if not sun_only:
+    
+        img_ra,img_dec,img_flux=get_good_sources(imagename+"-I-image.fits",imgcat)
+        
+        num_sources=len(img_ra)
+        
+        img_coord=SkyCoord(img_ra*u.degree,img_dec*u.degree,frame='icrs')   
+        
+        
+        
+        alt,az=convert_to_altaz(img_coord,obstime)
+        
+        
+        
+        
+        freq=head['CRVAL3']*1e-6
+        
+        factors=get_beam_factors(alt,az,freq=freq)
+        
+        if stokes=='Q':
+            factors=factors[:,1]
+        elif stokes=='U':
+            factors=factors[:,2]
+        elif stokes=='V':   
+            factors=factors[:,3]
+        
+        img_coord=SkyCoord(img_ra*u.degree,img_dec*u.degree,frame='icrs')  
+        
+        img_xy = imwcs.all_world2pix(list(zip(img_ra, img_dec,[head['CRVAL3']]*num_sources,[head['CRVAL4']]*num_sources)), 1)
+        
+        
+                
+        for i in range(num_sources):
+            x=int(img_xy[i,0])
+            y=int(img_xy[i,1])
+
+
+            if x>sol_area_xpix//2-solx and x<sol_area_xpix//2+solx and \
+                y>sol_area_ypix//2-solx and y<sol_area_xpix//2+soly:
+                continue
+            Ival=np.nanmax(Idata[0,0,y-src_area_ypix//2:y+src_area_ypix//2,\
+                                    x-src_area_xpix//2:x+src_area_xpix//2])
+
+            model_val=model_data[0,0,y,x]
             
-    for i in range(num_sources):
-        x=int(img_xy[i,0])
-        y=int(img_xy[i,1])
 
+            
+            img_val1=np.nanmax(img_data[0,0,y-src_area_ypix//2:y+src_area_ypix//2,\
+                                    x-src_area_xpix//2:x+src_area_xpix//2])
+            img_val2=np.nanmin(img_data[0,0,y-src_area_ypix//2:y+src_area_ypix//2,\
+                                    x-src_area_xpix//2:x+src_area_xpix//2])
+            
+            
+            if img_val1>abs(img_val2):
+                img_val=img_val1
+            else:
+                img_val=img_val2
+            
 
-        if x>sol_area_xpix//2-solx and x<sol_area_xpix//2+solx and \
-            y>sol_area_ypix//2-solx and y<sol_area_xpix//2+soly:
-            continue
-        Ival=np.nanmax(Idata[0,0,y-src_area_ypix//2:y+src_area_ypix//2,\
-                                x-src_area_xpix//2:x+src_area_xpix//2])
-
-        model_val=model_data[0,0,y,x]
-        
-
-        
-        img_val1=np.nanmax(img_data[0,0,y-src_area_ypix//2:y+src_area_ypix//2,\
-                                x-src_area_xpix//2:x+src_area_xpix//2])
-        img_val2=np.nanmin(img_data[0,0,y-src_area_ypix//2:y+src_area_ypix//2,\
-                                x-src_area_xpix//2:x+src_area_xpix//2])
-        
-        
-        if img_val1>abs(img_val2):
-            img_val=img_val1
-        else:
-            img_val=img_val2
-        
-
-        if abs(img_val)>thresh*rms and (not (abs(weights-Ival)<1e-3).any()):
-            diff_frac.append(factors[i]-img_val/Ival)
-            weights.append(Ival)
+            if abs(img_val)>thresh*rms and (not (abs(weights-Ival)<1e-3).any()):
+                diff_frac.append(factors[i]-img_val/Ival)
+                weights.append(Ival)
             
    
 
