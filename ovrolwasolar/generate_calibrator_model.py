@@ -205,10 +205,8 @@ class model_generation():
         self.avg_freq=msmd.meanfreq(0)*1e-6
         msmd.done()
         if not self.output_freq:
-        	self.output_freq=self.avg_freq
-        
-
-
+            self.output_freq=self.avg_freq
+    
     def flux80_47(self,flux_hi, sp,jones_matrix):
         """
         Given a flux at 80 MHz and a sp_index, return the flux at 47 MHz.
@@ -386,7 +384,7 @@ class model_generation():
             return
         os.system("wsclean -predict -pol "+self.pol+" -name "+self.outpath+"calibrator " + self.vis)
         
-    def   _dummy_image(self,imagename):
+    def gen_dummy_image(self,imagename):
         os.system("wsclean -no-dirty -no-update-model-required -size 4096 4096 " + \
                       "-scale 2arcmin -niter 10 -pol "+self.pol+" -name " + imagename + " " + self.vis)            
         

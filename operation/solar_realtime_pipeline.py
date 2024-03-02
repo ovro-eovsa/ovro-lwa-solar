@@ -274,6 +274,7 @@ def download_calibms(calib_time, download_fold = '/lustre/bin.chen/realtime_pipe
            antflagfile = flagging.flag_bad_ants(ms_calib_)
     return ms_calib
 
+
 def gen_caltables(ms_calib, caltable_fold = '/lustre/bin.chen/realtime_pipeline/caltables/',
         bcaltb=None, uvrange='>10lambda', refant='202', flag_outrigger=True,
         beam_caltable_fold = '/lustre/bin.chen/realtime_pipeline/caltables_beam/'):
@@ -287,7 +288,9 @@ def gen_caltables(ms_calib, caltable_fold = '/lustre/bin.chen/realtime_pipeline/
     :param flag_outrigger: if True, flag all outrigger antennas. These would be used for beamforming.
     :param beam_caltable_fold: directory to hold the calibration tables for beamforming (after flagging the outriggers).
     """
+    import pandas as pd
     bcaltbs = []
+    chan_freqs = []
     # TODO: somehow the parallel processing failed if flagging has run. I have no idea why. Returning to the slow serial processing.
     #pool = multiprocessing.pool.Pool(processes=len(ms_calib))
     #gen_calib_partial = partial(calibration.gen_calibration, uvrange=uvrange, caltable_fold=caltable_fold,
@@ -299,12 +302,22 @@ def gen_caltables(ms_calib, caltable_fold = '/lustre/bin.chen/realtime_pipeline/
     #pool.close()
     #pool.join()
     for ms_calib_ in ms_calib:
-        bcaltb = calibration.gen_calibration(ms_calib_, uvrange=uvrange, caltable_fold=caltable_fold, refant=refant)
-        bcaltbs.append(bcaltb)
+        try:
+            bcaltb = calibration.gen_calibration(ms_calib_, uvrange=uvrange, caltable_fold=caltable_fold, refant=refant)
+            msmd.open(ms_calib_)
+            chan_freqs.append(msmd.chanfreqs(0))
+            msmd.done()
+            bcaltbs.append(bcaltb)
+        except Exception as e:
+            print('Something is wrong when making calibrations for ', ms_calib_)
+            print(e)
+        
+    chan_freqs = np.concatenate(chan_freqs)
 
     if flag_outrigger:
         core_ant_ids, exp_ant_ids = flagging.get_antids(ms_calib[0])
         bcaltbs_bm = []
+        bmcalfac = []
         for bcaltb in bcaltbs:
             bcaltb_bm = beam_caltable_fold + '/' + os.path.basename(bcaltb)
             os.system('cp -r ' + bcaltb + ' ' + bcaltb_bm)
@@ -313,11 +326,19 @@ def gen_caltables(ms_calib, caltable_fold = '/lustre/bin.chen/realtime_pipeline/
             npol, nch, nant = flags.shape
             for exp_ant_id in exp_ant_ids:
                 flags[:, :, exp_ant_id] = True
+            num_ant_per_chan = nant - np.min(np.sum(flags, axis=2), axis=0)
+            bmcalfac_per_chan = num_ant_per_chan ** 2
+            bmcalfac.append(bmcalfac_per_chan)
             tb.putcol('FLAG', flags)
             tb.close()
             bcaltbs_bm.append(bcaltb_bm)
 
-        return bcaltbs, bcaltbs_bm
+        bmcalfac = np.concatenate(bmcalfac)
+        # write channel frequencies and corresponding beam scaling factors into a csv file
+        df = pd.DataFrame({"chan_freqs":chan_freqs, "beam_calfac":bmcalfac})
+        bcalfac_file = beam_caltable_fold + '/' + os.path.basename(bcaltb)[:15] + '_bmcalfac.csv'
+        df.to_csv(bcalfac_file, index=False)
+        return bcaltbs, bcaltbs_bm, bcalfac_file
     else:
         return bcaltbs
 
@@ -415,7 +436,8 @@ def pipeline_quick(image_time=Time.now() - TimeDelta(20., format='sec'), server=
             logger_file=None, compress_fits=True,
             proc_dir = '/fast/bin.chen/realtime_pipeline/',
             save_dir = '/lustre/bin.chen/realtime_pipeline/',
-            calib_file = '20240117_145752'):
+            calib_file = '20240117_145752',
+            delete_working_ms=True):
     """
     Pipeline for processing and imaging slow visibility data
     :param time_start: start time of the visibility data to be processed
@@ -426,6 +448,18 @@ def pipeline_quick(image_time=Time.now() - TimeDelta(20., format='sec'), server=
     :param distributed: if true, assume the data is on distributed lwacalim nodes
     :param min_nband: minimum number of bands to be processed. Will skip if less than that.
     :param calib_file: calibration file to be used. Format yyyymmdd_hhmmss
+    :param nch_out: number of channels to be imaged
+    :param do_selfcal: if True, do selfcalibration
+    :param num_phase_cal: number of phase calibration iterations
+    :param num_apcal: number of amplitude calibration iterations
+    :param overwrite_ms: if True, overwrite the ms files in the working directory
+    :param delete_ms_slfcaled: if True, delete the selfcalibrated ms files after imaging
+    :param logger_file: name of the log file
+    :param compress_fits: if True, compress the fits (not loseless, reduce bitlen, but it's OK to do this in most of the cases of solar imaging) files after imaging
+    :param proc_dir: directory to hold the working files
+    :param save_dir: directory to hold the final products
+    :param calib_file: calibration file to be used. Format yyyymmdd_hhmmss
+    :param delete_working_ms: if True, delete the working ms files after imaging (set False for debugging purpose)
     """
 
     time_begin = timeit.default_timer() 
@@ -536,10 +570,12 @@ def pipeline_quick(image_time=Time.now() - TimeDelta(20., format='sec'), server=
             msfiles_slfcaled = result.get()
             pool.close()
             pool.join()
-            os.system('rm -rf '+ visdir_work + '/' + timestr + '*')
+            if delete_working_ms:
+                os.system('rm -rf '+ visdir_work + '/' + timestr + '*')
         else:
             logging.debug('=====Selfcalibrated ms already exist for {0:s}. Proceed with imaging.========'.format(timestr)) 
-            os.system('rm -rf '+ visdir_work + '/' + timestr + '*')
+            if delete_working_ms:
+                os.system('rm -rf '+ visdir_work + '/' + timestr + '*')
 
 
         # Do imaging
@@ -702,16 +738,18 @@ def pipeline_quick(image_time=Time.now() - TimeDelta(20., format='sec'), server=
 
 
 
-def run_pipeline(time_start=Time.now(), time_interval=600., delay_from_now=180., do_selfcal=True, num_phase_cal=0, num_apcal=1, 
+def run_pipeline(time_start=Time.now(), time_end=None, time_interval=600., delay_from_now=180., do_selfcal=True, num_phase_cal=0, num_apcal=1, 
         server='lwacalim', file_path='slow', multinode=True, nodes=10, firstnode=0, delete_ms_slfcaled=True, 
         logger_file='/fast/bin.chen/realtime_pipeline/realtime_calib-imaging_parallel.log',
         proc_dir = '/fast/bin.chen/realtime_pipeline/',
         save_dir = '/lustre/bin.chen/realtime_pipeline/',
-        calib_file = '20240117_145752'):
+        calib_file = '20240117_145752', delete_working_ms=True):
     '''
     Main routine to run the pipeline. Note each time stamp takes about 8.5 minutes to complete.
     "time_interval" needs to be set to something greater than that. 600 is recommended.
     :param time_start: time for starting the pipeline. astropy.time.Time object.
+    :param time_end: time for ending the pipeline. astropy.time.Time object. 
+                If not specified (default), it will never end until being killed manually.
     :param time_interval: interval between adjacent processing times in seconds for each session
     :param delay_from_now: delay of the newest time to process compared to now.
     :param delete_ms_slfcaled: whether or not to delete the self-calibrated measurement sets.
@@ -749,6 +787,11 @@ def run_pipeline(time_start=Time.now(), time_interval=600., delay_from_now=180.,
     logging.info('{0:s}: Delay {1:.1f} min to {2:s}'.format(socket.gethostname(), delay_by_node / 60., time_start.isot))
     sleep(delay_by_node)
     while True:
+        if time_end:
+            if time_start > Time(time_end):
+                logging.info('The new imaging time now passes the provided end time. Ending the pipeline.'.format(Time(time_start).isot, Time(time_end).isot))
+                print('The new imaging time now passes the provided end time. Ending the pipeline.'.format(Time(time_start).isot, Time(time_end).isot))
+                break
         time1 = timeit.default_timer()
         if time_start > Time.now() - TimeDelta(delay_from_now, format='sec'):
             twait = time_start - Time.now()
@@ -756,7 +799,8 @@ def run_pipeline(time_start=Time.now(), time_interval=600., delay_from_now=180.,
             sleep(twait.sec + delay_from_now)
         logging.info('{0:s}: Start processing {1:s}'.format(socket.gethostname(), time_start.isot))
         res = pipeline_quick(time_start, do_selfcal=do_selfcal, num_phase_cal=num_phase_cal, num_apcal=num_apcal, server=server, file_path=file_path, 
-                delete_ms_slfcaled=delete_ms_slfcaled, logger_file=logger_file, proc_dir=proc_dir, save_dir=save_dir, calib_file=calib_file)
+                delete_ms_slfcaled=delete_ms_slfcaled, logger_file=logger_file, proc_dir=proc_dir, save_dir=save_dir, calib_file=calib_file, 
+                delete_working_ms=delete_working_ms)
         time2 = timeit.default_timer()
         if res:
             logging.info('{0:s}: Processing {1:s} was successful within {2:.1f}m'.format(socket.gethostname(), time_start.isot, (time2-time1)/60.))
@@ -790,6 +834,7 @@ if __name__=='__main__':
     """
     parser = argparse.ArgumentParser(description='Solar realtime pipeline')
     parser.add_argument('prefix', type=str, help='Timestamp for the start time. Format YYYY-MM-DDTHH:MM')
+    parser.add_argument('--end_time', default=None, help='End time in format YYYY-MM-DDTHH:MM')
     parser.add_argument('--interval', default=600., help='Time interval in seconds')
     parser.add_argument('--nodes', default=10, help='Number of nodes to use')
     parser.add_argument('--delay', default=60, help='Delay from current time in seconds')
@@ -800,7 +845,7 @@ if __name__=='__main__':
                         
     args = parser.parse_args()
     try:
-        run_pipeline(args.prefix, time_interval=float(args.interval), nodes=int(args.nodes), delay_from_now=float(args.delay),
+        run_pipeline(args.prefix, time_end=Time(args.end_time), time_interval=float(args.interval), nodes=int(args.nodes), delay_from_now=float(args.delay),
                      proc_dir=args.proc_dir, save_dir=args.save_dir, calib_file=args.calib_file, logger_file=args.logger_file)
     except Exception as e:
         logging.error(e)
