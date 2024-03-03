@@ -32,6 +32,12 @@ def run_wsclean(msfile, imagename, size:int =4096, scale='2arcmin', fast_vis=Fal
     """
     Wrapper for imaging using wsclean, use the parameter of wsclean in args. 
     
+    Additional features: For polarized clean, if join_polarizations is not in kwargs,
+                        join_polarizations will be added by default to the WSClean call.
+                        
+                        If pol == either of ['I','XX','YY','XX,YY'] and no_negative not in 
+                        kwargs, no_negative keyword will be added to WSClean call
+    
     To be noted:
 
     * replace '-' with '_' in the argument name), 
@@ -67,7 +73,7 @@ def run_wsclean(msfile, imagename, size:int =4096, scale='2arcmin', fast_vis=Fal
     logging.debug("Running WSCLEAN")
     
     default_kwargs={
-        'j':'4',                    # number of threads
+        'j':'1',                    # number of threads
         'weight':'uniform',         # weighting scheme
         'no_dirty':'',              # don't save dirty image
         'no_update_model_required':'', # don't update model required
@@ -82,7 +88,8 @@ def run_wsclean(msfile, imagename, size:int =4096, scale='2arcmin', fast_vis=Fal
         'no_reorder':'',            # don't reorder the channels
         'beam_fitting_size':'2',    # beam fitting size
     }
-
+    
+    
     if auto_pix_fov:
         msmd = msmetadata()
         msmd.open(msfile)
@@ -129,7 +136,16 @@ def run_wsclean(msfile, imagename, size:int =4096, scale='2arcmin', fast_vis=Fal
         # Convert Python-style arguments to command line format
         cli_arg = key.replace('_', '-')
         cmd_clean += f" -{cli_arg} {value} " if value != '' else f" -{cli_arg} "
-
+        
+    if ('I' in default_kwargs['pol']) and ('join_polarizations' not in default_kwargs.keys()) and \
+            ('Q' in default_kwargs['pol'] or U in default_kwargs['pol'] \
+            or V in default_kwargs['pol']):
+        cmd_clean+= " -join-polarizations "
+    
+    if (default_kwargs['pol']=='I' or default_kwargs['pol']=='XX' or default_kwargs['pol']=='YY' \
+            or default_kwargs['pol']=='XX,YY') and ('no_negative' not in default_kwargs.keys()):
+        cmd_clean+= " -no-negative " 
+        
     cmd_clean += " -name " + imagename + " " + msfile
     
     #TODO: put -weighting in free param
@@ -150,12 +166,72 @@ def run_wsclean(msfile, imagename, size:int =4096, scale='2arcmin', fast_vis=Fal
             os.system("mv "+wsclean_imagename+" "+final_imagename)
 
     if predict:
+        enforce_threshold_on_model(imagename,default_kwargs['pol'])
         logging.debug("Predicting model visibilities from " + imagename + " in " + msfile)
         time1 = timeit.default_timer()
         os.system("wsclean -predict -pol "+default_kwargs['pol']+" "+ "-name " + imagename + " " + msfile)
         time2 = timeit.default_timer()
         logging.debug('Time taken for predicting the model column is {0:.1f} s'.format(time2-time1))
 
+def enforce_threshold_on_model(imagename,thresh=7,pol='I'):
+    '''
+    imagename is the prefix of the image and is same as that supplied to the WSClean call
+    This function will first determine the pixels for which the Stokes I/XX/YY/RR/LL image is less than 
+    than thresh x rms . Then it will go to the polarised models and put all such pixels to
+    be zeros. If these images are not found, this the function will give a warning to log file
+    and exit.
+    
+    :param imagename: Imagename prefix. This is same as that passed to WSclean call
+    :type imagename: str
+    :param thresh: Threshold used to determine low SNR pixels in Stokes I/XX/YY image. This
+                    is in units of rms. Default: 7
+    :type thresh: float
+    :param pol: This is the list of polarisations on which the thresholding is done. Either
+                I,XX,YY,RR,LL is necessary to do this thresholding
+    :type pol: str
+    '''
+    pols=pol.split(',')
+    num_pol=len(pols)
+    
+    if 'I' or 'XX' or 'YY' or "RR" or "LL" not in pols:
+        logging.warning("Intensity or pseudo-intensity image not in pols. Threshold could not be done.")
+        return
+    
+    if num_pol==1:
+        Iimage=imagename+"-image.fits"
+    else:
+        for pol1 in ['I','XX','YY','RR','LL']:
+            Iimage=imagename+"-"+pol1+"-image.fits"
+            if os.path.isfile(Iimage):
+                break
+    if not os.path.isfile(Iimage):
+        logging.warning("Intensity or pseudo-intensity image not found. Threshold could not be done.")
+        return
+        
+    Idata=fits.getdata(Iimage)
+    rms=np.nanstd(Idata)
+    pos=np.where(Idata>10*rms)
+    Idata[pos]=np.nan
+    rms=np.nanstd(Idata)
+    pos=np.where(Idata<thresh*rms)
+    
+    for pol1 in pols:
+        if num_pol==1:
+            modelname=imagename+"-model.fits"
+        else:
+            modelname=imagename+"-"+pol1+"-model.fits"
+        
+        if not os.path.isfile(modelname):
+            continue
+        
+        hdu=fits.open(modelname,mode='update')
+        try:
+            hdu[0].data[pos]=0.00000000
+            hdu.flush()
+        finally:
+            hdu.close()
+    return
+            
 
 def find_smallest_fftw_sz_number(n):
     """
@@ -190,6 +266,7 @@ def predict_model(msfile, outms, image="_no_sun",pol='I'):
     :param image: input all sky image with non-solar sources, generated by gen_nonsolar_source_model()
     :return: N/A, but with an output CASA measurement set written into the same area as in the input ms
     """
+    enforce_threshold_on_model(image,pol)
     os.system("cp -r " + msfile + " " + outms)
     clearcal(outms, addmodel=True)
     os.system("wsclean -predict -pol "+pol+" -name " + image + " " + outms)
