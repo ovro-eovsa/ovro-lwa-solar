@@ -1,0 +1,3 @@
+[submodule "operations"]
+	path = operations
+	url = https://github.com/ovro-eovsa/ovro-lwa-solar-ops
