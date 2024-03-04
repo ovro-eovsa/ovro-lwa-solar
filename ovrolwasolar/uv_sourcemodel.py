@@ -182,9 +182,9 @@ def wrap_solution_save_hdf5(source_morphology, source_radec, phasecenters, fname
     """
     import h5py
     with h5py.File(fname_hdf5, 'w') as f:
-        f.create_dataset('source_morphology', data=np.array(popt_list))
-        f.create_dataset('source_radec', data=np.array(popt_phase_list))
-        f.create_dataset('phasecenters', data=np.array(ref_proc_list))
+        f.create_dataset('source_morphology', data=np.array(source_morphology))
+        f.create_dataset('source_radec', data=np.array(source_radec))
+        f.create_dataset('phasecenters', data=np.array(phasecenters))
 
 def plot_img_from_uvparm(source_morphology, source_radec, ref_proc): 
     """
