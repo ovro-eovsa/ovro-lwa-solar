@@ -4,6 +4,7 @@ import os
 import sys
 import numpy as np
 import matplotlib.pyplot as plt
+from ovrolwasolar import utils
 
 def func_elip_gauss(uv, a, b, theta, amp):
     u, v = uv
@@ -60,7 +61,8 @@ def lm_to_radec(l, m, ref_ra, ref_dec):
     return ra, dec
 
 def fast_vis_1gauss(fname_ms,
-                    uv_tapper_factor =0.3):
+                    uv_tapper_factor =0.3,\
+                    datacolumn=None):
     """
     This function fits the fast visibilities using a 2D gaussian. Since we are only
     using a single gaussian, it is advised that all strong sources are subtracted 
@@ -82,6 +84,8 @@ def fast_vis_1gauss(fname_ms,
     - fname_ms: Name of the fast vis MS
     - uv_tapper_factor: This is the factor which is passed to uv_tapper_weight. This 
                         is used to weight the visibilties of different baselines.
+    - datacolumn: Which datacolumn of MS to use. Default: None. If None, will check
+                  if corrected data is present. If present use corrected data. Else data.
     
     Returns:
     -Fitted gaussian: Parameters are ordered in this manner (sigma_l,sigma_m,theta, amp)
@@ -91,10 +95,16 @@ def fast_vis_1gauss(fname_ms,
     """
 # extract the uv and vis and the scan number
 # get flag
+    
+    if datacolumn is None:
+        if utils.check_corrected_data_present(fname_ms):
+            datacolumn='CORRECTED'
+        else:
+            datacolumn='DATA'
     tb = casatools.table()
     tb.open(fname_ms)
     uvw = tb.getcol('UVW')
-    data = tb.getcol('DATA')
+    data = tb.getcol(datacolumn)
     scan = tb.getcol('SCAN_NUMBER')
     flag = tb.getcol('FLAG')
     tb.close()
