@@ -5,6 +5,16 @@
 
 Welcome to ovrolwasolar's documentation!
 ========================================
+.. image:: https://static.pepy.tech/personalized-badge/lofarsun?period=month&units=international_system&left_color=black&right_color=orange&left_text=Downloads
+ :target: https://pepy.tech/project/lofarsun
+
+Project git repository : `LOFAR-Sun-tools <https://github.com/ovro-eovsa/ovro-lwa-solar>`__ 
+
+
+Pages:
+
+-  (.MS) Interferometry raw data, measurement set.
+   `fastvis <fastvis.html>`__
 
 .. toctree::
    :maxdepth: 2
