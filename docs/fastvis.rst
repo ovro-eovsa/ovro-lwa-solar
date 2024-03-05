@@ -33,4 +33,4 @@ For bright and single soruce events, most of the case can be represented by sing
 
 
 an example: 
-`notebook <./static/fastvisfit.html>`_ 
+`notebook <./_static/fastvisfit.html>`_ 
