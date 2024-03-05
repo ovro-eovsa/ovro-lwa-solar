@@ -22,9 +22,12 @@ from scipy.optimize import curve_fit
 def uv_tapper_weight(uvw, uv_tapper_factor=1):
     """ make a function, reads in uvw, returns the weight
     weight scheme is guassian distribution with center at u,v = 0,0
-    use sigma_norm  = np.inf to turn off the taper
+    use ``sigma_norm  = np.inf`` to turn off the taper
     The uv_taper_factor is applied after normalising all uvs
     with respect to the max uv_dist.
+
+    :param uvw: uvw coordinates
+    :param uv_tapper_factor: factor to control the tapering, normlised to max uv distance
     """
     uv_dist = np.sqrt(uvw[0]**2 + uvw[1]**2)
     uv_dist_norm = uv_dist / np.max(uv_dist)
@@ -38,13 +41,14 @@ def lm_to_radec(l, m, ref_ra, ref_dec):
     """
     Convert (l, m) coordinates to RA and DEC.
 
-    Parameters:
-    - l, m: Direction cosines, dimensionless (assumed to be small for this calculation).
-    - ref_ra: Reference right ascension in degrees.
-    - ref_dec: Reference declination in degrees.
+    :param l: Direction cosine, dimensionless (assumed to be small for this calculation).
+    :param m: Direction cosine, dimensionless (assumed to be small for this calculation).
+    :param ref_ra: Reference right ascension in degrees.
+    :param ref_dec: Reference declination in degrees.
 
-    Returns:
-    - RA, DEC in rad.
+    :return: RA, DEC in rad.
+    
+
     """
 
     # Calculate DEC using the approximation for small angles
@@ -80,25 +84,23 @@ def fast_vis_1gauss(fname_ms,
     
     All the returned quantities are lists
     
-    Parameters:
-    - fname_ms: Name of the fast vis MS
-    - uv_tapper_factor: This is the factor which is passed to uv_tapper_weight. This 
-                        is used to weight the visibilties of different baselines.
-    - datacolumn: Which datacolumn of MS to use. Default: None. If None, will check
-                  if corrected data is present. If present use corrected data. Else data.
+
+    :param fname_ms: Name of the fast vis MS
+    :param uv_tapper_factor: This is the factor which is passed to uv_tapper_weight. This
+    is used to weight the visibilties of different baselines.
+    :param datacolumn: Which datacolumn of MS to use. Default: None. If None, will check
+    if corrected data is present. If present use corrected data. Else data.
+
+    :return: Fitted gaussian, Parameters are ordered in this manner (sigma_l,sigma_m,theta, amp)
     
-    Returns:
-    -Fitted gaussian: Parameters are ordered in this manner (sigma_l,sigma_m,theta, amp)
-    - Fitted source_location : Ra-dec of the source
-    - Phasecenters
-    
+
     """
 # extract the uv and vis and the scan number
 # get flag
     
     if datacolumn is None:
         if utils.check_corrected_data_present(fname_ms):
-            datacolumn='CORRECTED'
+            datacolumn='CORRECTED_DATA'
         else:
             datacolumn='DATA'
     tb = casatools.table()
@@ -190,17 +192,19 @@ def plot_img_from_uvparm(source_morphology, source_radec, ref_proc):
     """
     This function plots the source in RA-DEC frame. Mostly for
     debugging purposes.
-    
-    Parameters:
-    - source_morphology: List/array with [sigma_l,sigma_m, theta, amp]
+
+    :param source_morphology: List/array with [sigma_l,sigma_m, theta, amp]
                         of the fitted gaussian
-    - source_radec: Source ra dec
+    :param source_radec: Source ra dec
+    :param ref_proc: Reference phase center
+
     """                       
     sigma_x = source_morphology[0]
     sigma_y = source_morphology[1]
     theta = -source_morphology[2]
     amp = source_morphology[3]
 
+    alpha_0, delta_0 = ref_proc
     alpha_rad, delta_rad = source_radec
 
     def func_gauss_xy(x, y, x0, y0, sigma_x, sigma_y, theta, amp):
@@ -227,3 +231,5 @@ def plot_img_from_uvparm(source_morphology, source_radec, ref_proc):
     ax.plot(alpha_0, delta_0, '+', color='red')
     ax.set_xlabel('RA (rad)')
     ax.set_ylabel('DEC (rad)')
+
+    return fig, ax
