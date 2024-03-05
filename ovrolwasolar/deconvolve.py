@@ -12,7 +12,6 @@ from astropy.io import fits
 import matplotlib.pyplot as plt
 from . import utils,flagging,calibration,selfcal,source_subtraction
 import logging, glob
-
 from . import utils,flagging
 from .file_handler import File_Handler
 from .primary_beam import analytic_beam as beam 
@@ -74,6 +73,7 @@ def run_wsclean(msfile, imagename, size:int =4096, scale='2arcmin', fast_vis=Fal
     
     default_kwargs={
         'j':'1',                    # number of threads
+        'mem': '2',		            # fraction of memory usage	
         'weight':'uniform',         # weighting scheme
         'no_dirty':'',              # don't save dirty image
         'no_update_model_required':'', # don't update model required
@@ -138,8 +138,8 @@ def run_wsclean(msfile, imagename, size:int =4096, scale='2arcmin', fast_vis=Fal
         cmd_clean += f" -{cli_arg} {value} " if value != '' else f" -{cli_arg} "
         
     if ('I' in default_kwargs['pol']) and ('join_polarizations' not in default_kwargs.keys()) and \
-            ('Q' in default_kwargs['pol'] or U in default_kwargs['pol'] \
-            or V in default_kwargs['pol']):
+            ('Q' in default_kwargs['pol'] or 'U' in default_kwargs['pol'] \
+            or 'V' in default_kwargs['pol']):
         cmd_clean+= " -join-polarizations "
     
     if (default_kwargs['pol']=='I' or default_kwargs['pol']=='XX' or default_kwargs['pol']=='YY' \
@@ -159,21 +159,21 @@ def run_wsclean(msfile, imagename, size:int =4096, scale='2arcmin', fast_vis=Fal
     logging.debug('Time taken for all sky imaging is {0:.1f} s'.format(time2-time1))
 
     if default_kwargs['intervals_out']!='1':
-        image_names=utils.get_fast_vis_imagenames(msfile,imagename,pol)
+        image_names=utils.get_fast_vis_imagenames(imagename,pol=pol,msfile=msfile)
         for name in image_names:
             wsclean_imagename=name[0]
             final_imagename=name[1]
             os.system("mv "+wsclean_imagename+" "+final_imagename)
 
     if predict:
-        enforce_threshold_on_model(imagename,default_kwargs['pol'])
+        enforce_threshold_on_model(msfile,imagename,default_kwargs['pol'])
         logging.debug("Predicting model visibilities from " + imagename + " in " + msfile)
         time1 = timeit.default_timer()
         os.system("wsclean -predict -pol "+default_kwargs['pol']+" "+ "-name " + imagename + " " + msfile)
         time2 = timeit.default_timer()
         logging.debug('Time taken for predicting the model column is {0:.1f} s'.format(time2-time1))
 
-def enforce_threshold_on_model(imagename,thresh=7,pol='I'):
+def enforce_threshold_on_model(imagename,thresh=7,pol='I',src_area=100, msfile=None, sol_area=400., neg_thresh=1.5):
     '''
     imagename is the prefix of the image and is same as that supplied to the WSClean call
     This function will first determine the pixels for which the Stokes I/XX/YY/RR/LL image is less than 
@@ -187,13 +187,15 @@ def enforce_threshold_on_model(imagename,thresh=7,pol='I'):
                     is in units of rms. Default: 7
     :type thresh: float
     :param pol: This is the list of polarisations on which the thresholding is done. Either
-                I,XX,YY,RR,LL is necessary to do this thresholding
+                I,XX,YY,RR,LL is necessary to do this thresholding. Format='I,Q,U,V'
     :type pol: str
     '''
     pols=pol.split(',')
     num_pol=len(pols)
+    print (pol)
     
-    if 'I' or 'XX' or 'YY' or "RR" or "LL" not in pols:
+    #### check if either of I,XX,YY,RR,LL is in pols or not
+    if set(['I','XX','YY',"RR","LL"]).isdisjoint(pols):
         logging.warning("Intensity or pseudo-intensity image not in pols. Threshold could not be done.")
         return
     
@@ -209,11 +211,61 @@ def enforce_threshold_on_model(imagename,thresh=7,pol='I'):
         return
         
     Idata=fits.getdata(Iimage)
+    head=fits.getheader(Iimage)
+    
+    if msfile is not None:
+        solx, soly = utils.get_solar_loc_pix(msfile, Iimage)
+    else:
+        solx,soly=None, None
+    
+    
+    
+    
+    
+    if head['cunit1'] == 'deg':
+        dx = np.abs(head['cdelt1'] * 60.)
+    else:
+        print(head['cunit1'] + ' not recognized as "deg". Model could be wrong.')
+    if head['cunit2'] == 'deg':
+        dy = np.abs(head['cdelt2'] * 60.)
+    else:
+        print(head['cunit2'] + ' not recognized as "deg". Model could be wrong.')
+        
+    if solx is not None:
+        sol_area_xpix = int(sol_area / dx)
+        sol_area_ypix = int(sol_area / dy)
+        solar_data=Idata[0, 0, soly - sol_area_ypix // 2:soly + sol_area_ypix // 2 + 1,
+                        solx - sol_area_xpix // 2:solx + sol_area_xpix // 2 + 1]
+        
     rms=np.nanstd(Idata)
     pos=np.where(Idata>10*rms)
+    ### removed outliers, which are actual sources. This will stop them from biasing the rms calculation.
     Idata[pos]=np.nan
+    
     rms=np.nanstd(Idata)
-    pos=np.where(Idata<thresh*rms)
+    Idata_copy=np.zeros_like(Idata)
+    Idata_copy[...]=Idata[...]
+    pos2=np.where(Idata>=thresh*rms)
+    
+    for src_y,src_x in zip(pos2[2],pos2[3]):
+        src_area_xpix = src_area / dx
+        src_area_ypix = src_area / dy
+        
+        new_data = Idata[0,0,int(src_y - src_area_ypix // 2): int(src_y + src_area_ypix // 2),\
+                    int(src_x - src_area_xpix // 2): int(src_x + src_area_xpix // 2)]
+        max_data=np.nanmax(new_data)
+        min_data=np.nanmin(new_data)
+        if max_data<neg_thresh*abs(min_data):          
+            Idata_copy[0,0,int(src_y - src_area_ypix // 2): int(src_y + src_area_ypix // 2),\
+                    int(src_x - src_area_xpix // 2): int(src_x + src_area_xpix // 2)]=0.0
+                    
+    if solx is not None:
+        Idata_copy[0, 0, soly - sol_area_ypix // 2:soly + sol_area_ypix // 2 + 1,
+                solx - sol_area_xpix // 2:solx + sol_area_xpix // 2 + 1]=solar_data      
+            
+    pos=np.where(Idata_copy<neg_thresh*rms)
+    
+
     
     for pol1 in pols:
         if num_pol==1:
@@ -266,7 +318,7 @@ def predict_model(msfile, outms, image="_no_sun",pol='I'):
     :param image: input all sky image with non-solar sources, generated by gen_nonsolar_source_model()
     :return: N/A, but with an output CASA measurement set written into the same area as in the input ms
     """
-    enforce_threshold_on_model(image,pol)
+    enforce_threshold_on_model(image,pol=pol,msfile=msfile)
     os.system("cp -r " + msfile + " " + outms)
     clearcal(outms, addmodel=True)
     os.system("wsclean -predict -pol "+pol+" -name " + image + " " + outms)

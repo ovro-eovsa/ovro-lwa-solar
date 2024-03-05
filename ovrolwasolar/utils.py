@@ -446,4 +446,31 @@ def correct_primary_beam(msfile, imagename, pol='I', fast_vis=False):
                 hdu.close()
     return
     
+def get_solar_loc_pix(msfile, image="allsky"):
+    """
+    Get the x, y pixel location of the Sun from an all-sky image
 
+    :param msfile: path to CASA measurement set
+    :param image: all sky image made from the measurement set
+    :return: pixel value in X and Y for solar disk center
+    """
+    from astropy.wcs.utils import skycoord_to_pixel
+    from astropy.coordinates import SkyCoord
+    import astropy.units as u
+    from astropy.wcs import WCS
+    
+    m = get_sun_pos(msfile, str_output=False)
+    ra = m['m0']['value']
+    dec = m['m1']['value']
+    coord = SkyCoord(ra * u.rad, dec * u.rad, frame='icrs')
+    logging.debug('RA, Dec of Sun is ' + str(ra) + ", " + str(dec) + ' rad')
+    head=fits.getheader(image)
+    w = WCS(head)
+    pix = skycoord_to_pixel(coord, w)
+    if np.isnan(pix[0]):
+        logging.warning('Sun is not in the image')
+        return None, None
+    x = int(pix[0])
+    y = int(pix[1])
+    logging.debug('Pixel location of Sun is ' + str(x) + " " + str(y) + " in imagename " + image)
+    return x, y

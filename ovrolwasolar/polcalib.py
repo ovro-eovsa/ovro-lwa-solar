@@ -17,7 +17,7 @@ from astropy.coordinates import SkyCoord
 from astropy.wcs import WCS
 from astropy.convolution import Gaussian2DKernel, convolve_fft
 from ovrolwasolar import deconvolve
-from scipy.optimize import minimize_scalar
+from scipy.optimize import minimize
 
 def get_corr_type(msname):
     '''
@@ -480,7 +480,7 @@ def get_conv_kernel(head):
     kernel=Gaussian2DKernel(sigma_major_pix,sigma_minor_pix,theta=theta)
     return kernel
     
-def get_img_correction_factor(imagename,stokes,msfile,imgcat,sun_only=False, sol_area=400.,src_area=200,thresh=5,limit_frac=0.05):
+def get_img_correction_factor(imagename,stokes,msfile,imgcat=None,sun_only=False, sol_area=400.,src_area=200,thresh=5,limit_frac=0.05):
     '''
     This function determines the correction factor using an image based method. It calculates the difference between ratio of 
     predicted Q/I,U/I,V/I values and their observed values for each source detected. For all sources other than Sun,
@@ -503,7 +503,7 @@ def get_img_correction_factor(imagename,stokes,msfile,imgcat,sun_only=False, sol
     :type stokes: str
     :param msfile: MS name, which is used to determine the solar loc
     :type msfile: str
-    :param imgcat: Catalog of the source list returned by PyBDSF
+    :param imgcat: Catalog of the source list returned by PyBDSF. Default is None. Should be specified if sun_only=False
     :type imgcat: str
     :param sol_area: Diameter of region around Sun which will be used to calculate correction factor
     :type sol_area: integer
@@ -666,7 +666,101 @@ def get_img_correction_factor(imagename,stokes,msfile,imgcat,sun_only=False, sol
     if abs(frac)<limit_frac:
         frac=0.0
     return frac
+
+def get_img_correction_factor_minimize_correlation(imagename,stokes,msfile,\
+                                sun_only=False, sol_area=400.,\
+                                thresh=7):
+    '''
+    This function determines the correction factor by minimising the correlation of I and other Stokes images.
+    For the Sun, we choose the high SNR points in a 400arcmin region around the Sun. The way the
+    correction fraction is determined implies that the corrected image should be
+    Q_corrected=Q_obs+correction_factor*Iobs
+    U_corrected=U_obs+correction_factor*Iobs
+    V_corrected=V_obs+correction_factor*Iobs
     
+    Please also ensure that the Stokes I and other parameters are correlated before running 
+    this function for that Stokes parameter.
+    
+    :param imagename: Prefix of the image. This means imagename-I-image.fits, imagename-Q-image.fits etc should exist
+    :type imagename: str
+    :param stokes: Stokes of the image. Can be either Q,U,V
+    :type stokes: str
+    :param msfile: MS name, which is used to determine the solar loc
+    :type msfile: str
+    :param sol_area: Diameter of region around Sun which will be used to calculate correction factor
+    :type sol_area: integer
+    :param thresh: Threshold in terms of rms which will be used to determine a source detection in Stokes images
+    :type thresh: float
+    :param sun_only: Other sources will be ignored when finding the leakage correction factor.
+    :type sun_only: Boolean. Default: False
+    '''
+    me=measures()
+    m = utils.get_sun_pos(msfile, str_output=False)
+    solar_ra=m['m0']['value']*180/np.pi
+    solar_dec=m['m1']['value']*180/np.pi
+    
+    head=fits.getheader(imagename+"-I-image.fits")
+    Idata=fits.getdata(imagename+"-I-image.fits")
+    freq=head['CRVAL3']*1e-6
+    imwcs=WCS(head) 
+    solar_xy = imwcs.all_world2pix(list(zip([solar_ra], [solar_dec],[head['CRVAL3']],[head['CRVAL4']])), 1)   
+    
+    if head['cunit1'] == 'deg':
+        dx = np.abs(head['cdelt1'] * 60.)
+    else:
+        print(head['cunit1'] + ' not recognized as "deg". Model could be wrong.')
+    if head['cunit2'] == 'deg':
+        dy = np.abs(head['cdelt2'] * 60.)
+    else:
+        print(head['cunit2'] + ' not recognized as "deg". Model could be wrong.')                   
+    sol_area_xpix = int(sol_area / dx)
+    sol_area_ypix = int(sol_area / dy)
+    
+    
+    
+    solx=int(solar_xy[0][0])
+    soly=int(solar_xy[0][1])
+    
+    img=imagename+"-"+stokes+"-image.fits"
+    
+    img_data=fits.getdata(img)
+    
+    
+    
+    
+    rms=np.nanstd(Idata)
+    pos=np.where(abs(Idata)<10*rms)
+    rms=np.nanstd(Idata[pos])
+    
+    if sun_only:
+        Idata=Idata[0, 0, soly - sol_area_ypix // 2:soly + sol_area_ypix // 2 + 1,
+                    solx - sol_area_xpix // 2:solx + sol_area_xpix // 2 + 1]
+        img_data=img_data[0, 0, soly - sol_area_ypix // 2:soly + sol_area_ypix // 2 + 1,
+                    solx - sol_area_xpix // 2:solx + sol_area_xpix // 2 + 1]
+    
+    pos=np.where(Idata>thresh*rms)
+    
+    solar_az,solar_el=utils.get_solar_azel(msfile)        
+    factors=get_beam_factors([solar_el],[solar_az],freq=freq)
+    
+    if stokes=='Q':
+        solar_model_frac=factors[0,1]
+    elif stokes=='U':
+        solar_model_frac=factors[0,2]
+    elif stokes=='V':   
+        solar_model_frac=factors[0,3]
+        
+    img_data=img_data-solar_model_frac*Idata
+    
+    func1=lambda a,stokes_data,Idata: np.abs(np.corrcoef(stokes_data+a*Idata,Idata)[0,1])
+    
+    res=minimize(func1,x0=[0.0],args=(img_data[pos].flatten(),Idata[pos].flatten()),\
+                    method='Nelder-Mead',bounds=[[-1,1]])
+    
+    if res.success:
+        return res.x
+    logging.warning("Solution was not found. Proceed with care")
+    return 0.0
             
             
     
@@ -691,6 +785,8 @@ def correct_image_leakage(msname,factor, inplace=False, outms=None):
     :type inplace: Boolean
     :param outms: If inplace is False, then outms is created and the data is modified.
     :type outms: str
+    :return: outms
+    :rtype: str
     '''  
     
       
