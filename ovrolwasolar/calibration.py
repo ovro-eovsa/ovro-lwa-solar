@@ -5,6 +5,7 @@ import math
 import sys, os, time
 import numpy as np
 import logging, glob
+from astropy.time import Time
 
 from . import utils,flagging
 from .file_handler import File_Handler
@@ -275,3 +276,83 @@ def do_bandpass_correction(solar_ms, calib_ms=None, bcal=None, caltable_folder='
     logging.debug('Splitted the input solar MS into a file named ' + solar_ms[:-3] + "_calibrated.ms")
     solar_ms = solar_ms[:-3] + "_calibrated.ms"
     return solar_ms
+
+def gen_beam_flux_factor(bcal_timestr, ms_calib=None, ms_calib_fold='/lustre/bin.chen/realtime_pipeline/ms_calib/',
+        beam_caltable_fold='/lustre/bin.chen/realtime_pipeline/caltables_beam/', norm_change_time='2023-09-26T05:00', 
+        amp_change_time='2024-01-17T05:00'):
+    """
+    This function is to derive beam flux factors from a set of bandpass calibration tables used for beamforming
+    **Note: important change happened on 2024 Jan 18, when the amplitudes from the bandpass tables were used for beamforming.
+    Before that, all the bandpass table amplitudes were normalized to unity.
+    :param bcal_timestr: Time string of the bandpass calibration tables in the format of YYYYMMDD_HHMMSS
+    :param ms_calib: list of corresponding measurement sets from which the calibration tables were derived from. 
+        If not provided, will go to the provided directory "ms_calib_fold" to look for the latest ones.
+    :param ms_calib_fold: directory where the measurements sets can be found
+    :param beam_caltable_fold: directory where the beam calibration tables are located
+    :param norm_change_time: Time when a normalization factor of 24 is corrected in the beam data recorder: 
+        https://github.com/lwa-project/ovro_data_recorder/commit/98bca54635dc2f1d31602b26ef30d3aa755ef945. 
+        Default to 2023-09-26T05:00 (approximate, subject to change)
+    :param amp_change_time: Time when the bandpass amplitudes are used for beamforming. 
+        Default to 2024-01-17T05:00 (approximate, subject to change)
+    """
+    import pandas as pd
+    bcaltime = Time(bcal_timestr[:4]+'-'+bcal_timestr[4:6]+'-'+bcal_timestr[6:8]+'T'+bcal_timestr[9:11]+':'+bcal_timestr[11:13])
+    bcaltables = glob.glob(beam_caltable_fold + bcal_timestr + '*.bcal')
+    bcaltables.sort()
+
+    chan_freqs = []
+    if type(ms_calib) is list and len(ms_calib)==len(bcaltables):
+        ms_calib.sort()
+    else:
+        ms_calib = glob.glob(ms_calib_fold + bcal_timestr + '*.ms')
+        ms_calib.sort()
+    if len(ms_calib) != len(bcaltables):
+        print('The number of calibration ms files does not match that of the calibration tables at {0:s}.'.format(bcal_timestr))
+        print('Trying to use the lastest ms files')
+        all_ms = glob.glob(ms_calib_fold + '*.ms')
+        all_ms.sort()
+        ms_calib = all_ms[-16:]
+        # Check if all files have the same time string
+        ms_timestr0 = os.path.basename(ms_calib[0])[:15]
+        for ms_calib_ in ms_calib:
+            if os.path.basename(ms_calib_)[:15] != ms_timestr0:
+                print('The time of a ms file {0:s} does not match that of the first one {1:s}. Abort...'.format(
+                    os.path.basename(ms_calib_),ms_timestr0))
+                return -1
+    for ms_calib_ in ms_calib:
+        try:
+            msmd.open(ms_calib_)
+            chan_freqs.append(msmd.chanfreqs(0))
+            msmd.done()
+        except Exception as e:
+            print('Something is wrong when reading ', ms_calib_)
+            print(e)
+        
+    chan_freqs = np.concatenate(chan_freqs)
+
+    bmcalfac = []
+    for bcaltb_bm in bcaltables:
+        tb.open(bcaltb_bm, nomodify=True)
+        amps = tb.getcol('CPARAM')
+        flags = tb.getcol('FLAG')
+        amps_masked = np.ma.array(amps, mask=flags)
+        #amps_med = np.abs(np.ma.median(amps_masked, axis=(0,2))).data
+        npol, nch, nant = flags.shape
+        num_ant_per_chan = nant - np.sum(flags, axis=2)
+        if bcaltime < Time(amp_change_time):
+            bmcalfac_per_chan = np.ma.sum(np.abs(amps_masked), axis=2) ** 2.
+        else:
+            bmcalfac_per_chan = num_ant_per_chan ** 2.
+
+        if bcaltime < Time(norm_change_time):
+            bmcalfac_per_chan *= 24.
+
+        bmcalfac.append(bmcalfac_per_chan)
+        tb.close()
+
+    bmcalfac = np.concatenate(bmcalfac, axis=1)
+    # write channel frequencies and corresponding beam scaling factors into a csv file
+    df = pd.DataFrame({"chan_freqs":chan_freqs, "calfac_x":bmcalfac[0], "calfac_y":bmcalfac[1]})
+    bcalfac_file = beam_caltable_fold + '/' + bcal_timestr + '_bmcalfac.csv'
+    df.to_csv(bcalfac_file, index=False)
+    return bcalfac_file
