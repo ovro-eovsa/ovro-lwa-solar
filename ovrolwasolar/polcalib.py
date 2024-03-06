@@ -968,70 +968,29 @@ def apply_correction(msname,caltable):
     applycal(vis=msname,gaintable=caltable,applymode='calonly')
     return
     
-def crosshand_phase_optimising_func(crosshand_phase,msname=None,caltable=None,\
-                                    thresh=7,correlation_thresh=10,sol_area=400,):
-    update_caltable(caltable,crosshand_phase)
-    apply_correction(msname,caltable)
-    #imagename=msname.replace(".ms","_temp")
-    imagename='/home/surajit/Downloads/lwa_polarisation_tests/solar_data/fresh_start/img_leak_crosshand_phase_variation/temp'+str(round(crosshand_phase,2))
-    deconvolve.run_wsclean(msname,imagename,size=2048,scale='4arcmin',weight='briggs 0',niter=1000,pol='I,Q,U,V',predict=False,field='0',fast_vis=True)
-    return
-    me=measures()
-    m = utils.get_sun_pos(msname, str_output=False)
-    solar_ra=m['m0']['value']*180/np.pi
-    solar_dec=m['m1']['value']*180/np.pi
+def crosshand_phase_optimising_func(crosshand_phase, Udata=None, Vdata=None):
+    '''
+    This function applies a rotation to the Stokes vector by an angle
+    equal to the crosshand_phase, and the rotation axis is along the 
+    Q vector. The idea is that at the right crosshand phase, the magnitude
+    of Q will be minimum. 
     
-    head=fits.getheader(imagename+"-I-image.fits")
-
-    freq=head['CRVAL3']*1e-6
-    imwcs=WCS(head) 
-    solar_xy = imwcs.all_world2pix(list(zip([solar_ra], [solar_dec],[head['CRVAL3']],[head['CRVAL4']])), 1)   
+    :param Udata: Stokes U data. This exclude only pixels where either Stokes
+                  U or Stokes V is detected. In general we are also following
+                  the logic and at these locations Stokes I should be detected.   
+                  But strictly speaking, this is not necessary.
+    :type Udata : numpy ndarray; Can be slices as well.
+    :param Vdata: Stokes V data
+    :type Vdata: numpy ndarray
+    :param crosshand_phase: This is the rotation angle of the Stokes vector. 
+                            unit: radian
+    :type crosshand_phase: float
+              
+    '''
+    Udata_corrected= Udata*np.cos(crosshand_phase) + Vdata*np.sin(crosshand_phase)
+    Vdata_corrected= -Udata*np.sin(crosshand_phase) + Vdata*np.cos(crosshand_phase)
     
-    if head['cunit1'] == 'deg':
-        dx = np.abs(head['cdelt1'] * 60.)
-    else:
-        print(head['cunit1'] + ' not recognized as "deg". Model could be wrong.')
-    if head['cunit2'] == 'deg':
-        dy = np.abs(head['cdelt2'] * 60.)
-    else:
-        print(head['cunit2'] + ' not recognized as "deg". Model could be wrong.')                   
-    sol_area_xpix = int(sol_area / dx)
-    sol_area_ypix = int(sol_area / dy)
-    
-    solx=int(solar_xy[0][0])
-    soly=int(solar_xy[0][1])
-    
-    ymin=soly - sol_area_ypix // 2
-    ymax=soly + sol_area_ypix // 2 + 1
-    xmin=solx - sol_area_xpix // 2
-    xmax=solx + sol_area_xpix // 2 + 1
-    
-
-    
-    Idata=fits.getdata(imagename+"-I-image.fits")
-    Udata=fits.getdata(imagename+"-U-image.fits")[0,0,ymin:ymax,xmin:xmax]
-    Vdata=fits.getdata(imagename+"-V-image.fits")[0,0,ymin:ymax,xmin:xmax]
-    
-    rms=np.nanstd(Idata)
-    pos=np.where(Idata<thresh*rms)
-    Idata[pos]=np.nan
-    
-    Idata=Idata[0,0,ymin:ymax,xmin:xmax]
-    
-    solar_az,solar_el=utils.get_solar_azel(msname)        
-    #factors=get_beam_factors([solar_el],[solar_az],freq=freq)
-    factors=np.array([1, -0.03, 0.09, 0.0016])
-    
-    Udata_true=Udata-factors[0,2]*Idata
-    Vdata_true=Vdata-factors[0,3]*Idata
-    
-    pos=np.where(np.isnan(Idata)==False)
-    
-    p,cov=np.polyfit(Udata_true[pos],Vdata_true[pos],deg=1,cov=True)
-    print (p[0])
-    if abs(p[0])>correlation_thresh*np.sqrt(cov[0,0]):
-        return abs(p[0])
-    return 0
+    return np.nansum(Udata_corrected**2)
     
     
 def correct_crosshand_phase(msname):
