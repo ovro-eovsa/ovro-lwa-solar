@@ -74,7 +74,7 @@ def run_wsclean(msfile, imagename, size:int =4096, scale='2arcmin', fast_vis=Fal
     default_kwargs={
         'j':'1',                    # number of threads
         'mem': '2',		            # fraction of memory usage	
-        'weight':'uniform',         # weighting scheme
+        'weight':'briggs 0',         # weighting scheme
         'no_dirty':'',              # don't save dirty image
         'no_update_model_required':'', # don't update model required
         'no_negative':'',           # no negative gain for CLEAN

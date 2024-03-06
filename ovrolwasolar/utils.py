@@ -474,3 +474,22 @@ def get_solar_loc_pix(msfile, image="allsky"):
     y = int(pix[1])
     logging.debug('Pixel location of Sun is ' + str(x) + " " + str(y) + " in imagename " + image)
     return x, y
+    
+def get_rms(data,thresh=7):
+    '''
+    This function returns the rms of the data. As a first cut, it calculates
+    the std. Then it calculates the std again, by only considering pixels which
+    are lower than the thresh*rms
+    
+    :param data: image data
+    :type data: numpy ndarray
+    :param thresh: threshold above rms to remove true sources in rms caluclation.
+                    Default: 7
+    :type thresh: float
+    :return: rms
+    :rtype: float
+    '''
+    rms=np.nanstd(data)
+    pos=np.where(abs(data)<thresh*rms)
+    rms=np.nanstd(data[pos])
+    return rms
