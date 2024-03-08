@@ -84,7 +84,6 @@ def run_wsclean(msfile, imagename, size:int =4096, scale='2arcmin', fast_vis=Fal
         'no-reorder':'',            # don't reorder the channels
         'beam_fitting_size':'2',    # beam fitting size
         'horizon_mask':"2deg"    # horizon mask distance (to mask horizon direction RFI)
-        'channels_out': '1'      # number of frequency chunks needed
     }
 
     if auto_pix_fov:
