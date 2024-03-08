@@ -307,7 +307,26 @@ def get_total_fields(msname):
     msmd.done()
     return num_field
     
-def rename_images(msfile,imagename,pol,img_prefix=None, intervals_out=1,channels_out=1):
+def rename_images(imagename,pol,img_prefix=None, intervals_out=1,channels_out=1):
+    '''
+    This will create the list of [present name, future name]
+    
+    :param imagename: Imagename supplied to WSClean call.
+    :type imagename: str
+    :param pol: Pol supplied to WSClean. Should be ',' separated list. 
+                Parsing is strict.
+    :type pol: str
+    :param img_prefix: Image prefix of the renamed images. The times and freq will 
+                        be appened after this, separated by '_'. Default is None.
+                        If None, img_prefix is set to imagename
+    :type img_prefix: str
+    :param intervals_out: Intervals_out passed to WSClean. If 1, time_str is not
+                            appended to img_prefix. Default: 1
+    :type intervals_out: int
+    :param channels_out: Channels_out passed to WSClean. If 1, channels_out is not
+                        appended to img_prefix. Default :1
+
+    '''
     pols=pol.split(',')
     num_pols=len(pols)
     
@@ -328,7 +347,8 @@ def rename_images(msfile,imagename,pol,img_prefix=None, intervals_out=1,channels
             if channels_out!=1:
                 final_imagename+='_'+obsfreq+"MHz"
             final_imagename+=pol_prefix+"-image.fits"
-            names.append([img,final_imagename])
+            os.system("mv "+img+" "+final_imagename)
+            names.append(final_imagename)
     return names
     
 def check_corrected_data_present(msname):

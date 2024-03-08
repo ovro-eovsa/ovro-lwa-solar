@@ -227,12 +227,13 @@ def image_ms(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagename='sun
             helio_image = utils.convert_to_heliocentric_coords(outms, image_list)
         else:
             num_fields=utils.get_total_fields(outms)
-            image_names=utils.rename_images(outms, imagename, pol, \
+            image_names=utils.rename_images(imagename, pol, \
                                 intervals_out= num_fields)
+            
             image_list=[]
             for name in image_names:
-                if os.path.isfile(name[1]):
-                    image_list.append(name[1])
+                if os.path.isfile(name):
+                    image_list.append(name)
             helio_image = utils.convert_to_heliocentric_coords(outms, image_list)    
         logging.info('Imaging completed for ' + solar_ms)
 

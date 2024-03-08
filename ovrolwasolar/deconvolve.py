@@ -146,17 +146,7 @@ def run_wsclean(msfile, imagename, size:int =4096, scale='2arcmin', fast_vis=Fal
     time2 = timeit.default_timer()
     logging.debug('Time taken for all sky imaging is {0:.1f} s'.format(time2-time1))
 
-    
-
-    if default_kwargs['intervals_out']!='1' and default_kwargs['channels_out']!=1:
-        image_names=utils.rename_images(msfile,imagename,pol, \
-                                        intervals_out= default_kwargs['intervals_out'],\
-                                        channels_out= default_kwargs['channels_out'] )
-        for name in image_names:
-            wsclean_imagename=name[0]
-            final_imagename=name[1]
-            os.system("mv "+wsclean_imagename+" "+final_imagename)
-
+   
     if predict:
         logging.debug("Predicting model visibilities from " + imagename + " in " + msfile)
         time1 = timeit.default_timer()
