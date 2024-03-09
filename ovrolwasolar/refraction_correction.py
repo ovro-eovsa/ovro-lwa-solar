@@ -147,17 +147,18 @@ def save_refraction_fit_param(fname_in, fname_out, px, py, com_x_fitted, com_y_f
     hdul = fits.open(fname_in)
 
     # correction distance per freq ch
-    col_add1 = fits.Column(name='com_x_fitted', format='E', array=com_x_fitted)
-    col_add2 = fits.Column(name='com_y_fitted', format='E', array=com_y_fitted)
+    col_add1 = fits.Column(name='refra_shift_x', format='E', array=com_x_fitted)
+    col_add2 = fits.Column(name='refra_shift_y', format='E', array=com_y_fitted)
     hdu = fits.BinTableHDU.from_columns(hdul[1].columns + col_add1 + col_add2)
 
     # also the parms for x = px[0] * 1/freq**2 + px[1]
-    hdul[0].header["PX0"] = str(px[0])
-    hdul[0].header["PX1"] = str(px[1])
-    hdul[0].header["PY0"] = str(py[0])
-    hdul[0].header["PY1"] = str(py[1])
+    hdul[0].header["REFRA_PX0"] = str(px[0])
+    hdul[0].header["REFRA_PX1"] = str(px[1])
+    hdul[0].header["REFRA_PY0"] = str(py[0])
+    hdul[0].header["REFRA_PY1"] = str(py[1])
 
-    hdul[0].header["REFRA"] = '1'
+    hdul[0].header["REFRA_COR"] = True
+    hdul[0].header["REFRA_VER"] = '1.0'
 
     hdul[0].header["HISTORY"] = str(hdul[0].header["HISTORY"])+ " Refraction correction applied"
 

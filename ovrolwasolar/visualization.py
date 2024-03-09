@@ -102,12 +102,11 @@ def slow_pipeline_default_plot(fname,
 
                         if apply_refraction_corr:
                             # check if keyword is present
-                            if 'com_x_fitted' in meta.keys():
-                                com_x_corr = meta["com_x_fitted"][bd]
-                                com_y_corr = meta["com_y_fitted"][bd]
+                            if 'refra_shift_x' in meta.keys():
+                                com_x_corr = meta["refra_shift_x"][bd]
+                                com_y_corr = meta["refra_shift_y"][bd]
                                 rmap_plt.xrange = rmap_plt.xrange - com_x_corr*u.arcsec
                                 rmap_plt.yrange = rmap_plt.yrange - com_y_corr*u.arcsec
-                                print("Applying correction")
                                  
                         vmaxplt = np.percentile(rdata[0, bd, :, :]/1e6, 99.9)
                         im = rmap_plt.imshow(axes=ax, cmap='hinodexrt', vmin=0, vmax=vmaxplt)
@@ -138,10 +137,10 @@ def slow_pipeline_default_plot(fname,
                         img2 = io.BytesIO(img2)
                         img2 = mpimg.imread(img2, format='png')
 
-                        ax_logo1 = fig.add_axes([0.015, -0.003, 0.07, 0.07])
+                        ax_logo1 = fig.add_axes([0.015, 0.027, 0.07, 0.07])
                         ax_logo1.imshow(img1)
                         ax_logo1.axis('off')
-                        ax_logo2 = fig.add_axes([0.005, 0.027, 0.09, 0.08])
+                        ax_logo2 = fig.add_axes([0.005,-0.003, 0.09, 0.08])
                         ax_logo2.imshow(img2)
                         ax_logo2.axis('off')
 
