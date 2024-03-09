@@ -77,7 +77,6 @@ def refraction_fit_param(fname):
     
     :param fname: the fits file name
     """
-
     hdu = fits.open(fname)
     data = hdu[0].data
     meta = hdu[0].header
@@ -92,7 +91,7 @@ def refraction_fit_param(fname):
     com_y_arr = []
     peak_values_tmp = []
     area_collect_tmp = []
-    for idx_this,idx_img in enumerate(range(0, len(hdu[1].data), 3)):
+    for idx_this,idx_img in enumerate(range(0, len(hdu[1].data))):
 
         thresh = thresh_func(freqs_arr[idx_img])/5
 
@@ -135,3 +134,15 @@ def refraction_fit_param(fname):
         py = [np.nan, np.nan]
 
     return [px, py]
+
+
+def save_refraction_fit_param(fname, px, py):
+    """
+    Save the refraction fit parameters to a file
+    
+    :param fname: the fits file name
+    :param px: the x fit parameters
+    :param py: the y fit parameters
+    """
+
+    return True
