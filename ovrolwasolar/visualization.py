@@ -72,7 +72,7 @@ def inspection_bl_flag(ms_file):
 
 def slow_pipeline_default_plot(fname, 
             freqs_plt = [34.1, 38.7, 43.2, 47.8, 52.4, 57.0, 61.6, 66.2, 70.8, 75.4, 80.0, 84.5],
-            fov = 7000,add_logo=True):
+            fov = 7000,add_logo=True, apply_refraction_corr=False):
     """
     Function to plot the default pipeline output
 
@@ -85,6 +85,7 @@ def slow_pipeline_default_plot(fname,
 
     fig = plt.figure(figsize=(8, 6.4))
     gs = gridspec.GridSpec(3, 4, left=0.07, right=0.98, top=0.94, bottom=0.10, wspace=0.02, hspace=0.02)
+
     if True:
                 freqs_mhz = meta['ref_cfreqs']/1e6
                 for i in range(12):
@@ -98,6 +99,17 @@ def slow_pipeline_default_plot(fname,
 
                         rmap_plt_ = smap.Map(np.squeeze(rdata[0, bd, :, :]/1e6), meta['header'])
                         rmap_plt = pmX.Sunmap(rmap_plt_)
+
+                        if apply_refraction_corr:
+                            # check if keyword is present
+                            print(meta.keys())
+                            if 'com_x_fitted' in meta.keys():
+                                com_x_corr = meta["com_x_fitted"][bd]
+                                com_y_corr = meta["com_y_fitted"][bd]
+                                rmap_plt.xrange = rmap_plt.xrange - com_x_corr*u.arcsec
+                                rmap_plt.yrange = rmap_plt.yrange - com_y_corr*u.arcsec
+                                print("corr!")
+                                 
                         vmaxplt = np.percentile(rdata[0, bd, :, :]/1e6, 99.9)
                         im = rmap_plt.imshow(axes=ax, cmap='hinodexrt', vmin=0, vmax=vmaxplt)
 
