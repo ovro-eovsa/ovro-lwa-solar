@@ -6,6 +6,13 @@
 Welcome to ovrolwasolar's documentation!
 ========================================
 
+Project git repository : `ovro-lwa-solar <https://github.com/ovro-eovsa/ovro-lwa-solar>`__ 
+
+Pages:
+
+-  (.MS) Interferometry raw data, measurement set.
+   `fastvis <fastvis.html>`__
+
 .. toctree::
    :maxdepth: 2
    :caption: Contents:

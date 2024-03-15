@@ -22,7 +22,12 @@ def func_phase_sin(uv, l0, m0):
 def uv_tapper_weight(uvw, uv_tapper_factor=1):
     """ make a function, reads in uvw, returns the weight
     weight scheme is guassian distribution with center at u,v = 0,0
-    use sigma_norm  = np.inf to turn off the taper
+    use ``sigma_norm  = np.inf`` to turn off the taper
+    The uv_taper_factor is applied after normalising all uvs
+    with respect to the max uv_dist.
+
+    :param uvw: uvw coordinates
+    :param uv_tapper_factor: factor to control the tapering, normlised to max uv distance
     """
     uv_dist = np.sqrt(uvw[0]**2 + uvw[1]**2)
     uv_dist_norm = uv_dist / np.max(uv_dist)
@@ -36,13 +41,14 @@ def lm_to_radec(l, m, ref_ra, ref_dec):
     """
     Convert (l, m) coordinates to RA and DEC.
 
-    Parameters:
-    - l, m: Direction cosines, dimensionless (assumed to be small for this calculation).
-    - ref_ra: Reference right ascension in degrees.
-    - ref_dec: Reference declination in degrees.
+    :param l: Direction cosine, dimensionless (assumed to be small for this calculation).
+    :param m: Direction cosine, dimensionless (assumed to be small for this calculation).
+    :param ref_ra: Reference right ascension in degrees.
+    :param ref_dec: Reference declination in degrees.
 
-    Returns:
-    - RA, DEC in rad.
+    :return: RA, DEC in rad.
+    
+
     """
 
     # Calculate DEC using the approximation for small angles
@@ -59,13 +65,48 @@ def lm_to_radec(l, m, ref_ra, ref_dec):
     return ra, dec
 
 def fast_vis_1gauss(fname_ms,
-                    uv_tapper_factor =0.3):
+                    uv_tapper_factor =0.3,\
+                    datacolumn=None):
+    """
+    This function fits the fast visibilities using a 2D gaussian. Since we are only
+    using a single gaussian, it is advised that all strong sources are subtracted 
+    before using this functionality. The function loops over all channels and all
+    scans to produce fitted values. It will return the source locations in (l,m)
+    coordinate sysytem, the fitted gaussian parameters. The returned list has the 
+    following format:
+    
+    [[scan 1, channel 1],[scan 2, channel 1],...[scan M, channel 1],\
+    [[scan 1, channel 2],[scan 2, channel 2],...[scan M, channel 2],\
+    ...
+    ...
+    ...
+    [[scan 1, channel N],[scan 2, channel N],...[scan M, channel N]]
+    
+    All the returned quantities are lists
+    
+
+    :param fname_ms: Name of the fast vis MS
+    :param uv_tapper_factor: This is the factor which is passed to uv_tapper_weight. This
+    is used to weight the visibilties of different baselines.
+    :param datacolumn: Which datacolumn of MS to use. Default: None. If None, will check
+    if corrected data is present. If present use corrected data. Else data.
+
+    :return: Fitted gaussian, Parameters are ordered in this manner (sigma_l,sigma_m,theta, amp)
+    
+
+    """
 # extract the uv and vis and the scan number
 # get flag
+    
+    if datacolumn is None:
+        if utils.check_corrected_data_present(fname_ms):
+            datacolumn='CORRECTED_DATA'
+        else:
+            datacolumn='DATA'
     tb = casatools.table()
     tb.open(fname_ms)
     uvw = tb.getcol('UVW')
-    data = tb.getcol('DATA')
+    data = tb.getcol(datacolumn)
     scan = tb.getcol('SCAN_NUMBER')
     flag = tb.getcol('FLAG')
     tb.close()
@@ -146,6 +187,7 @@ def fast_vis_1gauss(fname_ms,
             
             ref_proc = ref_ra_dec[:,time_idx]
             
+
             alpha_0, delta_0 = ref_proc   
             l0, m0 = popt_phase
             
@@ -161,7 +203,7 @@ def fast_vis_1gauss(fname_ms,
 
             print (l0,m0)
             popt_list_tmp.append(popt)
-            popt_phase_list_tmp.append(popt_phase)
+            popt_phase_list_tmp.append([alpha_rad, delta_rad])
             ref_proc_list_tmp.append(ref_proc)
         
         popt_list.append(popt_list_tmp)
@@ -170,24 +212,35 @@ def fast_vis_1gauss(fname_ms,
 
     return popt_list, popt_phase_list, ref_proc_list
 
-def wrap_solution_save_hdf5(popt_list, popt_phase_list, ref_proc_list, fname_hdf5):
+def wrap_solution_save_hdf5(source_morphology, source_radec, phasecenters, fname_hdf5):
+    """
+    This function writes the fitted parameters into hdf5 file. The dataset names of the
+    hdf5 file  are "source_morphology","source_radec","phasecenters"
+    """
     import h5py
     with h5py.File(fname_hdf5, 'w') as f:
-        f.create_dataset('popt', data=np.array(popt_list))
-        f.create_dataset('popt_phase', data=np.array(popt_phase_list))
-        f.create_dataset('ref_proc', data=np.array(ref_proc_list))
+        f.create_dataset('source_morphology', data=np.array(source_morphology))
+        f.create_dataset('source_radec', data=np.array(source_radec))
+        f.create_dataset('phasecenters', data=np.array(phasecenters))
 
-def plot_img_from_uvparm(popt, popt_phase, ref_proc):                        
-    sigma_x = popt[0]
-    sigma_y = popt[1]
-    theta = -popt[2]
-    amp = popt[3]
+def plot_img_from_uvparm(source_morphology, source_radec, ref_proc): 
+    """
+    This function plots the source in RA-DEC frame. Mostly for
+    debugging purposes.
 
-    l0, m0 = popt_phase
+    :param source_morphology: List/array with [sigma_l,sigma_m, theta, amp]
+                        of the fitted gaussian
+    :param source_radec: Source ra dec
+    :param ref_proc: Reference phase center
+
+    """                       
+    sigma_x = source_morphology[0]
+    sigma_y = source_morphology[1]
+    theta = -source_morphology[2]
+    amp = source_morphology[3]
 
     alpha_0, delta_0 = ref_proc
-
-    alpha_rad, delta_rad = lm_to_radec(l0, m0, alpha_0, delta_0)
+    alpha_rad, delta_rad = source_radec
 
     def func_gauss_xy(x, y, x0, y0, sigma_x, sigma_y, theta, amp):
         xx = x - x0
@@ -213,3 +266,7 @@ def plot_img_from_uvparm(popt, popt_phase, ref_proc):
     ax.plot(alpha_0, delta_0, '+', color='red')
     ax.set_xlabel('RA (rad)')
     ax.set_ylabel('DEC (rad)')
+
+
+    return fig, ax
+
