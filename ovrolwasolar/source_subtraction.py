@@ -144,7 +144,7 @@ def gen_nonsolar_source_model(msfile, imagename="allsky", outimage=None, sol_are
    
     imagename=imagename1
     for pola in pols:
-        if num_pol==0:
+        if num_pol==1:
             prefix=''
         else:
             prefix="-"+pola
@@ -191,7 +191,7 @@ def remove_nonsolar_sources(msfile, imsize=4096, cell='2arcmin', minuv=0,
 
     :return: a CASA measurement set with non-solar sources removed. Default name is "*_sun_only.ms"
     """
-    outms = msfile[:-3] + "_sun_only.ms"
+    outms = msfile.replace('.ms', "_sun_only.ms")
     if os.path.isdir(outms):
         return outms
     
@@ -204,7 +204,7 @@ def remove_nonsolar_sources(msfile, imsize=4096, cell='2arcmin', minuv=0,
     if not fast_vis or (fast_vis and fast_vis_image_model_subtraction):
         deconvolve.run_wsclean(msfile=msfile, imagename=tmpimg, size=imsize,
                             scale=cell, minuv_l=minuv, predict=False,
-                            auto_mask=5, pol=pol, niter=niter, auto_pix_fov=auto_pix_fov)
+                            pol=pol, niter=niter, auto_pix_fov=auto_pix_fov)
         image_nosun = gen_nonsolar_source_model(msfile, imagename=tmpimg,
                                                 remove_strong_sources_only=remove_strong_sources_only, pol=pol)
         deconvolve.predict_model(msfile, outms=tmpms, image=image_nosun, pol=pol)

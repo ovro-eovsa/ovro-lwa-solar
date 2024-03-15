@@ -493,3 +493,29 @@ def get_rms(data,thresh=7):
     pos=np.where(abs(data)<thresh*rms)
     rms=np.nanstd(data[pos])
     return rms
+
+def blank_all_pixels(imagename):
+    hdu=fits.open(imagename)
+    try:
+        hdu[0].data*=0.0
+        hdu.flush()
+    finally:
+        hdu.close()
+    return
+
+def get_uvlambda_from_uvdist(u,v,msname=None, freqs=None):
+    msmd = msmetadata()
+    msmd.open(msname)
+    chan_freqs = msmd.chanfreqs(0)
+    msmd.done()
+    
+    wavelengths=299792458/chan_freqs
+    
+    u=np.expand_dims(u,1)
+    u=np.repeat(u,len(chan_freqs),axis=1)
+    ulambda=(u/wavelengths).T
+    
+    v=np.expand_dims(v,1)
+    v=np.repeat(u,len(chan_freqs),axis=1)
+    vlambda=(v/wavelengths).T
+    

@@ -104,7 +104,7 @@ def image_ms(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagename='sun
              full_dd_selfcal_rounds=[1, 1], partial_dd_selfcal_rounds=[0, 1], do_final_imaging=True, pol='I', 
              solint_full_DI_selfcal=14400, solint_partial_DI_selfcal=3600, solint_full_DD_selfcal=1800, solint_partial_DD_selfcal=600,
              fast_vis=False, fast_vis_image_model_subtraction=False, delete=True,
-             refant='202', overwrite=False, do_fluxscaling=False):
+             refant='202', overwrite=False, do_fluxscaling=False, do_polcal=False):
 
     """
     Pipeline to calibrate and imaging a solar visibility
@@ -200,6 +200,11 @@ def image_ms(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagename='sun
         logging.info('Removing almost all sources in the sky except Sun')
         outms = source_subtraction.remove_nonsolar_sources(solar_ms,pol=pol)
         logging.info('The source subtracted MS is ' + outms)
+        
+    if do_polcal:
+        from ovrolwasolar import polcalib
+        outms=polcalib.do_polarisation_calibration(outms)
+        
 
     logging.info('Changing the phasecenter to position of Sun')
     change_phasecenter(outms)

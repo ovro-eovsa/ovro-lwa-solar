@@ -15,7 +15,6 @@ from astropy.coordinates import AltAz, EarthLocation
 import pandas as pd
 from astropy.coordinates import SkyCoord
 from astropy.wcs import WCS
-from astropy.convolution import Gaussian2DKernel, convolve_fft
 from ovrolwasolar import deconvolve
 from scipy.optimize import minimize
 
@@ -291,6 +290,7 @@ def get_beam_factors(alt,az,freq,normalise=True):
     :rtype: float
     
     '''
+    #return np.array([[ 1.00000000e+00, -1.58626752e-01,  3.69086757e-03,  3.89909857e-04]])
     beamfac=beam(freq=freq)    
     beamfac.srcjones(az=az,el=alt)
     num_source=len(alt)
@@ -403,9 +403,10 @@ def generate_polarised_skymodel(imagename,imgcat=None, min_alt=5):
             hdu.close()
 
         
-def add_solar_model(imagename,msfile,sol_area=400.):  
+def add_solar_model(imagename,msfile,sol_area=400., overwrite_solar_region=True):  
     '''
-    This will add the polarised solar model.
+    This will add the polarised solar model, by scaling the Stokes I model. 
+    
     :param imagename:  imagename should be standard WSclean format. Ensure that 
                         imagename-{I,Q,U,V}-image.fits and -model.fits exist
     :type imagename: str
@@ -415,6 +416,11 @@ def add_solar_model(imagename,msfile,sol_area=400.):
                         sun is guaranteed to be present. This is the diameter
                         of the region
     :type sol_area: float
+    :param overwrite_solar_region: If True, the model at this location will be
+                                    overwritten . Default: True
+                                    Else, the solar model scaled from Stokes I 
+                                    will be added to it.
+    :type overwrite_solar_region: Bool
     '''          
     me=measures()
     m = utils.get_sun_pos(msfile, str_output=False)
@@ -451,9 +457,13 @@ def add_solar_model(imagename,msfile,sol_area=400.):
         hdu=fits.open(image,mode='update')
         try:
             data=hdu[0].data
-           
+            
+            if overwrite_solar_region:
+                data[0, 0, soly - sol_area_ypix // 2:soly + sol_area_ypix // 2 + 1,
+                    solx - sol_area_xpix // 2:solx + sol_area_xpix // 2 + 1]=0.0
+                    
             data[0, 0, soly - sol_area_ypix // 2:soly + sol_area_ypix // 2 + 1,
-                    solx - sol_area_xpix // 2:solx + sol_area_xpix // 2 + 1] = \
+                    solx - sol_area_xpix // 2:solx + sol_area_xpix // 2 + 1] += \
                                             img_data[0, 0, soly - sol_area_ypix // 2:soly + sol_area_ypix // 2 + 1,
                                             solx - sol_area_xpix // 2:solx + sol_area_xpix // 2 + 1]*factors[0,j+1]
             hdu[0].data=data
@@ -466,7 +476,7 @@ def add_solar_model(imagename,msfile,sol_area=400.):
 
 
 def get_high_snr_image_data(imagename,stokes, msfile,sun_only=False, thresh=7, rms_filter=True,\
-                            sol_area=400., correct_beam_leakage=True):
+                            sol_area=400., correct_beam_leakage=True, min_pix=0):
     '''
     This function is used to get high SNR stokes data. 
     
@@ -533,7 +543,7 @@ def get_high_snr_image_data(imagename,stokes, msfile,sun_only=False, thresh=7, r
     
     
     Irms=utils.get_rms(Idata)
-    stokes_rms=utils.get_rms(img_data)
+    
     
     if sun_only:
         Idata=Idata[0, 0, soly - sol_area_ypix // 2:soly + sol_area_ypix // 2 + 1,
@@ -541,14 +551,13 @@ def get_high_snr_image_data(imagename,stokes, msfile,sun_only=False, thresh=7, r
         img_data=img_data[0, 0, soly - sol_area_ypix // 2:soly + sol_area_ypix // 2 + 1,
                     solx - sol_area_xpix // 2:solx + sol_area_xpix // 2 + 1]
     
-    pos=np.where((Idata>thresh*Irms) & (abs(img_data)>thresh*stokes_rms))
-    if pos[0].size==0:
-        return None, None
+    
+    
     
     solar_az,solar_el=utils.get_solar_azel(msfile)        
     
     if correct_beam_leakage:
-        factors=np.array([[1.0 , 0.30,-0.0844,-0.0175]])#get_beam_factors([solar_el],[solar_az],freq=freq)
+        factors=get_beam_factors([solar_el],[solar_az],freq=freq)
     else:
         factors=np.array([[1,0,0,0]])
     
@@ -561,12 +570,16 @@ def get_high_snr_image_data(imagename,stokes, msfile,sun_only=False, thresh=7, r
         
     img_data=img_data-solar_model_frac*Idata
     if rms_filter:
+        stokes_rms=utils.get_rms(img_data)
+        pos=np.where((Idata>thresh*Irms) & (abs(img_data)>thresh*stokes_rms))
+        if pos[0].size<=min_pix:
+            return None, None
         return Idata[pos], img_data[pos]
     else:
         return Idata,img_data
 
 def get_img_correction_factor_minimize_correlation(imagename,stokes,msfile,\
-                                sun_only=False, sol_area=400.,\
+                                sun_only=True, sol_area=400.,\
                                 thresh=7):
     '''
     This function determines the correction factor by minimising the correlation of I and other Stokes images.
@@ -592,7 +605,7 @@ def get_img_correction_factor_minimize_correlation(imagename,stokes,msfile,\
     :param thresh: Threshold in terms of rms which will be used to determine a source detection in Stokes images
     :type thresh: float
     :param sun_only: Other sources will be ignored when finding the leakage correction factor.
-    :type sun_only: Boolean. Default: False
+    :type sun_only: Boolean. Default: True
     '''
     
     Idata, img_data=get_high_snr_image_data(imagename,stokes, msfile,sun_only=sun_only, thresh=thresh,\
@@ -611,7 +624,7 @@ def get_img_correction_factor_minimize_correlation(imagename,stokes,msfile,\
                     method='Nelder-Mead',bounds=[[-1,1]])
     
     if res.success:
-        return res.x
+        return res.x[0]
     logging.warning("Solution was not found. Proceed with care")
     return 0.0
             
@@ -759,7 +772,7 @@ def crosshand_phase_optimising_func(crosshand_phase, Udata=None, Vdata=None, ret
         return Udata_corrected, Vdata_corrected
     
 
-def find_crosshand_phase(msfile, imagename=None, Ithresh=7, stokes_thresh=3, solar_case=True, sol_area=400.):
+def find_image_crosshand_phase(msfile, imagename=None, Ithresh=7, stokes_thresh=3, solar_case=True, sol_area=400.):
     '''
     The function determines the crosshand phase by minimising the correlation between Stokes U and V
     The idea is that at the right crosshand phase not only is the correlation minimum, but the Stokes U
@@ -785,6 +798,8 @@ def find_crosshand_phase(msfile, imagename=None, Ithresh=7, stokes_thresh=3, sol
     :type stokes_thresh: float
     :param solar_case: If True, Stokes U will be minimised. If False, Stokes V will be minimised. Default: True
     :type solar_case: Bool
+    :return :crosshand_phase in radians
+    :rtype: float
     '''
     if imagename is None:
         imagename=msfile.replace('.ms','_crosshand')
@@ -811,15 +826,13 @@ def find_crosshand_phase(msfile, imagename=None, Ithresh=7, stokes_thresh=3, sol
         logging.info("No source in Stokes I !!! Did you subtract all sources? Proceed with care")
         return 0.0
         
-    Udata_flat=Udata_flat[pos]
-    Vdata_flat=Vdata_flat[pos]
     
     Upos=np.where(np.abs(Udata_flat)>stokes_thresh*utils.get_rms(Udata_flat))[0]
     Vpos=np.where(np.abs(Vdata_flat)>stokes_thresh*utils.get_rms(Vdata_flat))[0]
     
-    pos=np.union1d(Upos,Vpos)
+    pos=np.intersect1d(np.union1d(Upos,Vpos),pos)
     
-    if pos[0].size==0:
+    if len(pos)==0:
         logging.info("No detectable source in U and V.")
         return 0.0
     
@@ -860,54 +873,233 @@ def find_crosshand_phase(msfile, imagename=None, Ithresh=7, stokes_thresh=3, sol
     print (Vdata_corrected)
     
     if solar_case:
-        return solutions[np.argmin(Udata_corrected)]
+        return solutions[np.argmin(Udata_corrected)][0]
     else:
-        return solutions[np.argmin(Vdata_corrected)]
+        return solutions[np.argmin(Vdata_corrected)][0]
     
     logging.warning("Do not know why I came here. Some issue is there. Please check")
     return 0.0
     
-def correct_crosshand_phase_self(msname,crosshand_phase=0.0, inplace=False, outms=None):
-    '''
-    Here I apply the crosshand phase by hand. The crosshand phase suppliedto this function
-    should be exactly equal to the crosshand_phase supplied to crosshand_phase_optimising_func.
-    The way caltable is modified by that function is same as what is applied here.
-    '''
-    if outms is None:
-        outms=msname.replace(".ms","_img_leak_corrected.ms")
     
-    present=utils.check_corrected_data_present(msname)
-    if present:
-        datacolumn='CORRECTED'
+def crosshand_phase_minimising_func(crosshand_phase,data,model=None,return_corrected=False):
+    xy_data=data[1,...]
+    yx_data=data[2,...]
+    
+    xy_corrected=np.exp(-1j*crosshand_phase)*xy_data
+    yx_corrected=np.exp(1j*crosshand_phase)*yx_data
+    
+    if not return_corrected:
+        xy_model=model[1,...]
+        yx_model=model[2,...]
+        sum1=np.sqrt(np.nansum((np.abs(xy_corrected-xy_model))**2)+ np.nansum((np.abs(yx_corrected-yx_model))**2))
+        print (sum1)
+        return sum1
+    else:
+        data[1,...]=xy_corrected
+        data[2,...]=yx_corrected
+        return
+    
+    
+def solve_crosshand_phase(msname):
+
+    tb=table()
+    
+    corrected_data_present=utils.check_corrected_data_present(msname)
+    
+    if corrected_data_present:
+        datacolumn='CORRECTED_DATA'
     else:
         datacolumn='DATA'
         
+    tb.open(msname)
+    try:
+        data=tb.getcol(datacolumn)
+        flag=tb.getcol('FLAG')
+        model=tb.getcol('MODEL_DATA')
+        uvw=tb.getcol('UVW')
+        u=uvw[0,:]
+        v=uvw[1,:]
+    finally:
+        tb.close()
+        
+    pos=np.where(flag==True)
+    data[pos]=np.nan
+    
+    
+    res=minimize(crosshand_phase_minimising_func,x0=[0.3],args=(data,model),\
+                    method='Nelder-Mead',bounds=[[-3.14159,3.14159]])
+    if not res.success:
+        logging.warning("Crosshand phase visibility based solution was not found."+\
+                            " Proceed with care")
+        return 0.0
+    
+    else:
+        return res.x[0]
+        
+def correct_crosshand_phase(msname,crosshand_phase=None, outms=None, inplace=False):
+
+    tb=table()
+    if crosshand_phase is None:
+        crosshand_phase=solve_crosshand_phase(msname)
+    
+    corrected_data_present=utils.check_corrected_data_present(msname)
+    
+    if corrected_data_present:
+        datacolumn='CORRECTED'
+    else:
+        datacolumn='DATA'
     if not inplace:
+        if outms is None:
+            outms=msname.replace('.ms','_crossphase.ms')
         split(vis=msname,outputvis=outms,datacolumn=datacolumn)
         datacolumn='DATA'
         msname=outms
     
     if datacolumn=='CORRECTED':
         datacolumn='CORRECTED_DATA'
-    
-    tb=table()
+        
     tb.open(msname,nomodify=False)
     try:
         data=tb.getcol(datacolumn)
-        data[1,...]*=(np.cos(crosshand_phase)-1j*np.sin(crosshand_phase))
-        data[2,...]*=(np.cos(crosshand_phase)+1j*np.sin(crosshand_phase))
-        tb.putcol(datacolumn,data)
+        flag=tb.getcol('FLAG')
+        pos=np.where(flag==True)
+        data[pos]=np.nan
+        crosshand_phase_minimising_func(crosshand_phase,data, return_corrected=True)
+        pos=np.where(np.isnan(data)==True)
+        flag[pos]=True
+        data[pos]=0.00
+        tb.putcol('DATA',data)
+        tb.putcol('FLAG',flag)
         tb.flush()
-        success=True
-    except:
-        pass
     finally:
         tb.close()
+    return outms
+
+def check_image(imagename,msname, Ithresh=7, crosshand_phase=None,stokes_thresh=5, outimage='outfile.png'):
+    rms=[None]*4
+    for j,stokes in enumerate(['I','Q','U','V']):
+        imname=imagename+"-"+stokes+"-image.fits"
+        data=fits.getdata(imname)
+        rms[j]=utils.get_rms(data)
+        
+    Idata,Udata=get_high_snr_image_data(imagename,'U', msname, sun_only=True,rms_filter=False, \
+                                        thresh=Ithresh)
+    Idata,Vdata=get_high_snr_image_data(imagename,'V', msname, sun_only=True,rms_filter=False,\
+                                        thresh=Ithresh)
+    Idata,Qdata=get_high_snr_image_data(imagename,'Q', msname, sun_only=True,rms_filter=False,\
+                                        thresh=Ithresh)                                    
     
-    if not success:
-        logging.warning("Crosshand phase correction "+\
-                        "was not successfull. Please proceed with caution.")
-    return msname
+    
+    if crosshand_phase is None:
+        Udata_corrected,Vdata_corrected=crosshand_phase_optimising_func(crosshand_phase,\
+                                        Udata,Vdata,return_corrected=True)
+    else:
+        Udata_corrected,Vdata_corrected=Udata,Vdata
+    
+    pos=np.where(Idata<Ithresh*rms[0])
+    Idata[pos]=np.nan
+    Qdata[pos]=np.nan
+    Udata_corrected[pos]=np.nan
+    Vdata_corrected[pos]=np.nan
+    pos=np.where(Idata>Ithresh*rms[0])
+    xmin,xmax=min(pos[1]),max(pos[1])
+    ymin,ymax=min(pos[0]),max(pos[0])
+    
+    Qdata[Qdata<stokes_thresh*rms[1]]=np.nan
+    Udata_corrected[Udata_corrected<stokes_thresh*rms[2]]=np.nan
+    Vdata_corrected[Vdata_corrected<stokes_thresh*rms[3]]=np.nan
+    
+    import matplotlib
+    matplotlib.use('agg')
+    fig,ax=plt.subplots(nrows=2,ncols=2,sharex=True,sharey=True)
+    ax=ax.flatten()
+    ax[0].imshow(Idata,origin='lower')
+    ax[1].imshow(Qdata,origin='lower')
+    ax[2].imshow(Udata,origin='lower')
+    ax[3].imshow(Vdata,origin='lower')
+    
+    ax[0].set_xlim([xmin-30,xmax+30])
+    ax[1].set_ylim([ymin-30,ymax+30])
+    
+    
+    plt.savefig(outimage)
+    plt.close()
+    return
+
+    
+    
+    
+def do_polarisation_calibration(msname):
+    if msname[:-1]=='/':
+        msname=msname[:-1]
+    imagename=msname[:-3]
+    orig_image=imagename
+    orig_ms=msname
+    deconvolve.run_wsclean(msname,imagename=imagename,niter=1000,size=4096,\
+                            scale='2arcmin',predict=False,pol='I,Q,U,V',\
+                            weight='briggs 0',minuv_l=30)
+    factor=[None]*3
+    for j,stokes in enumerate(['Q','U','V']):
+        factor[j]=get_img_correction_factor_minimize_correlation(imagename,stokes,msname)
+    
+    outms=msname.replace('.ms','_imgleak.ms')
+    outms=correct_image_leakage(msname,factor)
+    
+    deconvolve.run_wsclean(outms,imagename=outms[:-3],niter=1000,size=4096,\
+                            scale='2arcmin',predict=False,pol='I,Q,U,V',\
+                            weight='briggs 0',minuv_l=30)
+                            
+    crosshand_phase=find_image_crosshand_phase(msname,outms[:-3])
+    
+    polarised_model_needed=check_image(outms[:-3],msname, \
+                            crosshand_phase=crosshand_phase,\
+                            outimage="image_after_crossphase.png")
+                            
+    print ("Check image_after_crossphase.png in your current directory. If you think "+\
+            "that there is a significantly polarised source, then contact the developer "+\
+            " for how to proceed. Handling this is under test and not yet supported. If "+\
+            "significantly polarised source is not present, type n/no as answer to next "+\
+            "question and the code will proceed\n")
+    
+    answer=input("Polarised source?")
+    if answer!='n' and answer!='no':
+        raise RuntimeError("User thinks that source is polarised. This is not supported yet")
+    
+    for stokes in ['Q','U','V']:
+        imname=orig_image+"-"+stokes+"-model.fits"
+        utils.blank_all_pixels(imname)
+    
+    add_solar_model(orig_image,msname)
+    crosshand_phase=solve_crosshand_phase(msname)
+    outms=correct_crosshand_phase(orig_ms,crosshand_phase=crosshand_phase)
+    
+    deconvolve.run_wsclean(outms,imagename=outms[:-3],niter=1000,size=4096,\
+                            scale='2arcmin',predict=False,pol='I,Q,U,V',\
+                            weight='briggs 0',minuv_l=30)
+    
+    factor=[None]*3
+    for j,stokes in enumerate(['Q','U','V']):
+        factor[j]=get_img_correction_factor_minimize_correlation(outms[:-3],stokes,msname)
+    
+    outms=outms.replace('.ms','_imgleak.ms')
+    outms=correct_image_leakage(outms,factor)
+    
+    check_image(imagename,msname, outimage='final_image.png')
+    return outms
+    
+    
+    
+    
+    
+    
+        
+    
+    
+    
+    
+    
+    
+    
     
 
     

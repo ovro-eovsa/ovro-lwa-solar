@@ -18,6 +18,7 @@ from .primary_beam import analytic_beam as beam
 from . import primary_beam
 from .generate_calibrator_model import model_generation
 from . import generate_calibrator_model
+from . import polcalib
 
 import timeit
 tb = table()
@@ -77,16 +78,16 @@ def run_wsclean(msfile, imagename, size:int =4096, scale='2arcmin', fast_vis=Fal
         'weight':'briggs 0',         # weighting scheme
         'no_dirty':'',              # don't save dirty image
         'no_update_model_required':'', # don't update model required
-        'no_negative':'',           # no negative gain for CLEAN
         'niter':'10000',            # number of iterations
         'mgain':'0.8',              # maximum gain in each cycle
-        'auto_threshold':'3',       # auto threshold
+        'auto_threshold':'5',       # auto threshold
         'auto_mask':'8',            # auto mask
         'pol':'I',                  # polarization
         'minuv_l':'10',             # minimum uv distance in lambda
         'intervals_out':'1',        # number of output images
         'no_reorder':'',            # don't reorder the channels
         'beam_fitting_size':'2',    # beam fitting size
+        'horizon_mask':"2deg"    # horizon mask distance (to mask horizon direction RFI)
     }
     
     
@@ -142,19 +143,19 @@ def run_wsclean(msfile, imagename, size:int =4096, scale='2arcmin', fast_vis=Fal
             or 'V' in default_kwargs['pol']):
         cmd_clean+= " -join-polarizations "
     
-    if (default_kwargs['pol']=='I' or default_kwargs['pol']=='XX' or default_kwargs['pol']=='YY' \
+    elif (default_kwargs['pol']=='I' or default_kwargs['pol']=='XX' or default_kwargs['pol']=='YY' \
             or default_kwargs['pol']=='XX,YY') and ('no_negative' not in default_kwargs.keys()):
         cmd_clean+= " -no-negative " 
         
     cmd_clean += " -name " + imagename + " " + msfile
     
-    #TODO: put -weighting in free param
+    
 
     logging.debug(cmd_clean)
     os.system(cmd_clean)
     
     for str1 in ['residual','psf']:
-        os.system("rm -rf "+imagename+"*"+str1+"*.fits") 
+       os.system("rm -rf "+imagename+"*"+str1+"*.fits") 
     time2 = timeit.default_timer()
     logging.debug('Time taken for all sky imaging is {0:.1f} s'.format(time2-time1))
 
@@ -166,14 +167,16 @@ def run_wsclean(msfile, imagename, size:int =4096, scale='2arcmin', fast_vis=Fal
             os.system("mv "+wsclean_imagename+" "+final_imagename)
 
     if predict:
-        enforce_threshold_on_model(msfile,imagename,default_kwargs['pol'])
+        enforce_threshold_on_model(msfile,imagename,pol=default_kwargs['pol'])
         logging.debug("Predicting model visibilities from " + imagename + " in " + msfile)
         time1 = timeit.default_timer()
-        os.system("wsclean -predict -pol "+default_kwargs['pol']+" "+ "-name " + imagename + " " + msfile)
+        os.system("wsclean -predict -pol "+default_kwargs['pol']+" "+ "-name " + imagename + \
+                " -j "+default_kwargs['j']+" -mem "+default_kwargs['mem']+" " + msfile)
         time2 = timeit.default_timer()
         logging.debug('Time taken for predicting the model column is {0:.1f} s'.format(time2-time1))
 
-def enforce_threshold_on_model(imagename,thresh=7,pol='I',src_area=100, msfile=None, sol_area=400., neg_thresh=1.5):
+def enforce_threshold_on_model(imagename,thresh=7,pol='I',src_area=100, msfile=None, \
+                                sol_area=400., neg_thresh=1.5, enforce_polarised_beam_thresholding=False):
     '''
     imagename is the prefix of the image and is same as that supplied to the WSClean call
     This function will first determine the pixels for which the Stokes I/XX/YY/RR/LL image is less than 
@@ -189,6 +192,17 @@ def enforce_threshold_on_model(imagename,thresh=7,pol='I',src_area=100, msfile=N
     :param pol: This is the list of polarisations on which the thresholding is done. Either
                 I,XX,YY,RR,LL is necessary to do this thresholding. Format='I,Q,U,V'
     :type pol: str
+    :param src_area: Diameter of region around the sources other than source considered for
+                    estimating rms and negatives. Value in arcminutes. Default:100
+    :type src_area: float
+    :param msfile: Name of MS. Is used to determine az-el of sun at the time of image
+    :type msfile: str
+    :param sol_area: Diameter of region around Sun considered for
+                    estimating rms and negatives. Value in arcminutes. Default:400
+    :type sol_area: float
+    :param neg_thresh: Stokes I values which are smaller than neg_thresh x abs(min) are flagged.
+                        Default: 1.5
+    :type neg_thresh: float
     '''
     pols=pol.split(',')
     num_pol=len(pols)
@@ -213,12 +227,14 @@ def enforce_threshold_on_model(imagename,thresh=7,pol='I',src_area=100, msfile=N
     Idata=fits.getdata(Iimage)
     head=fits.getheader(Iimage)
     
+    freq=head['CRVAL3']*1e-6
+    
     if msfile is not None:
         solx, soly = utils.get_solar_loc_pix(msfile, Iimage)
     else:
         solx,soly=None, None
     
-    
+    beam_factors=None
     
     
     
@@ -236,6 +252,8 @@ def enforce_threshold_on_model(imagename,thresh=7,pol='I',src_area=100, msfile=N
         sol_area_ypix = int(sol_area / dy)
         solar_data=Idata[0, 0, soly - sol_area_ypix // 2:soly + sol_area_ypix // 2 + 1,
                         solx - sol_area_xpix // 2:solx + sol_area_xpix // 2 + 1]
+        if enforce_polarised_beam_thresholding:
+            beam_factors=np.array([[1.0 , 0.30,-0.0844,-0.0175]])#polcalib.get_beam_factors([solar_el],[solar_az],freq=freq)
         
     rms=np.nanstd(Idata)
     pos=np.where(Idata>10*rms)
@@ -279,11 +297,47 @@ def enforce_threshold_on_model(imagename,thresh=7,pol='I',src_area=100, msfile=N
         hdu=fits.open(modelname,mode='update')
         try:
             hdu[0].data[pos]=0.00000000
+            if enforce_polarised_beam_thresholding and beam_factors is not None \
+                    and pol1 not in ['XX','YY','RR','LL','I']:
+                enforce_polarised_beam_threshold(hdu[0].data,Idata_copy,beam_factors, pol1)
+                
             hdu.flush()
         finally:
             hdu.close()
     return
-            
+    
+def enforce_polarised_beam_threshold(stokes_data, Idata, beam_factors, stokes,thresh=1.5):
+    '''
+    :param_stokes_data: Stokes data. Modified inplace
+    :type stokes_data: numpy ndarray
+    :param Idata: Stokes I data
+    :type Idata: numpy ndarray
+    :param beam_factors: Primary beam values for different stokes parameters, normalised to I value
+    :type beam_factors: numpy ndarray
+    :param stokes: Stokes parameter of stokes data
+    :type stokes: str
+    :param thresh: Values above thresh x primary_beam_value x I model is not zeroed.
+    :type thresh: float 
+    '''
+    if stokes=='Q':
+        factor=beam_factors[1]
+    elif stokes=='U':
+        factor=beam_factors[2]
+    elif stokes=='V':
+        factor=beam_factors[3]
+    elif stokes in ['I','XX','YY','RR','LL']:
+        factor=0.0  ### do nothing for Stokes I data
+    else:
+        logging.warning("Only Q,U,V supported.")
+        return
+    
+    threshold=Idata*factor
+    
+    stokes_data[abs(stokes_data)<abs(threshold*thresh)]=0.0
+    stokes_data[abs(stokes_data)>abs(threshold*thresh)]-=threshold
+    return
+    
+    
 
 def find_smallest_fftw_sz_number(n):
     """
@@ -321,7 +375,7 @@ def predict_model(msfile, outms, image="_no_sun",pol='I'):
     enforce_threshold_on_model(image,pol=pol,msfile=msfile)
     os.system("cp -r " + msfile + " " + outms)
     clearcal(outms, addmodel=True)
-    os.system("wsclean -predict -pol "+pol+" -name " + image + " " + outms)
+    os.system("wsclean -predict -pol "+pol+" -name " + image + " -j 1 -mem 2 " + outms)
 
 
 

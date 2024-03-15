@@ -363,3 +363,45 @@ def get_conv_kernel(head):
     
     kernel=Gaussian2DKernel(sigma_major_pix,sigma_minor_pix,theta=theta)
     return kernel
+    
+def correct_crosshand_phase_self(msname,crosshand_phase=0.0, inplace=False, outms=None):
+    '''
+    Here I apply the crosshand phase by hand. The crosshand phase suppliedto this function
+    should be exactly equal to the crosshand_phase supplied to crosshand_phase_optimising_func.
+    The way caltable is modified by that function is same as what is applied here.
+    '''
+    if outms is None:
+        outms=msname.replace(".ms","_img_leak_corrected.ms")
+    
+    present=utils.check_corrected_data_present(msname)
+    if present:
+        datacolumn='CORRECTED'
+    else:
+        datacolumn='DATA'
+        
+    if not inplace:
+        split(vis=msname,outputvis=outms,datacolumn=datacolumn)
+        datacolumn='DATA'
+        msname=outms
+    
+    if datacolumn=='CORRECTED':
+        datacolumn='CORRECTED_DATA'
+    
+    tb=table()
+    tb.open(msname,nomodify=False)
+    try:
+        data=tb.getcol(datacolumn)
+        data[1,...]*=(np.cos(crosshand_phase)-1j*np.sin(crosshand_phase))
+        data[2,...]*=(np.cos(crosshand_phase)+1j*np.sin(crosshand_phase))
+        tb.putcol(datacolumn,data)
+        tb.flush()
+        success=True
+    except:
+        pass
+    finally:
+        tb.close()
+    
+    if not success:
+        logging.warning("Crosshand phase correction "+\
+                        "was not successfull. Please proceed with caution.")
+    return msname
