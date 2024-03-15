@@ -990,7 +990,7 @@ def check_image(imagename,msname, Ithresh=7, crosshand_phase=None,stokes_thresh=
                                         thresh=Ithresh)                                    
     
     
-    if crosshand_phase is None:
+    if crosshand_phase is not None:
         Udata_corrected,Vdata_corrected=crosshand_phase_optimising_func(crosshand_phase,\
                                         Udata,Vdata,return_corrected=True)
     else:
@@ -1010,6 +1010,7 @@ def check_image(imagename,msname, Ithresh=7, crosshand_phase=None,stokes_thresh=
     Vdata_corrected[Vdata_corrected<stokes_thresh*rms[3]]=np.nan
     
     import matplotlib
+    import matplotlib.pyplot as plt
     matplotlib.use('agg')
     fig,ax=plt.subplots(nrows=2,ncols=2,sharex=True,sharey=True)
     ax=ax.flatten()
@@ -1035,6 +1036,7 @@ def do_polarisation_calibration(msname):
     imagename=msname[:-3]
     orig_image=imagename
     orig_ms=msname
+    
     deconvolve.run_wsclean(msname,imagename=imagename,niter=1000,size=4096,\
                             scale='2arcmin',predict=False,pol='I,Q,U,V',\
                             weight='briggs 0',minuv_l=30)
@@ -1048,7 +1050,7 @@ def do_polarisation_calibration(msname):
     deconvolve.run_wsclean(outms,imagename=outms[:-3],niter=1000,size=4096,\
                             scale='2arcmin',predict=False,pol='I,Q,U,V',\
                             weight='briggs 0',minuv_l=30)
-                            
+                      
     crosshand_phase=find_image_crosshand_phase(msname,outms[:-3])
     
     polarised_model_needed=check_image(outms[:-3],msname, \
@@ -1081,10 +1083,14 @@ def do_polarisation_calibration(msname):
     for j,stokes in enumerate(['Q','U','V']):
         factor[j]=get_img_correction_factor_minimize_correlation(outms[:-3],stokes,msname)
     
-    outms=outms.replace('.ms','_imgleak.ms')
+    
     outms=correct_image_leakage(outms,factor)
     
-    check_image(imagename,msname, outimage='final_image.png')
+    deconvolve.run_wsclean(outms,imagename=outms[:-3],niter=1000,size=4096,\
+                            scale='2arcmin',predict=False,pol='I,Q,U,V',\
+                            weight='briggs 0',minuv_l=30)
+    
+    check_image(outms[:-3],msname, outimage='final_image.png')
     return outms
     
     

@@ -198,7 +198,7 @@ def image_ms(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagename='sun
                                   fast_vis=fast_vis, calib_ms=calib_ms)
     else:
         logging.info('Removing almost all sources in the sky except Sun')
-        outms = source_subtraction.remove_nonsolar_sources(solar_ms,pol=pol)
+        outms = source_subtraction.remove_nonsolar_sources(solar_ms,pol=pol,remove_strong_sources_only=False,)
         logging.info('The source subtracted MS is ' + outms)
         
     if do_polcal:

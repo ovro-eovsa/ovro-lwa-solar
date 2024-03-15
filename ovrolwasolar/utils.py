@@ -495,7 +495,7 @@ def get_rms(data,thresh=7):
     return rms
 
 def blank_all_pixels(imagename):
-    hdu=fits.open(imagename)
+    hdu=fits.open(imagename,mode='update')
     try:
         hdu[0].data*=0.0
         hdu.flush()
