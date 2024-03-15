@@ -30,6 +30,10 @@ git clone https://github.com/binchensun/ovro-lwa-solar.git
 cd ovro-lwa-solar
 python -m pip install .
 ```
+or use pypi:
+```bash
+python -m pip install ovrolwasolar
+```
 
 # run the pipeline
 
@@ -46,3 +50,10 @@ calib_ms='20230919_053329_55MHz.ms'
 lwa.image_ms(solar_ms,calib_ms=calib_ms,logging_level='debug')
 
 ```
+
+
+# Release note
+
+* \[0.1.0\] First version, imaging, calibration, realtime-pipeline
+
+* \[0.1.1\] Add refraction correction, low-brightness contour alignment

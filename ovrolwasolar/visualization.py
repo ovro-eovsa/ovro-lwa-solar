@@ -72,18 +72,22 @@ def inspection_bl_flag(ms_file):
 
 def slow_pipeline_default_plot(fname, 
             freqs_plt = [34.1, 38.7, 43.2, 47.8, 52.4, 57.0, 61.6, 66.2, 70.8, 75.4, 80.0, 84.5],
-            fov = 7000,add_logo=True, apply_refraction_corr=False):
+            fov = 7998,add_logo=True, apply_refraction_corr=False):
     """
     Function to plot the default pipeline output
 
     :param fname: str : path to the pipeline output file
+    :param freqs_plt: list : list of frequencies to plot
+    :param fov: float : field of view (default -3999 to 3999 arcsec)
+    :param add_logo: bool : add logo to the plot
+    :param apply_refraction_corr: bool : apply refraction correction to the plot
     """
     # Load the data
 
     from suncasa.io import ndfits
     meta, rdata = ndfits.read(fname)
 
-    fig = plt.figure(figsize=(8, 6.4))
+    fig = plt.figure(figsize=(8, 6.5))
     gs = gridspec.GridSpec(3, 4, left=0.07, right=0.98, top=0.94, bottom=0.10, wspace=0.02, hspace=0.02)
 
     if True:
@@ -91,6 +95,13 @@ def slow_pipeline_default_plot(fname,
                 for i in range(12):
                     ax = fig.add_subplot(gs[i])
                     freq_plt = freqs_plt[i]
+                    ax.set_facecolor('black')
+                    plt.setp(ax,xlabel='Solar X [arcsec]', ylabel='Solar Y [arcsec]')
+                    ax.text(0.02, 0.98, '{0:.0f} MHz'.format(freq_plt), color='w', ha='left', va='top', 
+                            fontsize=11, transform=ax.transAxes)                
+                    plt.setp(ax.yaxis.get_majorticklabels(),
+                              rotation=90, ha="center", va="center", rotation_mode="anchor")
+
                     if np.min(np.abs(freqs_mhz - freq_plt)) < 2.:
                         bd = np.argmin(np.abs(freqs_mhz - freq_plt)) 
                         bmaj,bmin,bpa = meta['bmaj'][bd],meta['bmin'][bd],meta['bpa'][bd]
@@ -109,24 +120,33 @@ def slow_pipeline_default_plot(fname,
                                 rmap_plt.yrange = rmap_plt.yrange - com_y_corr*u.arcsec
                                  
                         vmaxplt = np.percentile(rdata[0, bd, :, :]/1e6, 99.9)
+                        if np.isnan(vmaxplt):
+                             vmaxplt = np.inf
                         im = rmap_plt.imshow(axes=ax, cmap='hinodexrt', vmin=0, vmax=vmaxplt)
+                        # set background black
 
                         rmap_plt.draw_limb(ls='-', color='w', alpha=0.8)
-                        ax.yaxis.set_tick_params(rotation=90)
                         ax.add_artist(beam0)
-                        if i not in [8,9,10,11]: 
-                            ax.set_xlabel('')
-                            ax.get_xaxis().set_ticks([])
-                        if i not in [0, 4, 8]:
-                            ax.set_ylabel('')
-                            ax.get_yaxis().set_ticks([])
 
                         freq_mhz = meta['ref_cfreqs'][bd]/1e6
-                        ax.text(0.02, 0.98, '{0:.0f} MHz'.format(freq_mhz), color='w', ha='left', va='top', fontsize=11, transform=ax.transAxes)
                         ax.text(0.99, 0.02, r"$T_B^{\rm max}=$"+ str(np.round(vmaxplt,2))+'MK', color='w', ha='right', va='bottom',
                                     fontsize=10, transform=ax.transAxes)
+                        
+                    else:
+                        ax.text(0.5, 0.5, 'No Data', color='w', 
+                                ha='center', va='center', fontsize=18, transform=ax.transAxes)
                     ax.set_xlim([-fov/2, fov/2])
                     ax.set_ylim([-fov/2, fov/2])
+                    
+                    
+
+                    if i not in [8,9,10,11]: 
+                        ax.set_xlabel('')
+                        ax.get_xaxis().set_ticks([])
+                    if i not in [0, 4, 8]:
+                        ax.set_ylabel('')
+                        ax.get_yaxis().set_ticks([])
+                        
 
                     # add logo
                     if add_logo:
@@ -145,6 +165,6 @@ def slow_pipeline_default_plot(fname,
                         ax_logo2.axis('off')
 
                     # add figure title
-                    fig.suptitle('OVRO-LWA '+ str(meta['header']["Date"])[0:22], fontsize=12)
+                    fig.suptitle('OVRO-LWA '+ str(meta['header']['date-obs'])[0:22], fontsize=12)
 
     return fig
