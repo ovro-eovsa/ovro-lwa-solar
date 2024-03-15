@@ -5,6 +5,9 @@ import sys
 import numpy as np
 import matplotlib.pyplot as plt
 from ovrolwasolar import utils
+import logging
+from scipy.optimize import curve_fit
+
 
 def func_elip_gauss(uv, a, b, theta, amp):
     u, v = uv
@@ -15,9 +18,6 @@ def func_elip_gauss(uv, a, b, theta, amp):
 def func_phase_sin(uv, l0, m0):
     u, v = uv
     return (np.sin(2*np.pi*(u*l0 + v*m0)))
-
-from scipy.optimize import curve_fit
-
 
 def uv_tapper_weight(uvw, uv_tapper_factor=1):
     """ make a function, reads in uvw, returns the weight
@@ -111,6 +111,8 @@ def fast_vis_1gauss(fname_ms,
     flag = tb.getcol('FLAG')
     tb.close()
 
+    data_shape=data.shape    
+
     spTB = casatools.table()
     spTB.open(fname_ms + '/SPECTRAL_WINDOW')
     chan_freqs = spTB.getcol('CHAN_FREQ')
@@ -121,8 +123,12 @@ def fast_vis_1gauss(fname_ms,
     tb.close()
     # convert the uvw to wavelength lambda
 
-
-    stokes_I_all_ch = (0.5 * (data[0,:,:] + data[1,:,:])).squeeze()
+    if data_shape[0]==2:
+        stokes_I_all_ch = (0.5 * (data[0,:,:] + data[1,:,:])).squeeze()
+    elif data_shape[0]==4:
+        stokes_I_all_ch = (0.5 * (data[0,:,:] + data[3,:,:])).squeeze()
+    else:
+        raise RuntimeError("I cannot define Stokes I from the data")
 
     flag_I = np.any(np.any(flag, axis=0),axis=0)
 
@@ -133,7 +139,7 @@ def fast_vis_1gauss(fname_ms,
     scan_unique = np.unique(scan)
     print(stokes_I_all_ch.shape)
     for i in range(stokes_I_all_ch.shape[0]): # channel
-
+        print ("channel:"+str(i))
         wavelen = 3e8 / (chan_freqs[i])
         uvw = uvw / wavelen
 
@@ -149,24 +155,53 @@ def fast_vis_1gauss(fname_ms,
             v = uvw_this_scan_goodvis[1]
 #            print(u.shape, flag_I[i,ind].shape)
             stokes_I_this_scan_goodvis = stokes_I_all_ch[:,ind][i, ~flag_I[ind]]
+            
+            weight_this_scan = uv_tapper_weight(uvw_this_scan_goodvis, uv_tapper_factor=uv_tapper_factor)
+            
+            
+            
+            
             stokes_I_amp = np.abs(stokes_I_this_scan_goodvis)
             phase_angle = np.angle(stokes_I_this_scan_goodvis)
 
-            weight_this_scan = uv_tapper_weight(uvw_this_scan_goodvis, uv_tapper_factor=uv_tapper_factor)
-            popt, pcov = curve_fit(func_elip_gauss, (u, v), stokes_I_amp,
-                p0=[1/np.max(u)/2,1/np.max(v)/2,0,np.max(stokes_I_amp)],sigma = 1/weight_this_scan**2,
-                maxfev = 5000)
+            
+            
+            try:
+                pos=np.where(np.isnan(stokes_I_amp)==False)
+                if len(pos[0])==0:
+                    raise RuntimeError("All values are NaN")
+                
+                popt, pcov = curve_fit(func_elip_gauss, (u[pos], v[pos]), stokes_I_amp[pos],
+                    p0=[1/np.nanmax(u)/2,1/np.nanmax(v)/2,0,np.nanmax(stokes_I_amp)],sigma = 1/weight_this_scan[pos]**2,
+                    maxfev = 5000)
 
-            popt_phase, pcov_phase = curve_fit(func_phase_sin, 
-                (u, v), (np.sin(phase_angle)),sigma = 1/weight_this_scan**2, 
-                  p0=[0,0], absolute_sigma=True)
-
+                popt_phase, pcov_phase = curve_fit(func_phase_sin, 
+                    (u[pos], v[pos]), (np.sin(phase_angle[pos])),sigma = 1/weight_this_scan[pos]**2, 
+                      p0=[0,0], absolute_sigma=True,bounds=([-0.7,-0.7],[0.7,0.7]))
+            except RuntimeError as e:
+                popt_phase=0.0,0.0
+                ref_proc=0.0,0.0
+                logging.warning("Fit failed for scan:"+str(j)+" frequency: "+str(chan_freqs[i])) 
+                print (e)
+            
+            
             ref_proc = ref_ra_dec[:,time_idx]
             
-            l0, m0 = popt_phase
-            alpha_0, delta_0 = ref_proc   
-            alpha_rad, delta_rad = lm_to_radec(l0, m0, alpha_0, delta_0)
 
+            alpha_0, delta_0 = ref_proc   
+            l0, m0 = popt_phase
+            
+            #### If this condition is satisified that means l^2+m^2+n^2>1, which is not physical
+            if (1-l0**2-m0**2)<0:
+                popt_phase=0.0,0.0
+                ref_proc=0.0,0.0
+                l0,m0=-1,-1
+                alpha_rad, delta_rad = 0.0,0.0
+                logging.warning("Fit failed for scan:"+str(j)+" frequency: "+str(chan_freqs[i])) 
+            else:    
+                alpha_rad, delta_rad = lm_to_radec(l0, m0, alpha_0, delta_0)
+
+            print (l0,m0)
             popt_list_tmp.append(popt)
             popt_phase_list_tmp.append([alpha_rad, delta_rad])
             ref_proc_list_tmp.append(ref_proc)
@@ -232,4 +267,6 @@ def plot_img_from_uvparm(source_morphology, source_radec, ref_proc):
     ax.set_xlabel('RA (rad)')
     ax.set_ylabel('DEC (rad)')
 
+
     return fig, ax
+

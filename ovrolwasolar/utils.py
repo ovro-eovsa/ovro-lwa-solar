@@ -307,27 +307,49 @@ def get_total_fields(msname):
     msmd.done()
     return num_field
     
-def get_fast_vis_imagenames(msfile,imagename,pol):
+def rename_images(imagename,pol='I',img_prefix=None, intervals_out=1,channels_out=1):
+    '''
+    This will create the list of [present name, future name]
+    
+    :param imagename: Imagename supplied to WSClean call.
+    :type imagename: str
+    :param pol: Pol supplied to WSClean. Should be ',' separated list. 
+                Parsing is strict. Default is I
+    :type pol: str
+    :param img_prefix: Image prefix of the renamed images. The times and freq will 
+                        be appened after this, separated by '_'. Default is None.
+                        If None, img_prefix is set to imagename
+    :type img_prefix: str
+    :param intervals_out: Intervals_out passed to WSClean. If 1, time_str is not
+                            appended to img_prefix. Default: 1
+    :type intervals_out: int
+    :param channels_out: Channels_out passed to WSClean. If 1, channels_out is not
+                        appended to img_prefix. Default :1
+    :return: list of the renamed images. Blank list is returned if not present
+    :rtype: list
+    '''
     pols=pol.split(',')
     num_pols=len(pols)
-    num_field=get_total_fields(msfile)
-    msmd=msmetadata()
-    msmd.open(msfile)
+    
     names=[]
-    for i in range(num_field):
-        time1 = msmd.timesforfield(i)
-        t=Time(time1/86400,format='mjd')
-        t.format='isot'
-        time_str=t.value[0].split('T')[1].replace(':','')
-        for pol1 in pols:
-            if pol1=='I' or num_pols==1:
-                pol1=''
-            else:
-                pol1='-'+pol1
-            
-            wsclean_imagename=imagename+'-t'+str(i).zfill(4)+pol1+"-image.fits"
-            final_imagename=imagename+"_"+time_str+pol1+"-image.fits"
-            names.append([wsclean_imagename,final_imagename])
+    for pol in pols:
+        pol_prefix="-"+pol if num_pols!=1 else ''
+        
+        images=glob.glob(imagename+"-*"+pol_prefix+"-image.fits")
+        
+        for img in images:
+            head=fits.getheader(img)
+            obstime=head['DATE-OBS']
+            obsfreq=round(head['CRVAL3']*1e-6,2) ### MHz
+            time_str=obstime.split('T')[1].replace(':','')
+            final_imagename=imagename if img_prefix is None else img_prefix
+            if intervals_out!=1:
+                final_imagename+='_'+time_str
+            if channels_out!=1:
+                final_imagename+='_'+str(obsfreq)+"MHz"
+            final_imagename+=pol_prefix+"-image.fits"
+            os.system("mv "+img+" "+final_imagename)
+            names.append(final_imagename)
     return names
     
 def check_corrected_data_present(msname):
@@ -433,3 +455,120 @@ def correct_primary_beam(msfile, imagename, pol='I', fast_vis=False):
                 hdu.close()
     return
 
+def swap_fastms_pols(msname):
+    '''
+    This function corrects for the polarisation swap present in the fast MS data
+    correction_date provides the date on which the swap was corrected in the 
+    X engine itself. Details of this isse has been discussed in 
+    https://github.com/ovro-lwa/lwa-issues/issues/486
+    
+    
+    :param msname: Name of MS
+    : type msname: str
+    :param correction_date: Datetime of correction in X-engine
+    :type correction_date: Can be anything which is acceptable by Astropy Time
+    '''
+    swap_ok=get_keyword(msname,"swap_ok")
+    if swap_ok is not None:
+        logging.debug("Swap correction done/tried earlier. Returning")
+        return
+        
+    correction_date='2024-02-07T17:30:00'  #### this is the date on which the
+                                            ### changes were propagated to the 
+                                            ### X-engine, to solve this issue.
+                                            ### DO NOT CHANGE THIS UNLESS YOU
+                                            ### ARE AN EXPERT 
+        
+    correction_time=Time(correction_date)
+    msmd=msmetadata()
+    try:
+        msmd.open(msname)
+        antids = msmd.antennaids()
+        times=msmd.timesforfield(0)/86400 ### convert to days
+    finally:
+        msmd.done()
+    num_ants=len(antids)
+    print (num_ants)
+    if num_ants>48:
+        logging.info("Not a fast visibility MS from OVRO-LWA. Doing nothing")
+        put_keyword(msname,"swap_ok","1")
+        return
+    obstime=Time(times[0],format='mjd')
+    if obstime>correction_time:
+        logging.debug("MS time is after the time when X-engine was updated. Doing nothing.")
+        put_keyword(msname,"swap_ok","1")
+        return
+    
+    tb=table()
+    tb.open(msname,nomodify=False)
+    try:
+        data=tb.getcol('DATA')
+        data1=np.zeros_like(data)
+        data1[...]=data[...]
+        data1[2,...]=data[3,...]
+        data1[3,...]=data[2,...]
+        tb.putcol('DATA',data1)
+        tb.flush()
+        logging.info("Polarization swap is corrected")
+    finally:
+        tb.close()
+    put_keyword(msname,"swap_ok","1")
+    return
+    
+def correct_fastms_amplitude_scale(msname):
+    '''
+    This function corrects for the amplitude correction present in the fast MS data
+    correction_dates provides the date on which the ampltiude correction was done in
+    data recorder itself. The amplitude of fast vis data was initially off by a factor 
+    of 4. On December 18, when trying to correct for this, this factor became 16. As of 
+    February 7, 2024, this has not been corrected. Details of this issue has been discussed 
+    in https://github.com/ovro-lwa/lwa-issues/issues/501
+    
+    :param msname: Name of MS
+    : type msname: str
+    :param correction_date: Datetime of correction in X-engine
+    :type correction_dates: Is a list of anything which is acceptable by Astropy Time
+    '''
+    amp_ok=get_keyword(msname,"amp_ok")
+    if amp_ok is not None:
+        logging.debug("Amplitude correction done/tried earlier. Returning")
+        return
+    
+    correction_dates=['2023-12-18T23:00:00','2024-02-15T23:00:00']
+    
+    correction_time=Time(correction_dates)
+    msmd=msmetadata()
+    try:
+        msmd.open(msname)
+        antids = msmd.antennaids()
+        times=msmd.timesforfield(0)/86400 ### convert to days
+    finally:
+        msmd.done()
+    num_ants=len(antids)
+    if num_ants>48:
+        logging.info("Not a fast visibility MS from OVRO-LWA. Doing nothing")
+        put_keyword(msname,"amp_ok","1")
+        return
+    obstime=Time(times[0],format='mjd')
+    if obstime>correction_time[1]:
+        logging.debug("MS time is after the time when data recorders were updated. Doing nothing.")
+        put_keyword(msname,"amp_ok","1")
+        return
+    elif obstime<correction_time[0]:
+        correction_factor=4
+    else:
+        correction_factor=16
+    
+    tb=table()
+    
+    tb.open(msname,nomodify=False)
+    try:
+        data=tb.getcol('DATA')
+        data/=correction_factor
+        tb.putcol('DATA',data)
+        tb.flush()
+        logging.debug("Fast MS amplitude correction done successfully")
+    finally:
+        tb.close()
+    put_keyword(msname,"amp_ok","1")
+    return
