@@ -11,12 +11,42 @@ from astropy.io import fits
 import matplotlib.pyplot as plt
 from . import utils,flagging,calibration,selfcal,deconvolve
 import logging, glob
+from .file_handler import File_Handler
+from .primary_beam import analytic_beam as beam 
+from . import primary_beam
 from .generate_calibrator_model import model_generation
 from .  import generate_calibrator_model
 tb = table()
 me = measures()
 cl = componentlist()
 msmd = msmetadata()
+
+
+def get_solar_loc_pix(msfile, image="allsky"):
+    """
+    Get the x, y pixel location of the Sun from an all-sky image
+
+    :param msfile: path to CASA measurement set
+    :param image: all sky image made from the measurement set
+    :return: pixel value in X and Y for solar disk center
+    """
+    from astropy.wcs.utils import skycoord_to_pixel
+    m = utils.get_sun_pos(msfile, str_output=False)
+    ra = m['m0']['value']
+    dec = m['m1']['value']
+    coord = SkyCoord(ra * u.rad, dec * u.rad, frame='icrs')
+    logging.debug('RA, Dec of Sun is ' + str(ra) + ", " + str(dec) + ' rad')
+    head=fits.getheader(image)
+    w = WCS(head)
+    pix = skycoord_to_pixel(coord, w)
+    if np.isnan(pix[0]):
+        logging.warning('Sun is not in the image')
+        return None, None
+    x = int(pix[0])
+    y = int(pix[1])
+    logging.debug('Pixel location of Sun is ' + str(x) + " " + str(y) + " in imagename " + image)
+    return x, y
+
 
 def get_nonsolar_sources_loc_pix(msfile, image="allsky", verbose=False, min_beam_val=1e-6):
     """
@@ -92,22 +122,16 @@ def gen_nonsolar_source_model(msfile, imagename="allsky", outimage=None, sol_are
     :param remove_strong_sources_only: If True, remove only known strong sources.
         If False, remove everything other than Sun.
     :param verbose: Toggle to print out more information
-    :param pol: specifies which pol it is. should be 'I,Q,U,V,XX,YY'. It is 
-                important that the entries are comma separated.
     :return: FITS image with non-solar sources removed
     """
     imagename1=imagename 
-    pols=pol.split(',')
-    num_pol=len(pols)
-    if num_pol==1:
+    if pol=='I':
         imagename=imagename+"-image.fits"
     else:
-        imagename=imagename+"-"+pols[0]+"-image.fits"
+        imagename=imagename+"-XX-image.fits"
     if os.path.isfile(imagename)==False:
-        logging.error("Image does not exist.")
-        raise IOError("Image does not exist")
-        
-    solx, soly = utils.get_solar_loc_pix(msfile, imagename)
+        imagename=imagename+"-I-image.fits"
+    solx, soly = get_solar_loc_pix(msfile, imagename)
     srcs = get_nonsolar_sources_loc_pix(msfile, imagename)
     
     head = fits.getheader(imagename)
@@ -121,11 +145,16 @@ def gen_nonsolar_source_model(msfile, imagename="allsky", outimage=None, sol_are
         print(head['cunit2'] + ' not recognized as "deg". Model could be wrong.')
    
     imagename=imagename1
-    for pola in pols:
-        if num_pol==1:
+    for pola in ['I','XX','YY']:
+        if pol=='I' and pola=='I':
             prefix=''
+        elif pola=='XX' and pol!='I':
+            prefix='-XX'
+        elif pola=='YY' and pol!='I':
+            prefix='-YY'
         else:
-            prefix="-"+pola
+            continue
+        print (pola,pol) 
         data = fits.getdata(imagename + prefix+"-model.fits")
         head=fits.getheader(imagename + prefix+"-model.fits")
         if remove_strong_sources_only:
@@ -169,7 +198,7 @@ def remove_nonsolar_sources(msfile, imsize=4096, cell='2arcmin', minuv=0,
 
     :return: a CASA measurement set with non-solar sources removed. Default name is "*_sun_only.ms"
     """
-    outms = msfile.replace('.ms', "_sun_only.ms")
+    outms = msfile[:-3] + "_sun_only.ms"
     if os.path.isdir(outms):
         return outms
     
@@ -182,7 +211,7 @@ def remove_nonsolar_sources(msfile, imsize=4096, cell='2arcmin', minuv=0,
     if not fast_vis or (fast_vis and fast_vis_image_model_subtraction):
         deconvolve.run_wsclean(msfile=msfile, imagename=tmpimg, size=imsize,
                             scale=cell, minuv_l=minuv, predict=False,
-                            pol=pol, niter=niter, auto_pix_fov=auto_pix_fov)
+                            auto_mask=5, pol=pol, niter=niter, auto_pix_fov=auto_pix_fov)
         image_nosun = gen_nonsolar_source_model(msfile, imagename=tmpimg,
                                                 remove_strong_sources_only=remove_strong_sources_only, pol=pol)
         deconvolve.predict_model(msfile, outms=tmpms, image=image_nosun, pol=pol)

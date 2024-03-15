@@ -48,13 +48,10 @@ class woody_beam():
         self.Ubeam=None
         self.Qbeam=None
         self.Vbeam=None
-        self.freq=freq
-        if self.freq is None:
-            self.msfile=msfile
+        self.freq=None
+        self.msfile=msfile
         
     def ctrl_freq(self):
-        if self.freq is not None:
-            return
         msmd=msmetadata()
         msmd.open(self.msfile)
         self.freq = msmd.meanfreq(0)*1e-6
@@ -63,6 +60,7 @@ class woody_beam():
     def get_beam_file(self):
         all_beam_files=glob.glob(self.beam_file_path+'/beamIQUV_*.npz')
         all_freqs=np.array([float(file1.split('/')[-1].split('_')[-1].split('.npz')[0]) for file1 in all_beam_files])
+       
         self.ctrl_freq()
         diff=abs(all_freqs-self.freq)
         ind=np.argsort(diff)[0]
@@ -167,9 +165,8 @@ class jones_beam:
             self.beam_file_path=beam_file_path
         except:
             self._beam_file_path=None
-        self.freq=freq
-        if self.freq is None:
-            self.msfile=msfile
+        self.freq=None
+        self.msfile=msfile
         self.num_theta=181
         self.num_phi=361
         self.start_freq=10
@@ -184,8 +181,6 @@ class jones_beam:
         
         
     def ctrl_freq(self):
-        if self.freq is not None:
-            return
         msmd=msmetadata()
         msmd.open(self.msfile)
         self.freq = msmd.meanfreq(0) * 1e-6
