@@ -18,28 +18,6 @@ me = measures()
 cl = componentlist()
 msmd = msmetadata()
 
-
-
-def make_fullsky_image(msfile, imagename="allsky", imsize=4096, cell='2arcmin',
-                       minuv=10,pol='I'):  ### minuv: minimum uv in lambda
-    """
-    Make all sky image with wsclean
-    
-    :param msfile: path to CASA measurement set
-    :param imagename: output image name
-    :param imsize: size of the image in pixels
-    :param cell: pixel scale
-    :param minuv: minimum uv to consider for imaging (in # of wavelengths)
-    :return: produces wsclean images (fits), PSF, etc.
-    """
-    os.system("wsclean -no-update-model-required -weight uniform" +
-              " -name " + imagename + " -size " + str(imsize) + " " + str(imsize) + " -scale " + cell +
-              " -minuv-l " + str(minuv) + " -niter 1000 -pol "+pol+' '+ msfile)
-
-
-
-
-
 def get_nonsolar_sources_loc_pix(msfile, image="allsky", verbose=False, min_beam_val=1e-6):
     """
     Converting the RA & DEC coordinates of nonsolar sources to image coordinates in X and Y

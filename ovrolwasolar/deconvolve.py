@@ -57,6 +57,7 @@ def run_wsclean(msfile, imagename, size:int =4096, scale='2arcmin', fast_vis=Fal
     :param telescope_size: size of the telescope in meters, default 3200 (OVRO-LWA)
     :param im_fov: field of view of the image in arcseconds, default 182*3600asec (full sky+ 2deg)
     :param j: number of threads, default 4
+    :param mem: fraction of max memory usage, default 2 
     :param weight: weighting scheme, default uniform
     :param no_dirty: don't save dirty image, default True
     :param niter: number of iterations, default 10000
@@ -85,7 +86,7 @@ def run_wsclean(msfile, imagename, size:int =4096, scale='2arcmin', fast_vis=Fal
         'pol':'I',                  # polarization
         'minuv_l':'10',             # minimum uv distance in lambda
         'intervals_out':'1',        # number of output images
-        'no_reorder':'',            # don't reorder the channels
+        'no-reorder':'',            # don't reorder the channels
         'beam_fitting_size':'2',    # beam fitting size
         'horizon_mask':"2deg"    # horizon mask distance (to mask horizon direction RFI)
     }
