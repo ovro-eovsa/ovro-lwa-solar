@@ -25,7 +25,8 @@ msmd = msmetadata()
 
 
 def do_selfcal(msfile, num_phase_cal=2, num_apcal=2, applymode='calflag', logging_level='info', caltable_folder='caltables/',
-               ms_keyword='di_selfcal_time',pol='I', refant='202', niter0=1000, niter_incr=500, auto_pix_fov=False):
+               ms_keyword='di_selfcal_time',pol='I', refant='202', niter0=1000, niter_incr=500, auto_pix_fov=False, \
+               bandpass_selfcal=False):
     
     time1=timeit.default_timer()          
     logging.debug('The plan is to do ' + str(num_phase_cal) + " rounds of phase selfcal")
@@ -82,8 +83,12 @@ def do_selfcal(msfile, num_phase_cal=2, num_apcal=2, applymode='calflag', loggin
                 return good
         logging.debug("Finding gain solutions and writing in into " + imagename + ".gcal")
         time1=timeit.default_timer()
-        gaincal(vis=msfile, caltable=imagename + ".gcal", uvrange=">10lambda",
+        if not bandpass_selfcal:
+            gaincal(vis=msfile, caltable=imagename + ".gcal", uvrange=">10lambda",
                 calmode='p', solmode='L1R', rmsthresh=[10, 8, 6], refant=refant)
+        else:
+            calibration.find_bandpass_sol(msfile,caltable=imagename + ".gcal", uvrange=">10lambda",\
+                refant=refant,calmode='ap')
         time2=timeit.default_timer()
         logging.debug('Solving for selfcal gain solutions took {0:.1f} s'.format(time2-time1))
         utils.put_keyword(imagename + ".gcal", ms_keyword, utils.get_keyword(msfile, ms_keyword))
@@ -148,10 +153,14 @@ def do_selfcal(msfile, num_phase_cal=2, num_apcal=2, applymode='calflag', loggin
                         clearcal(msfile)
                 return good
         caltable = imagename + "_ap_over_p.gcal"
-
-        gaincal(vis=msfile, caltable=caltable, uvrange=">10lambda",
-                calmode='ap', solnorm=True, normtype='median', solmode='L1R',
-                rmsthresh=[10, 8, 6], gaintable=final_phase_caltable, refant=refant)
+        
+        if not bandpass_selfcal:
+            gaincal(vis=msfile, caltable=caltable, uvrange=">10lambda",
+                    calmode='ap', solnorm=True, normtype='median', solmode='L1R',
+                    rmsthresh=[10, 8, 6], gaintable=final_phase_caltable, refant=refant)
+        else:
+            calibration.find_bandpass_sol(msfile,caltable=imagename + ".gcal", uvrange=">10lambda",\
+                refant=refant,calmode='ap')
         utils.put_keyword(caltable, ms_keyword, utils.get_keyword(msfile, ms_keyword))
         if logging_level == 'debug' or logging_level == 'DEBUG':
             utils.get_flagged_solution_num(imagename + "_ap_over_p.gcal")
