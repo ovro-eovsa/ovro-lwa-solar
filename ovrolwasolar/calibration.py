@@ -261,8 +261,9 @@ def do_bandpass_correction(solar_ms, calib_ms=None, bcal=None, caltable_folder='
             else:
                 logging.debug('I found an existing bandpass table. Will reuse it to calibrate.')
     else:
-        if not bcal or not os.path.isdir(os.path.join(caltable_folder,os.path.basename(bcal))):
+        if not os.path.isdir(bcal) and not os.path.isdir(os.path.join(caltable_folder,os.path.basename(bcal))):
             print('Neither calib_ms nor bcal exists. Need to provide calibrations to continue. Abort..')
+            return -1
             logging.error('Neither calib_ms nor bcal exists. Need to provide calibrations to continue. Abort..')
 
     # correct_ms_bug(solar_ms)
