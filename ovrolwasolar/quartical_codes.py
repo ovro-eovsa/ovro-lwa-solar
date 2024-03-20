@@ -37,14 +37,20 @@ def mean_channel_leakage_based_flagging(gains,gain_flags,max_leak_amp=1.0,thresh
         
     return    
 
-def mean_antenna_leakage_based_flagging(gains,gain_flags,thresh=5):
+def mean_antenna_leakage_based_flagging(gains,gain_flags,thresh=5,max_mean_leakage=0.5):
     shape=gains.shape
     
     amp_gain=np.abs(gains)
     
     mean_amp_gain=np.expand_dims(np.nanmedian(amp_gain,axis=2),axis=2)
     
+    pos=np.where(mean_amp_gain>max_mean_leakage)
+    ants=pos[2]
+    for i in ants:
+        gains[:,:,i,:,:]=np.nan
+
     mean_amp_gain=np.expand_dims(np.nanmedian(amp_gain,axis=2),axis=2)
+    
     std_amp_gain=np.expand_dims(np.nanstd(amp_gain,axis=2),axis=2)
     
     diff=amp_gain-mean_amp_gain
@@ -77,7 +83,7 @@ def std_antenna_leakage_based_flagging(gains,gain_flags,thresh=3):
     
     return
     
-def max_leak_based_flagging(gains,gain_flags,flagmode='calonly',max_leak_amp=1.0):
+def max_leak_based_flagging(gains,gain_flags,flagmode='calonly',max_leak_amp=0.7):
     pos=np.where(np.abs(gains[:,:,:,:,1])>max_leak_amp)
     
     gains[(pos[0],pos[1],pos[2],pos[3],1*np.ones(len(pos[0]),dtype=int))]=np.nan
