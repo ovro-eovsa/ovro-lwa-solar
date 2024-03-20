@@ -277,6 +277,21 @@ def do_bandpass_correction(solar_ms, calib_ms=None, bcal=None, caltable_folder='
     solar_ms = solar_ms[:-3] + "_calibrated.ms"
     return solar_ms
 
+    
+def find_bandpass_sol(msname,caltable=None,uvrange='',timerange='',minsnr=3,apmode='p',refant='202'):
+    from casatools import calibrater
+    cb=calibrater()
+    cb.open(msname)
+    cb.selectvis(chanmode='none',uvrange=uvrange,time=timerange)
+    if caltable is None:
+        caltable=msname[:-3]+'_align_V.cal'
+    cb.setsolve(type='B',t='inf',refant=str(refant),apmode='p',table=caltable,append=False,minsnr=minsnr,\
+                solnorm=True,)
+    cb.solve()
+    cb.close()
+
+
+
 def gen_beam_flux_factor(bcal_timestr, ms_calib=None, ms_calib_fold='/lustre/bin.chen/realtime_pipeline/ms_calib/',
         beam_caltable_fold='/lustre/bin.chen/realtime_pipeline/caltables_beam/', norm_change_time='2023-09-26T05:00', 
         amp_change_time='2024-01-17T05:00'):
@@ -356,3 +371,4 @@ def gen_beam_flux_factor(bcal_timestr, ms_calib=None, ms_calib_fold='/lustre/bin
     bcalfac_file = beam_caltable_fold + '/' + bcal_timestr + '_bmcalfac.csv'
     df.to_csv(bcalfac_file, index=False)
     return bcalfac_file
+
