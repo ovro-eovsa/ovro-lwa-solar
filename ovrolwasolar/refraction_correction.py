@@ -68,7 +68,7 @@ def find_center_of_thresh(data_this, thresh, meta):
     return [com_x_arcsec, com_y_arcsec, com, x_arr_new, y_arr_new, threshed_img,
             threshed_img_1st, threshed_img_2nd, threshed_img_3rd, threshed_img_4th]
 
-def refraction_fit_param(fname, thresh_freq=45e6):
+def refraction_fit_param(fname, thresh_freq=45e6, overbright=2e6):
     """
     Take in a multi-frequency fits file and return the refraction fit parameters for:
     `
@@ -115,12 +115,12 @@ def refraction_fit_param(fname, thresh_freq=45e6):
     peak_values_for_fit = peak_values_tmp[idx_for_gt_freqthresh]
 
     # idx for peak values > 2e6
-    idx_for_gt_2e6 = np.where(peak_values_for_fit < 2e6)
-    freq_for_fit_v1 = freq_for_fit[idx_for_gt_2e6]
-    com_x_for_fit_v1 = com_x_for_fit[idx_for_gt_2e6]
-    com_y_for_fit_v1 = com_y_for_fit[idx_for_gt_2e6]
+    idx_not_too_bright = np.where(peak_values_for_fit < overbright)
+    freq_for_fit_v1 = freq_for_fit[idx_not_too_bright]
+    com_x_for_fit_v1 = com_x_for_fit[idx_not_too_bright]
+    com_y_for_fit_v1 = com_y_for_fit[idx_not_too_bright]
     
-    #peak_values_for_fit_v1 = peak_values_for_fit[idx_for_gt_2e6]
+    #peak_values_for_fit_v1 = peak_values_for_fit[idx_not_too_bright]
     
     #linear fit
     if freq_for_fit_v1.size > 5:
