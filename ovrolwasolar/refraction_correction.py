@@ -212,7 +212,6 @@ def save_resample_align(fname_in, fname_out, px, py, com_x_fitted, com_y_fitted)
     # modify the data array move the center of the image to the fitted center
     for pol in range(datasize[0]):
         for chn in range(datasize[1]):
-            datatmp = np.zeros((datasize[2], datasize[3]))
             datatmp = hdul[0].data[pol, chn, :, :]
 
             shift_x_tmp, shift_y_tmp = com_x_fitted[chn], com_y_fitted[chn]
