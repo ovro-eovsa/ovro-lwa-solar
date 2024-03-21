@@ -71,12 +71,13 @@ def find_center_of_thresh(data_this, thresh, meta):
 def refraction_fit_param(fname, thresh_freq=45e6):
     """
     Take in a multi-frequency fits file and return the refraction fit parameters for:
-    ```
+    `
     x = px[0] * 1/freq**2 + px[1]
     y = py[0] * 1/freq**2 + py[1]
-    ```
+    `
     
     :param fname: the fits file name
+    :param thresh_freq: the threshold frequency for the fit
     """
 
     meta,data = ndfits.read(fname)
@@ -138,19 +139,18 @@ def save_refraction_fit_param(fname_in, fname_out, px, py, com_x_fitted, com_y_f
     """
     Updates a FITS file with new refraction fit parameters and copies it to a new file.
 
-    Parameters:
-    - fname_in: str
-        Path to the input FITS file.
-    - fname_out: str
-        Path to the output (updated) FITS file.
-    - px: list or np.ndarray
-        The fit parameters for the x-direction, expected to have at least 2 elements.
-    - py: list or np.ndarray
-        The fit parameters for the y-direction, expected to have at least 2 elements.
-    - com_x_fitted: np.ndarray
-        The fitted com_x coordinates to add as a new column to the FITS table.
-    - com_y_fitted: np.ndarray
-        The fitted com_y coordinates to add as a new column to the FITS table.
+    :param fname_in: Path to the input FITS file.
+    :type fname_in: str
+    :param fname_out: Path to the output (updated) FITS file.
+    :type fname_out: str
+    :param px: The fit parameters for the x-direction, expected to have at least 2 elements.
+    :type px: list or np.ndarray
+    :param py: The fit parameters for the y-direction, expected to have at least 2 elements.
+    :type py: list or np.ndarray
+    :param com_x_fitted: The fitted com_x coordinates to add as a new column to the FITS table.
+    :type com_x_fitted: np.ndarray
+    :param com_y_fitted: The fitted com_y coordinates to add as a new column to the FITS table.
+    :type com_y_fitted: np.ndarray
     """
     # Copy the input file to the output file location
     copyfile(fname_in, fname_out)
@@ -176,4 +176,62 @@ def save_refraction_fit_param(fname_in, fname_out, px, py, com_x_fitted, com_y_f
         print("FITS file successfully updated.")
     else:
         print("Failed to update FITS file.")
+    return True
+
+def save_resample_align(fname_in, fname_out, px, py, com_x_fitted, com_y_fitted):
+    """
+    Creat level 1.5 fits file
+    Read in the fits file, apply the refraction correction, move the CRVAL1, CRVAL2 to the center of the image,
+    resample the image to the same size, and save the result to a new fits file
+    
+    :param fname_in: Path to the input FITS file.
+    :type fname_in: str
+    :param fname_out: Path to the output (updated) FITS file.
+    :type fname_out: str
+    :param px: The fit parameters for the x-direction, expected to have at least 2 elements.
+    :type px: list or np.ndarray
+    :param py: The fit parameters for the y-direction, expected to have at least 2 elements.
+    :type py: list or np.ndarray
+    :param com_x_fitted: The fitted com_x coordinates to add as a new column to the FITS table.
+    :type com_x_fitted: np.ndarray
+    :param com_y_fitted: The fitted com_y coordinates to add as a new column to the FITS table.
+    :type com_y_fitted: np.ndarray
+
+    """ 
+
+    hdul = fits.open(fname_in)
+    datasize = hdul[0].data.shape
+    new_data = np.zeros(datasize)
+    delta_x  = hdul[0].header["CDELT1"]
+    delta_y  = hdul[0].header["CDELT2"]
+
+    # modify the data array move the center of the image to the fitted center
+    for pol in range(datasize[0]):
+        for chn in range(datasize[1]):
+            datatmp = np.zeros((datasize[2], datasize[3]))
+            datatmp = hdul[0].data[pol, chn, :, :]
+            
+            shift_x_tmp, shift_y_tmp = com_x_fitted[chn], com_y_fitted[chn]
+
+            datatmp  = np.roll(datatmp, -int(np.round(shift_y_tmp/delta_y)), axis=0)
+            datatmp  = np.roll(datatmp, -int(np.round(shift_x_tmp/delta_x)), axis=1)
+            new_data[pol, chn, :, :] = datatmp
+    hdul[0].data = new_data
+    hdul[0].header["CRVAL1"] = 0
+    hdul[0].header["CRVAL2"] = 0
+    hdul[0].header["CRPIX1"] = datasize[2]//2
+    hdul[0].header["CRPIX2"] = datasize[3]//2
+
+    # also the parms for x = px[0] * 1/freq**2 + px[1]
+    hdul[0].header["RFRPX0"] = str(px[0])
+    hdul[0].header["RFRPX1"] = str(px[1])
+    hdul[0].header["RFRPY0"] = str(py[0])
+    hdul[0].header["RFRPY1"] = str(py[1])
+
+    hdul[0].header["RFRCOR"] = True
+    hdul[0].header["RFRVER"] = '1.1'
+
+    hdul[0].header["HISTORY"] = str(hdul[0].header["HISTORY"])+ "[1.1] Refraction correction applied to data array. "
+    hdul.writeto(fname_out, overwrite=True)
+
     return True
