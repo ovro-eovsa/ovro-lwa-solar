@@ -138,6 +138,7 @@ def refraction_fit_param(fname, thresh_freq=45e6, overbright=2e6):
 def save_refraction_fit_param(fname_in, fname_out, px, py, com_x_fitted, com_y_fitted):
     """
     Updates a FITS file with new refraction fit parameters and copies it to a new file.
+    Do this in-place by using same file name for `fname_in` and `fname_out`.
 
     :param fname_in: Path to the input FITS file.
     :type fname_in: str
