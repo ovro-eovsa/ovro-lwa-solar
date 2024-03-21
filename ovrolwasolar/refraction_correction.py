@@ -12,6 +12,7 @@ from skimage import measure
 from skimage.morphology import remove_small_objects
 from scipy.ndimage import center_of_mass
 from suncasa.io import ndfits
+from shutil import copyfile
 
 from scipy.ndimage import binary_erosion, binary_dilation, binary_closing
 import sunpy.map as smap
@@ -135,33 +136,44 @@ def refraction_fit_param(fname):
 
 def save_refraction_fit_param(fname_in, fname_out, px, py, com_x_fitted, com_y_fitted):
     """
-    Save the refraction fit parameters to the fits
+    Updates a FITS file with new refraction fit parameters and copies it to a new file.
 
-    :param fname_in: the input fits file name
-    :param fname_out: the output fits file name
-    :param px: the fit parameters for x
-    :param py: the fit parameters for y
-    :param com_x_fitted: the fitted com_x
-    :param com_y_fitted: the fitted com_y
+    Parameters:
+    - fname_in: str
+        Path to the input FITS file.
+    - fname_out: str
+        Path to the output (updated) FITS file.
+    - px: list or np.ndarray
+        The fit parameters for the x-direction, expected to have at least 2 elements.
+    - py: list or np.ndarray
+        The fit parameters for the y-direction, expected to have at least 2 elements.
+    - com_x_fitted: np.ndarray
+        The fitted com_x coordinates to add as a new column to the FITS table.
+    - com_y_fitted: np.ndarray
+        The fitted com_y coordinates to add as a new column to the FITS table.
     """
-    hdul = fits.open(fname_in)
+    # Copy the input file to the output file location
+    copyfile(fname_in, fname_out)
 
     # correction distance per freq ch
     col_add1 = fits.Column(name='refra_shift_x', format='E', array=com_x_fitted)
     col_add2 = fits.Column(name='refra_shift_y', format='E', array=com_y_fitted)
-    hdu = fits.BinTableHDU.from_columns(hdul[1].columns + col_add1 + col_add2)
+    new_table_columns = [col_add1, col_add2]
 
     # also the parms for x = px[0] * 1/freq**2 + px[1]
-    hdul[0].header["REFRA_PX0"] = str(px[0])
-    hdul[0].header["REFRA_PX1"] = str(px[1])
-    hdul[0].header["REFRA_PY0"] = str(py[0])
-    hdul[0].header["REFRA_PY1"] = str(py[1])
+    new_header_entries = {
+        "RFRPX0": str(px[0]),
+        "RFRPX1": str(px[1]),
+        "RFRPY0": str(py[0]),
+        "RFRPY1": str(py[1]),
+        "RFRCOR": True,
+        "RFRVER": "1.0",
+        "HISTORY": "Refraction correction applied"
+    }
 
-    hdul[0].header["REFRA_COR"] = True
-    hdul[0].header["REFRA_VER"] = '1.0'
-
-    hdul[0].header["HISTORY"] = str(hdul[0].header["HISTORY"])+ " Refraction correction applied"
-
-    hdul[1] = hdu
-    hdul.writeto(fname_out, overwrite=True)
+    success = ndfits.update(fname_out, new_table_columns, new_header_entries)
+    if success:
+        print("FITS file successfully updated.")
+    else:
+        print("Failed to update FITS file.")
     return True
