@@ -18,7 +18,7 @@ from scipy.ndimage import binary_erosion, binary_dilation, binary_closing
 import sunpy.map as smap
 
 
-def thresh_func(freq): # freq in Hz
+def thresh_func(freq):  # freq in Hz
     """Return the threshold for the given frequency
     
     :param freq: frequency in Hz
@@ -26,7 +26,7 @@ def thresh_func(freq): # freq in Hz
     :return: threshold in Tb
     """
 
-    return 1.1e6 * (1-1.8e4* freq**(-0.6))
+    return 1.1e6 * (1 - 1.8e4 * freq ** (-0.6))
 
 
 def find_center_of_thresh(data_this, thresh, meta):
@@ -44,7 +44,7 @@ def find_center_of_thresh(data_this, thresh, meta):
     threshed_img_2nd = binary_erosion(threshed_img_1st, iterations=3)
 
     # keep only the largest connected component
-    threshed_img_3rd = remove_small_objects(threshed_img_2nd, min_size=1000, connectivity=1)    
+    threshed_img_3rd = remove_small_objects(threshed_img_2nd, min_size=1000, connectivity=1)
 
     # dialate the image back to the original size
     threshed_img_4th = binary_dilation(threshed_img_3rd, iterations=3)
@@ -60,13 +60,13 @@ def find_center_of_thresh(data_this, thresh, meta):
     com_x_arcsec = x_arr[0] + com[1] * (x_arr[-1] - x_arr[0]) / (len(x_arr) - 1)
     com_y_arcsec = y_arr[0] + com[0] * (y_arr[-1] - y_arr[0]) / (len(y_arr) - 1)
 
-
     # move x_arr, y_arr to the center of the image
     x_arr_new = x_arr - com_x_arcsec
     y_arr_new = y_arr - com_y_arcsec
 
     return [com_x_arcsec, com_y_arcsec, com, x_arr_new, y_arr_new, threshed_img,
             threshed_img_1st, threshed_img_2nd, threshed_img_3rd, threshed_img_4th]
+
 
 def refraction_fit_param(fname, thresh_freq=45e6, overbright=2e6):
     """
@@ -80,24 +80,24 @@ def refraction_fit_param(fname, thresh_freq=45e6, overbright=2e6):
     :param thresh_freq: the threshold frequency for the fit
     """
 
-    meta,data = ndfits.read(fname)
-#    hdu = fits.open(fname)
-#    data = hdu[0].data
-#    meta = hdu[0].header
+    meta, data = ndfits.read(fname)
+    #    hdu = fits.open(fname)
+    #    data = hdu[0].data
+    #    meta = hdu[0].header
 
-    freqs_arr = meta['ref_cfreqs'] # Hz
+    freqs_arr = meta['ref_cfreqs']  # Hz
     header_meta = meta["header"]
 
     com_x_arr = []
     com_y_arr = []
     peak_values_tmp = []
     area_collect_tmp = []
-    for idx_this,idx_img in enumerate(range(0, freqs_arr.shape[0])):
-        thresh = thresh_func(freqs_arr[idx_img])/5
-        data_this =  np.squeeze(data[0,idx_img,:,:])
+    for idx_this, idx_img in enumerate(range(0, freqs_arr.shape[0])):
+        thresh = thresh_func(freqs_arr[idx_img]) / 5
+        data_this = np.squeeze(data[0, idx_img, :, :])
         (com_x_arcsec, com_y_arcsec, com, x_arr_new, y_arr_new, threshed_img,
-            threshed_img_1st, threshed_img_2nd, threshed_img_3rd, threshed_img_4th
-                ) = find_center_of_thresh(data_this, thresh, header_meta)
+         threshed_img_1st, threshed_img_2nd, threshed_img_3rd, threshed_img_4th
+         ) = find_center_of_thresh(data_this, thresh, header_meta)
         peak_values_tmp.append(np.nanmax(data_this))
         com_x_arr.append(com_x_arcsec)
         com_y_arr.append(com_y_arcsec)
@@ -106,7 +106,7 @@ def refraction_fit_param(fname, thresh_freq=45e6, overbright=2e6):
     com_x_tmp = np.array(com_x_arr)
     com_y_tmp = np.array(com_y_arr)
     peak_values_tmp = np.array(peak_values_tmp)
-    
+
     idx_for_gt_freqthresh = np.where(freqs_arr > thresh_freq)
 
     freq_for_fit = freqs_arr[idx_for_gt_freqthresh]
@@ -119,21 +119,22 @@ def refraction_fit_param(fname, thresh_freq=45e6, overbright=2e6):
     freq_for_fit_v1 = freq_for_fit[idx_not_too_bright]
     com_x_for_fit_v1 = com_x_for_fit[idx_not_too_bright]
     com_y_for_fit_v1 = com_y_for_fit[idx_not_too_bright]
-    
-    #peak_values_for_fit_v1 = peak_values_for_fit[idx_not_too_bright]
-    
-    #linear fit
+
+    # peak_values_for_fit_v1 = peak_values_for_fit[idx_not_too_bright]
+
+    # linear fit
     if freq_for_fit_v1.size > 5:
-        px = np.polyfit(1/freq_for_fit_v1**2, com_x_for_fit_v1, 1)
-        py = np.polyfit(1/freq_for_fit_v1**2, com_y_for_fit_v1, 1)
+        px = np.polyfit(1 / freq_for_fit_v1 ** 2, com_x_for_fit_v1, 1)
+        py = np.polyfit(1 / freq_for_fit_v1 ** 2, com_y_for_fit_v1, 1)
     else:
         px = [np.nan, np.nan]
         py = [np.nan, np.nan]
 
-    com_x_fitted = px[0] * 1/freqs_arr**2 + px[1]
-    com_y_fitted = py[0] * 1/freqs_arr**2 + py[1]
+    com_x_fitted = px[0] * 1 / freqs_arr ** 2 + px[1]
+    com_y_fitted = py[0] * 1 / freqs_arr ** 2 + py[1]
 
     return [px, py, com_x_fitted, com_y_fitted]
+
 
 def save_refraction_fit_param(fname_in, fname_out, px, py, com_x_fitted, com_y_fitted):
     """
@@ -169,7 +170,7 @@ def save_refraction_fit_param(fname_in, fname_out, px, py, com_x_fitted, com_y_f
         "RFRPY1": str(py[1]),
         "RFRCOR": True,
         "RFRVER": "1.0",
-        "HISTORY": "Refraction correction applied"
+        "HISTORY": "1.0 Refraction correction applied."
     }
 
     success = ndfits.update(fname_out, new_table_columns, new_header_entries)
@@ -178,6 +179,7 @@ def save_refraction_fit_param(fname_in, fname_out, px, py, com_x_fitted, com_y_f
     else:
         print("Failed to update FITS file.")
     return True
+
 
 def save_resample_align(fname_in, fname_out, px, py, com_x_fitted, com_y_fitted):
     """
@@ -198,41 +200,46 @@ def save_resample_align(fname_in, fname_out, px, py, com_x_fitted, com_y_fitted)
     :param com_y_fitted: The fitted com_y coordinates to add as a new column to the FITS table.
     :type com_y_fitted: np.ndarray
 
-    """ 
+    """
+    copyfile(fname_in, fname_out)
 
     hdul = fits.open(fname_in)
     datasize = hdul[0].data.shape
     new_data = np.zeros(datasize)
-    delta_x  = hdul[0].header["CDELT1"]
-    delta_y  = hdul[0].header["CDELT2"]
+    delta_x = hdul[0].header["CDELT1"]
+    delta_y = hdul[0].header["CDELT2"]
 
     # modify the data array move the center of the image to the fitted center
     for pol in range(datasize[0]):
         for chn in range(datasize[1]):
             datatmp = np.zeros((datasize[2], datasize[3]))
             datatmp = hdul[0].data[pol, chn, :, :]
-            
+
             shift_x_tmp, shift_y_tmp = com_x_fitted[chn], com_y_fitted[chn]
 
-            datatmp  = np.roll(datatmp, -int(np.round(shift_y_tmp/delta_y)), axis=0)
-            datatmp  = np.roll(datatmp, -int(np.round(shift_x_tmp/delta_x)), axis=1)
+            datatmp = np.roll(datatmp, -int(np.round(shift_y_tmp / delta_y)), axis=0)
+            datatmp = np.roll(datatmp, -int(np.round(shift_x_tmp / delta_x)), axis=1)
             new_data[pol, chn, :, :] = datatmp
-    hdul[0].data = new_data
-    hdul[0].header["CRVAL1"] = 0
-    hdul[0].header["CRVAL2"] = 0
-    hdul[0].header["CRPIX1"] = datasize[2]//2
-    hdul[0].header["CRPIX2"] = datasize[3]//2
+    hdul.close()
 
-    # also the parms for x = px[0] * 1/freq**2 + px[1]
-    hdul[0].header["RFRPX0"] = str(px[0])
-    hdul[0].header["RFRPX1"] = str(px[1])
-    hdul[0].header["RFRPY0"] = str(py[0])
-    hdul[0].header["RFRPY1"] = str(py[1])
+    new_header_entry = {
+        "CRVAL1": 0,
+        "CRVAL2": 0,
+        "CRPIX1": datasize[1] // 2,
+        "CRPIX2": datasize[2] // 2,
+        "RFRPX0": str(px[0]),
+        "RFRPX1": str(px[1]),
+        "RFRPY0": str(py[0]),
+        "RFRPY1": str(py[1]),
+        "RFRCOR": True,
+        "RFRVER": "1.1",
+        "HISTORY": "[1.1] Refraction correction applied to data array."
+    }
 
-    hdul[0].header["RFRCOR"] = True
-    hdul[0].header["RFRVER"] = '1.1'
-
-    hdul[0].header["HISTORY"] = str(hdul[0].header["HISTORY"])+ "[1.1] Refraction correction applied to data array. "
-    hdul.writeto(fname_out, overwrite=True)
+    success = ndfits.update(fname_out, new_data=new_data, new_header_entries=new_header_entry)
+    if success:
+        print("FITS file successfully updated.")
+    else:
+        print("Failed to update FITS file.")
 
     return True
