@@ -2,6 +2,7 @@ from astropy.io import fits
 from astropy.wcs import WCS
 from astropy.coordinates import SkyCoord
 from astropy import units as u
+from astropy.time import Time
 import numpy as np
 import matplotlib.pyplot as plt
 import sys
@@ -39,12 +40,12 @@ def find_center_of_thresh(data_this, thresh, meta):
     
     """
     threshed_img = (data_this > thresh)
-    threshed_img_1st = remove_small_objects(threshed_img, min_size=1000, connectivity=1)
+    threshed_img_1st = remove_small_objects(threshed_img, min_size=1000/(meta['CDELT1']/60.)**2., connectivity=1)
     # perform erosion to remove the small features
     threshed_img_2nd = binary_erosion(threshed_img_1st, iterations=3)
 
     # keep only the largest connected component
-    threshed_img_3rd = remove_small_objects(threshed_img_2nd, min_size=1000, connectivity=1)
+    threshed_img_3rd = remove_small_objects(threshed_img_2nd, min_size=1000/(meta['CDELT1']/60.)**2., connectivity=1)
 
     # dialate the image back to the original size
     threshed_img_4th = binary_dilation(threshed_img_3rd, iterations=3)
@@ -68,7 +69,7 @@ def find_center_of_thresh(data_this, thresh, meta):
             threshed_img_1st, threshed_img_2nd, threshed_img_3rd, threshed_img_4th]
 
 
-def refraction_fit_param(fname, thresh_freq=45e6, overbright=2e6):
+def refraction_fit_param(fname, thresh_freq=45e6, overbright=2.0e6, min_freqfrac=0.3):
     """
     Take in a multi-frequency fits file and return the refraction fit parameters for:
     `
@@ -78,6 +79,9 @@ def refraction_fit_param(fname, thresh_freq=45e6, overbright=2e6):
     
     :param fname: the fits file name
     :param thresh_freq: the threshold frequency for the fit
+    :param overbright: peak brightness temperature exceeding this value (in Kelvin) will be excluded for fitting 
+    :param min_freqfrac: minimum fraction of usable frequency channels 
+        (above the frequency threshhold) to do the fit. Absolute minimum is 5.
     """
 
     meta, data = ndfits.read(fname)
@@ -114,7 +118,7 @@ def refraction_fit_param(fname, thresh_freq=45e6, overbright=2e6):
     com_y_for_fit = com_y_tmp[idx_for_gt_freqthresh]
     peak_values_for_fit = peak_values_tmp[idx_for_gt_freqthresh]
 
-    # idx for peak values > 2e6
+    # Only frequencies with peak values < overbright are considered for fitting
     idx_not_too_bright = np.where(peak_values_for_fit < overbright)
     freq_for_fit_v1 = freq_for_fit[idx_not_too_bright]
     com_x_for_fit_v1 = com_x_for_fit[idx_not_too_bright]
@@ -123,6 +127,7 @@ def refraction_fit_param(fname, thresh_freq=45e6, overbright=2e6):
     # peak_values_for_fit_v1 = peak_values_for_fit[idx_not_too_bright]
 
     # linear fit
+    #if freq_for_fit_v1.size > max(int(len(idx_for_gt_freqthresh[0]) * min_freqfrac), 5):
     if freq_for_fit_v1.size > 5:
         px = np.polyfit(1 / freq_for_fit_v1 ** 2, com_x_for_fit_v1, 1)
         py = np.polyfit(1 / freq_for_fit_v1 ** 2, com_y_for_fit_v1, 1)
@@ -164,13 +169,14 @@ def save_refraction_fit_param(fname_in, fname_out, px, py, com_x_fitted, com_y_f
 
     # also the parms for x = px[0] * 1/freq**2 + px[1]
     new_header_entries = {
-        "RFRPX0": str(px[0]),
-        "RFRPX1": str(px[1]),
-        "RFRPY0": str(py[0]),
-        "RFRPY1": str(py[1]),
-        "RFRCOR": True,
+        "RFRPX0": px[0],
+        "RFRPX1": px[1],
+        "RFRPY0": py[0],
+        "RFRPY1": py[1],
+        "RFRCOR": False,
         "RFRVER": "1.0",
-        "HISTORY": "1.0 Refraction correction applied."
+        "LVLNUM": "1.0",
+        "HISTORY": "Refraction corrections V1.0 calculated and saved to the header on {0:s}. No corrections applied to the data.".format(Time.now().isot[:19])
     }
 
     success = ndfits.update(fname_out, new_table_columns, new_header_entries)
@@ -208,6 +214,8 @@ def save_resample_align(fname_in, fname_out, px, py, com_x_fitted, com_y_fitted)
     new_data = np.zeros(datasize)
     delta_x = hdul[0].header["CDELT1"]
     delta_y = hdul[0].header["CDELT2"]
+    nx = hdul[0].header["NAXIS1"]
+    ny = hdul[0].header["NAXIS2"]
 
     # modify the data array move the center of the image to the fitted center
     for pol in range(datasize[0]):
@@ -224,15 +232,16 @@ def save_resample_align(fname_in, fname_out, px, py, com_x_fitted, com_y_fitted)
     new_header_entry = {
         "CRVAL1": 0,
         "CRVAL2": 0,
-        "CRPIX1": datasize[1] // 2,
-        "CRPIX2": datasize[2] // 2,
-        "RFRPX0": str(px[0]),
-        "RFRPX1": str(px[1]),
-        "RFRPY0": str(py[0]),
-        "RFRPY1": str(py[1]),
+        "CRPIX1": nx // 2,
+        "CRPIX2": ny // 2,
+        "RFRPX0": px[0],
+        "RFRPX1": px[1],
+        "RFRPY0": py[0],
+        "RFRPY1": py[1],
         "RFRCOR": True,
-        "RFRVER": "1.1",
-        "HISTORY": "[1.1] Refraction correction applied to data array."
+        "RFRVER": "1.0",
+        "LVLNUM": "1.5",
+        "HISTORY": "Refraction corrections V1.0 applied to data array on {0:s}".format(Time.now().isot[:19])
     }
 
     success = ndfits.update(fname_out, new_data=new_data, new_header_entries=new_header_entry)
