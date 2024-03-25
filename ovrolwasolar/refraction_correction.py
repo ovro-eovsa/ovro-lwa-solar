@@ -127,8 +127,8 @@ def refraction_fit_param(fname, thresh_freq=45e6, overbright=2.0e6, min_freqfrac
     # peak_values_for_fit_v1 = peak_values_for_fit[idx_not_too_bright]
 
     # linear fit
-    #if freq_for_fit_v1.size > max(int(len(idx_for_gt_freqthresh[0]) * min_freqfrac), 5):
-    if freq_for_fit_v1.size > 5:
+    if freq_for_fit_v1.size > max(int(len(idx_for_gt_freqthresh[0]) * min_freqfrac), 5):
+    #if freq_for_fit_v1.size > 5:
         px = np.polyfit(1 / freq_for_fit_v1 ** 2, com_x_for_fit_v1, 1)
         py = np.polyfit(1 / freq_for_fit_v1 ** 2, com_y_for_fit_v1, 1)
     else:
