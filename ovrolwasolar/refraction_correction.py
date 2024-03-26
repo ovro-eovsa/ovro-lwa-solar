@@ -30,22 +30,26 @@ def thresh_func(freq):  # freq in Hz
     return 1.1e6 * (1 - 1.8e4 * freq ** (-0.6))
 
 
-def find_center_of_thresh(data_this, thresh, meta):
+def find_center_of_thresh(data_this, thresh, meta, index, min_size_50=1000):
     """
     Find the center of the thresholded image
     
     :param data_this: the data to be thresholded
     :param thresh: the threshold
     :param meta: the meta data of the fits file
+    :param index: the index of the image contained in the fits file
+    :param min_size_50: The smallest allowable object size at 50 MHz. min_size will scale with 1/(nu[MHz]/50MHz)**2.
     
     """
+    meta_header=meta['header']
     threshed_img = (data_this > thresh)
-    threshed_img_1st = remove_small_objects(threshed_img, min_size=1000/(meta['CDELT1']/60.)**2., connectivity=1)
+    min_size = min_size_50/(meta_header['CDELT1']/60.)**2./(meta['ref_cfreqs'][index]/50e6)**2.
+    threshed_img_1st = remove_small_objects(threshed_img, min_size=min_size, connectivity=1)
     # perform erosion to remove the small features
     threshed_img_2nd = binary_erosion(threshed_img_1st, iterations=3)
 
     # keep only the largest connected component
-    threshed_img_3rd = remove_small_objects(threshed_img_2nd, min_size=1000/(meta['CDELT1']/60.)**2., connectivity=1)
+    threshed_img_3rd = remove_small_objects(threshed_img_2nd, min_size=min_size, connectivity=1)
 
     # dialate the image back to the original size
     threshed_img_4th = binary_dilation(threshed_img_3rd, iterations=3)
@@ -54,8 +58,8 @@ def find_center_of_thresh(data_this, thresh, meta):
     com = center_of_mass(threshed_img_4th)
     # convert to arcsec
 
-    x_arr = meta['CRVAL1'] + meta['CDELT1'] * (np.arange(meta['NAXIS1']) - (meta['CRPIX1'] - 1))
-    y_arr = meta['CRVAL2'] + meta['CDELT2'] * (np.arange(meta['NAXIS2']) - (meta['CRPIX2'] - 1))
+    x_arr = meta_header['CRVAL1'] + meta_header['CDELT1'] * (np.arange(meta_header['NAXIS1']) - (meta_header['CRPIX1'] - 1))
+    y_arr = meta_header['CRVAL2'] + meta_header['CDELT2'] * (np.arange(meta_header['NAXIS2']) - (meta_header['CRPIX2'] - 1))
 
     # convert com from pixel to arcsec (linear)
     com_x_arcsec = x_arr[0] + com[1] * (x_arr[-1] - x_arr[0]) / (len(x_arr) - 1)
@@ -69,7 +73,7 @@ def find_center_of_thresh(data_this, thresh, meta):
             threshed_img_1st, threshed_img_2nd, threshed_img_3rd, threshed_img_4th]
 
 
-def refraction_fit_param(fname, thresh_freq=45e6, overbright=2.0e6, min_freqfrac=0.3):
+def refraction_fit_param(fname, thresh_freq=45e6, overbright=2.0e6, min_freqfrac=0.3, return_record=False):
     """
     Take in a multi-frequency fits file and return the refraction fit parameters for:
     `
@@ -82,15 +86,12 @@ def refraction_fit_param(fname, thresh_freq=45e6, overbright=2.0e6, min_freqfrac
     :param overbright: peak brightness temperature exceeding this value (in Kelvin) will be excluded for fitting 
     :param min_freqfrac: minimum fraction of usable frequency channels 
         (above the frequency threshhold) to do the fit. Absolute minimum is 5.
+    :param return_record: if True, return a refraction coefficient record containing a time stamp, else just the coefficients
+    :type py: boolean 
     """
 
     meta, data = ndfits.read(fname)
-    #    hdu = fits.open(fname)
-    #    data = hdu[0].data
-    #    meta = hdu[0].header
-
     freqs_arr = meta['ref_cfreqs']  # Hz
-    header_meta = meta["header"]
 
     com_x_arr = []
     com_y_arr = []
@@ -101,7 +102,7 @@ def refraction_fit_param(fname, thresh_freq=45e6, overbright=2.0e6, min_freqfrac
         data_this = np.squeeze(data[0, idx_img, :, :])
         (com_x_arcsec, com_y_arcsec, com, x_arr_new, y_arr_new, threshed_img,
          threshed_img_1st, threshed_img_2nd, threshed_img_3rd, threshed_img_4th
-         ) = find_center_of_thresh(data_this, thresh, header_meta)
+         ) = find_center_of_thresh(data_this, thresh, meta, idx_img)
         peak_values_tmp.append(np.nanmax(data_this))
         com_x_arr.append(com_x_arcsec)
         com_y_arr.append(com_y_arcsec)
@@ -135,13 +136,17 @@ def refraction_fit_param(fname, thresh_freq=45e6, overbright=2.0e6, min_freqfrac
         px = [np.nan, np.nan]
         py = [np.nan, np.nan]
 
-    com_x_fitted = px[0] * 1 / freqs_arr ** 2 + px[1]
-    com_y_fitted = py[0] * 1 / freqs_arr ** 2 + py[1]
+    #com_x_fitted = px[0] * 1 / freqs_arr ** 2 + px[1]
+    #com_y_fitted = py[0] * 1 / freqs_arr ** 2 + py[1]
+    reftime = meta['header']['date-obs']
 
-    return [px, py, com_x_fitted, com_y_fitted]
+    if return_record:
+        return {'Time':reftime, 'px0':px[0], 'px1':px[1], 'py0':py[0], 'py1':py[1]}
+    else:
+        return px, py
 
 
-def save_refraction_fit_param(fname_in, fname_out, px, py, com_x_fitted, com_y_fitted):
+def save_refraction_fit_param(fname_in, fname_out, px, py):
     """
     Updates a FITS file with new refraction fit parameters and copies it to a new file.
     Do this in-place by using same file name for `fname_in` and `fname_out`.
@@ -154,13 +159,13 @@ def save_refraction_fit_param(fname_in, fname_out, px, py, com_x_fitted, com_y_f
     :type px: list or np.ndarray
     :param py: The fit parameters for the y-direction, expected to have at least 2 elements.
     :type py: list or np.ndarray
-    :param com_x_fitted: The fitted com_x coordinates to add as a new column to the FITS table.
-    :type com_x_fitted: np.ndarray
-    :param com_y_fitted: The fitted com_y coordinates to add as a new column to the FITS table.
-    :type com_y_fitted: np.ndarray
     """
     # Copy the input file to the output file location
     copyfile(fname_in, fname_out)
+    meta, data = ndfits.read(fname_in)
+    freqs_arr = meta['ref_cfreqs']  # Hz
+    com_x_fitted = px[0] * 1 / freqs_arr ** 2 + px[1]
+    com_y_fitted = py[0] * 1 / freqs_arr ** 2 + py[1]
 
     # correction distance per freq ch
     col_add1 = fits.Column(name='refra_shift_x', format='E', array=com_x_fitted)
@@ -187,47 +192,50 @@ def save_refraction_fit_param(fname_in, fname_out, px, py, com_x_fitted, com_y_f
     return True
 
 
-def save_resample_align(fname_in, fname_out, px, py, com_x_fitted, com_y_fitted):
+def apply_refra_coeff(fname_in, px, py, fname_out=None):
     """
-    Creat level 1.5 fits file
-    Read in the fits file, apply the refraction correction, move the CRVAL1, CRVAL2 to the center of the image,
-    resample the image to the same size, and save the result to a new fits file
+    Apply refraction correction coefficients to level 1.0 fits file and create level 1.5 fits file
+    Read in the fits file, apply the refraction correction coefficients by rolling the image pixels, update CRVALi and CRPIXi,
+    and save the result to a new fits file
     
     :param fname_in: Path to the input FITS file.
     :type fname_in: str
-    :param fname_out: Path to the output (updated) FITS file.
-    :type fname_out: str
     :param px: The fit parameters for the x-direction, expected to have at least 2 elements.
     :type px: list or np.ndarray
     :param py: The fit parameters for the y-direction, expected to have at least 2 elements.
     :type py: list or np.ndarray
-    :param com_x_fitted: The fitted com_x coordinates to add as a new column to the FITS table.
-    :type com_x_fitted: np.ndarray
-    :param com_y_fitted: The fitted com_y coordinates to add as a new column to the FITS table.
-    :type com_y_fitted: np.ndarray
+    :param fname_out: Name of the output level 1.5 FITS file.
+    :type fname_out: str
+
+    :return fname_out: Name of the output level 1.5 FITS file.
+    :rtype: str 
 
     """
+    if fname_out is None:
+        fname_out = './' + os.path.basename(fname_in).replace('lev1','lev1.5')
     copyfile(fname_in, fname_out)
+    meta, data = ndfits.read(fname_in)
+    freqs_arr = meta['ref_cfreqs']  # Hz
+    com_x_fitted = px[0] * 1 / freqs_arr ** 2 + px[1]
+    com_y_fitted = py[0] * 1 / freqs_arr ** 2 + py[1]
 
-    hdul = fits.open(fname_in)
-    datasize = hdul[0].data.shape
+    datasize = data.shape
     new_data = np.zeros(datasize)
-    delta_x = hdul[0].header["CDELT1"]
-    delta_y = hdul[0].header["CDELT2"]
-    nx = hdul[0].header["NAXIS1"]
-    ny = hdul[0].header["NAXIS2"]
+    delta_x = meta['header']["CDELT1"]
+    delta_y = meta['header']["CDELT2"]
+    nx = meta['header']["NAXIS1"]
+    ny = meta['header']["NAXIS2"]
 
     # modify the data array move the center of the image to the fitted center
     for pol in range(datasize[0]):
         for chn in range(datasize[1]):
-            datatmp = hdul[0].data[pol, chn, :, :]
+            datatmp = data[pol, chn, :, :]
 
             shift_x_tmp, shift_y_tmp = com_x_fitted[chn], com_y_fitted[chn]
 
             datatmp = np.roll(datatmp, -int(np.round(shift_y_tmp / delta_y)), axis=0)
             datatmp = np.roll(datatmp, -int(np.round(shift_x_tmp / delta_x)), axis=1)
             new_data[pol, chn, :, :] = datatmp
-    hdul.close()
 
     new_header_entry = {
         "CRVAL1": 0,
@@ -247,7 +255,75 @@ def save_resample_align(fname_in, fname_out, px, py, com_x_fitted, com_y_fitted)
     success = ndfits.update(fname_out, new_data=new_data, new_header_entries=new_header_entry)
     if success:
         print("FITS file successfully updated.")
+        return fname_out
     else:
         print("Failed to update FITS file.")
+        return False
 
-    return True
+
+def apply_refra_record(fname_in, refra_record, fname_out=None, interp='linear', max_dt=600.):
+    """
+    Use refraction correction record(s) to update level 1.0 fits file and create level 1.5 fits file
+    Read in the level 1 fits file, apply the refraction correction record(s), do interpolation using nearby records, 
+    and save the result to a new level 1.5 fits file
+    
+    :param fname_in: Path to the input FITS file.
+    :type fname_in: str
+    :param fname_out: Name of the output level 1.5 FITS file.
+    :type fname_out: str
+    :param refra_record: refraction correction coefficients record
+    :type refra_record: a single dictionary or a list of dictionary
+    :param interp: method of interpolation passed to scipy.interpolate.interp1d. Default is 'linear'
+    :type interp: str
+    :param max_dt: maximum time difference to perform the interpolation in seconds
+    :type max_dt: float
+
+    :return fname_out: Name of the output level 1.5 FITS file.
+    :rtype: string 
+
+    """
+    from scipy import interpolate
+    if fname_out is None:
+        fname_out = './' + os.path.basename(fname_in).replace('lev1','lev1.5')
+    if isinstance(refra_record, dict):
+        if 'px0' in rec and 'px1' in rec and 'py0' in rec and 'py1' in rec:
+            px = [rec['px0'], rec['px1']]
+            py = [rec['py0'], rec['py1']]
+            fname_out = apply_refra_coeff(fname_in, px, py)
+            return fname_out
+        else:
+            print('The input refraction record does not have all the required keys. Abort.')
+    elif isinstance(refra_record, list):
+        rec_df = pd.DataFrame(refra_record)
+    elif isinstance(refra_record, pd.DataFrame):
+        ref_df = refra_record
+    else:
+        print('Input refra_record needs to be a dictionary, list or dictionaries, or a pandas.DataFrame. Abort.')
+        return False
+
+    # Now use the DataFrame record to do interpolation
+    meta, data = ndfits.read(fname_in)
+    time_in = Time(meta['header']['date-obs'])
+    times = Time(rec_df['Time']).mjd
+    dt_minute = np.min(np.abs(times-time_in)*24.*60.*60.)
+    if dt_minute < max_dt:
+        px0s = rec_df['px0']
+        px1s = rec_df['px1']
+        py0s = rec_df['py0']
+        py1s = rec_df['py1']
+        fx0 = interpolate.interp1d(times, px0s, kind=interp, fill_value="extrapolate")
+        fx1 = interpolate.interp1d(times, px1s, kind=interp, fill_value="extrapolate")
+        fy0 = interpolate.interp1d(times, py0s, kind=interp, fill_value="extrapolate")
+        fy1 = interpolate.interp1d(times, py1s, kind=interp, fill_value="extrapolate")
+        px0 = fx0(time_in)
+        px1 = fx1(time_in)
+        py0 = fy0(time_in)
+        py1 = fy1(time_in)
+        fname_out = apply_refra_coeff(fname_in, [px0, px1], [py0, py1])
+        return fname_out
+    else:
+        print('Time difference between the input fits file and the record is greater than the set maximum {0:.1f} s. Abort.'.format(max_dt))
+        return False
+
+
+
