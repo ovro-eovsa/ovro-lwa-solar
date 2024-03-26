@@ -434,7 +434,8 @@ def correct_primary_beam(msfile, imagename, pol='I', fast_vis=False):
     return
 
 
-def compress_fits_to_h5(fits_file, hdf5_file=None):
+def compress_fits_to_h5(fits_file, hdf5_file, 
+                        theoretical_beam_thresh=True, longest_baseline = 3000):
     """
     Compress an OVRO-LWA fits file to a h5 files
     
@@ -458,16 +459,27 @@ def compress_fits_to_h5(fits_file, hdf5_file=None):
         ch_vals.append(hdul[1].data[ch_val])
     ch_vals = np.array(ch_vals)
 
-    downsize_ratio = (hdul[1].data['bmin']*3600)/ 3 / hdul[0].header['CDELT2']
-    recover_data  = np.zeros_like(data)
+    
+    # to be more robust, if beam smaller than theoretical beam, use theoretical beam
+    freqs =  hdul[1].data['cfreqs']
+    thresh_arr = np.copy( hdul[1].data['bmin']*3600)
+    if theoretical_beam_thresh:
+        beam_size_thresh = (3e8 / freqs) / longest_baseline / np.pi * 180 * 3600 # arcsec
+        for i in range(len(thresh_arr)):
+            thresh_arr[i] = max(thresh_arr[i], beam_size_thresh[i])
+            if not(thresh_arr[i] >0):
+            # if beam not available, use theoretical beam
+                thresh_arr[i] = beam_size_thresh[i]
+
+    downsize_ratio = (thresh_arr)/ 3 / hdul[0].header['CDELT2']
+    
     with h5py.File(hdf5_file, 'w') as f:
         # Create a dataset for the FITS data
         for pol in range(0, data.shape[0]):
             for ch_idx in range(0, len(downsize_ratio)):
-                downsized_data = zoom(data[0,ch_idx,:,:], 1/downsize_ratio[ch_idx], order=5)
+                downsized_data = zoom(data[0,ch_idx,:,:], 1/downsize_ratio[ch_idx], order=3)
                 dset = f.create_dataset('FITS_pol'+str(pol)+'ch'+str(ch_idx).rjust(4,'0') , data=downsized_data,compression="gzip", compression_opts=9)
-                recover_data[0,ch_idx,:,:] = zoom(downsized_data, data.shape[-1]/downsized_data.shape[-1], order=5)
-            
+                
             # Add FITS header info as attributes
         dset = f.create_dataset('ch_vals', data=ch_vals)
         dset.attrs['arr_name'] = hdul[1].data.dtype.names
