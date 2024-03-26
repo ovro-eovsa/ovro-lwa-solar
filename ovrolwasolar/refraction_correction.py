@@ -192,7 +192,7 @@ def save_refraction_fit_param(fname_in, fname_out, px, py):
     return True
 
 
-def apply_refra_coeff(fname_in, px, py, fname_out=None):
+def apply_refra_coeff(fname_in, px, py, fname_out=None, verbose=False):
     """
     Apply refraction correction coefficients to level 1.0 fits file and create level 1.5 fits file
     Read in the fits file, apply the refraction correction coefficients by rolling the image pixels, update CRVALi and CRPIXi,
@@ -254,7 +254,8 @@ def apply_refra_coeff(fname_in, px, py, fname_out=None):
 
     success = ndfits.update(fname_out, new_data=new_data, new_header_entries=new_header_entry)
     if success:
-        print("FITS file successfully updated.")
+        if verbose:
+            print("FITS file successfully updated.")
         return fname_out
     else:
         print("Failed to update FITS file.")
@@ -283,43 +284,45 @@ def apply_refra_record(fname_in, refra_record, fname_out=None, interp='linear', 
 
     """
     from scipy import interpolate
+    import pandas as pd
     if fname_out is None:
         fname_out = './' + os.path.basename(fname_in).replace('lev1','lev1.5')
     if isinstance(refra_record, dict):
+        rec = refra_record
         if 'px0' in rec and 'px1' in rec and 'py0' in rec and 'py1' in rec:
             px = [rec['px0'], rec['px1']]
             py = [rec['py0'], rec['py1']]
-            fname_out = apply_refra_coeff(fname_in, px, py)
+            fname_out = apply_refra_coeff(fname_in, px, py, fname_out=fname_out)
             return fname_out
         else:
             print('The input refraction record does not have all the required keys. Abort.')
     elif isinstance(refra_record, list):
         rec_df = pd.DataFrame(refra_record)
     elif isinstance(refra_record, pd.DataFrame):
-        ref_df = refra_record
+        rec_df = refra_record
     else:
         print('Input refra_record needs to be a dictionary, list or dictionaries, or a pandas.DataFrame. Abort.')
         return False
 
     # Now use the DataFrame record to do interpolation
     meta, data = ndfits.read(fname_in)
-    time_in = Time(meta['header']['date-obs'])
-    times = Time(rec_df['Time']).mjd
+    time_in = Time(meta['header']['date-obs']).mjd
+    times = Time(list(rec_df['Time'].values)).mjd
     dt_minute = np.min(np.abs(times-time_in)*24.*60.*60.)
     if dt_minute < max_dt:
-        px0s = rec_df['px0']
-        px1s = rec_df['px1']
-        py0s = rec_df['py0']
-        py1s = rec_df['py1']
+        px0s = rec_df['px0'].values
+        px1s = rec_df['px1'].values
+        py0s = rec_df['py0'].values
+        py1s = rec_df['py1'].values
         fx0 = interpolate.interp1d(times, px0s, kind=interp, fill_value="extrapolate")
         fx1 = interpolate.interp1d(times, px1s, kind=interp, fill_value="extrapolate")
         fy0 = interpolate.interp1d(times, py0s, kind=interp, fill_value="extrapolate")
         fy1 = interpolate.interp1d(times, py1s, kind=interp, fill_value="extrapolate")
-        px0 = fx0(time_in)
-        px1 = fx1(time_in)
-        py0 = fy0(time_in)
-        py1 = fy1(time_in)
-        fname_out = apply_refra_coeff(fname_in, [px0, px1], [py0, py1])
+        px0 = fx0(time_in).item()
+        px1 = fx1(time_in).item()
+        py0 = fy0(time_in).item()
+        py1 = fy1(time_in).item()
+        fname_out = apply_refra_coeff(fname_in, [px0, px1], [py0, py1], fname_out=fname_out)
         return fname_out
     else:
         print('Time difference between the input fits file and the record is greater than the set maximum {0:.1f} s. Abort.'.format(max_dt))
