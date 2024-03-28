@@ -96,6 +96,7 @@ def slow_pipeline_default_plot(fname,
     gs = gridspec.GridSpec(3, 4, left=0.07, right=0.98, top=0.94, bottom=0.10, wspace=0.02, hspace=0.02)
 
     freqs_mhz = meta['ref_cfreqs']/1e6
+    axes = []
     for i in range(12):
         ax = fig.add_subplot(gs[i])
         freq_plt = freqs_plt[i]
@@ -148,7 +149,7 @@ def slow_pipeline_default_plot(fname,
         if i not in [0, 4, 8]:
             ax.set_ylabel('')
             ax.get_yaxis().set_ticks([])
-            
+        axes.append(ax)
 
         # add logo
         if add_logo:
@@ -172,4 +173,4 @@ def slow_pipeline_default_plot(fname,
         else:
             fig.suptitle('OVRO-LWA '+ str(meta['header']['date-obs'])[0:19] + ' [original]', fontsize=12)
 
-    return fig
+    return fig, axes
