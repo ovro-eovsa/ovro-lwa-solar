@@ -138,7 +138,7 @@ def refraction_fit_param(fname, thresh_freq=45e6, overbright=2.0e6, min_freqfrac
 
     #com_x_fitted = px[0] * 1 / freqs_arr ** 2 + px[1]
     #com_y_fitted = py[0] * 1 / freqs_arr ** 2 + py[1]
-    reftime = meta['header']['date-obs']
+    reftime = meta['header']['date-obs'][:19]
 
     if return_record:
         return {'Time':reftime, 'px0':px[0], 'px1':px[1], 'py0':py[0], 'py1':py[1]}
