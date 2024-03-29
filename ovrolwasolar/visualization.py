@@ -72,7 +72,7 @@ def inspection_bl_flag(ms_file):
 
 def slow_pipeline_default_plot(fname, 
             freqs_plt = [34.1, 38.7, 43.2, 47.8, 52.4, 57.0, 61.6, 66.2, 70.8, 75.4, 80.0, 84.5],
-            fov = 7998,add_logo=True, apply_refraction_corr=False):
+            fov = 7998, add_logo=True, apply_refraction_param=False):
     """
     Function to plot the default pipeline output
 
@@ -80,91 +80,97 @@ def slow_pipeline_default_plot(fname,
     :param freqs_plt: list : list of frequencies to plot
     :param fov: float : field of view (default -3999 to 3999 arcsec)
     :param add_logo: bool : add logo to the plot
-    :param apply_refraction_corr: bool : apply refraction correction to the plot
+    :param apply_refraction_param: bool : apply refraction correction to the plot. 
+                Will be ignored if REFCOR in the FITS header is True
     """
     # Load the data
 
     from suncasa.io import ndfits
     meta, rdata = ndfits.read(fname)
+    if 'rfrcor' in meta['header']:
+        rfrcor = meta['header']
+    else:
+        rfrcor = False
 
     fig = plt.figure(figsize=(8, 6.5))
     gs = gridspec.GridSpec(3, 4, left=0.07, right=0.98, top=0.94, bottom=0.10, wspace=0.02, hspace=0.02)
 
-    if True:
-                freqs_mhz = meta['ref_cfreqs']/1e6
-                for i in range(12):
-                    ax = fig.add_subplot(gs[i])
-                    freq_plt = freqs_plt[i]
-                    ax.set_facecolor('black')
-                    plt.setp(ax,xlabel='Solar X [arcsec]', ylabel='Solar Y [arcsec]')
-                    ax.text(0.02, 0.98, '{0:.0f} MHz'.format(freq_plt), color='w', ha='left', va='top', 
-                            fontsize=11, transform=ax.transAxes)                
-                    plt.setp(ax.yaxis.get_majorticklabels(),
-                              rotation=90, ha="center", va="center", rotation_mode="anchor")
+    freqs_mhz = meta['ref_cfreqs']/1e6
+    axes = []
+    for i in range(12):
+        ax = fig.add_subplot(gs[i])
+        freq_plt = freqs_plt[i]
+        ax.set_facecolor('black')
+        plt.setp(ax,xlabel='Solar X [arcsec]', ylabel='Solar Y [arcsec]')
+        ax.text(0.02, 0.98, '{0:.0f} MHz'.format(freq_plt), color='w', ha='left', va='top', 
+                fontsize=11, transform=ax.transAxes)                
+        plt.setp(ax.yaxis.get_majorticklabels(),
+                  rotation=90, ha="center", va="center", rotation_mode="anchor")
 
-                    if np.min(np.abs(freqs_mhz - freq_plt)) < 2.:
-                        bd = np.argmin(np.abs(freqs_mhz - freq_plt)) 
-                        bmaj,bmin,bpa = meta['bmaj'][bd],meta['bmin'][bd],meta['bpa'][bd]
-                        beam0 = Ellipse((-fov/2*0.75, -fov/2*0.75), bmaj*3600,
-                                bmin*3600, angle=(-(90-bpa)),  fc='None', lw=2, ec='w')
+        if np.min(np.abs(freqs_mhz - freq_plt)) < 2.:
+            bd = np.argmin(np.abs(freqs_mhz - freq_plt)) 
+            bmaj,bmin,bpa = meta['bmaj'][bd],meta['bmin'][bd],meta['bpa'][bd]
+            beam0 = Ellipse((-fov/2*0.75, -fov/2*0.75), bmaj*3600,
+                    bmin*3600, angle=(-(90-bpa)),  fc='None', lw=2, ec='w')
 
-                        rmap_plt_ = smap.Map(np.squeeze(rdata[0, bd, :, :]/1e6), meta['header'])
-                        rmap_plt = pmX.Sunmap(rmap_plt_)
+            rmap_plt_ = smap.Map(np.squeeze(rdata[0, bd, :, :]/1e6), meta['header'])
+            rmap_plt = pmX.Sunmap(rmap_plt_)
 
-                        if apply_refraction_corr:
-                            # check if keyword is present
-                            if 'refra_shift_x' in meta.keys():
-                                com_x_corr = meta["refra_shift_x"][bd]
-                                com_y_corr = meta["refra_shift_y"][bd]
-                                rmap_plt.xrange = rmap_plt.xrange - com_x_corr*u.arcsec
-                                rmap_plt.yrange = rmap_plt.yrange - com_y_corr*u.arcsec
-                                 
-                        vmaxplt = np.percentile(rdata[0, bd, :, :]/1e6, 99.9)
-                        if np.isnan(vmaxplt):
-                             vmaxplt = np.inf
-                        im = rmap_plt.imshow(axes=ax, cmap='hinodexrt', vmin=0, vmax=vmaxplt)
-                        # set background black
+            if apply_refraction_param and not rfrcor:
+                # check if keyword is present
+                if 'refra_shift_x' in meta.keys():
+                    com_x_corr = meta["refra_shift_x"][bd]
+                    com_y_corr = meta["refra_shift_y"][bd]
+                    rmap_plt.xrange = rmap_plt.xrange - com_x_corr*u.arcsec
+                    rmap_plt.yrange = rmap_plt.yrange - com_y_corr*u.arcsec
+                     
+            vmaxplt = np.percentile(rdata[0, bd, :, :]/1e6, 99.9)
+            if np.isnan(vmaxplt):
+                 vmaxplt = np.inf
+            im = rmap_plt.imshow(axes=ax, cmap='hinodexrt', vmin=0, vmax=vmaxplt)
+            # set background black
 
-                        rmap_plt.draw_limb(ls='-', color='w', alpha=0.8)
-                        ax.add_artist(beam0)
+            rmap_plt.draw_limb(ls='-', color='w', alpha=0.5)
+            ax.add_artist(beam0)
 
-                        freq_mhz = meta['ref_cfreqs'][bd]/1e6
-                        ax.text(0.99, 0.02, r"$T_B^{\rm max}=$"+ str(np.round(vmaxplt,2))+'MK', color='w', ha='right', va='bottom',
-                                    fontsize=10, transform=ax.transAxes)
-                        
-                    else:
-                        ax.text(0.5, 0.5, 'No Data', color='w', 
-                                ha='center', va='center', fontsize=18, transform=ax.transAxes)
-                    ax.set_xlim([-fov/2, fov/2])
-                    ax.set_ylim([-fov/2, fov/2])
-                    
-                    
+            freq_mhz = meta['ref_cfreqs'][bd]/1e6
+            ax.text(0.99, 0.02, r"$T_B^{\rm max}=$"+ str(np.round(vmaxplt,2))+'MK', color='w', ha='right', va='bottom',
+                        fontsize=10, transform=ax.transAxes)
+            
+        else:
+            ax.text(0.5, 0.5, 'No Data', color='w', 
+                    ha='center', va='center', fontsize=18, transform=ax.transAxes)
+        ax.set_xlim([-fov/2, fov/2])
+        ax.set_ylim([-fov/2, fov/2])
 
-                    if i not in [8,9,10,11]: 
-                        ax.set_xlabel('')
-                        ax.get_xaxis().set_ticks([])
-                    if i not in [0, 4, 8]:
-                        ax.set_ylabel('')
-                        ax.get_yaxis().set_ticks([])
-                        
+        if i not in [8,9,10,11]: 
+            ax.set_xlabel('')
+            ax.get_xaxis().set_ticks([])
+        if i not in [0, 4, 8]:
+            ax.set_ylabel('')
+            ax.get_yaxis().set_ticks([])
+        axes.append(ax)
 
-                    # add logo
-                    if add_logo:
-                        img1 = base64.b64decode(njit_logo_str)
-                        img1 = io.BytesIO(img1)
-                        img1 = mpimg.imread(img1, format='png')
-                        img2 = base64.b64decode(caltech_logo)
-                        img2 = io.BytesIO(img2)
-                        img2 = mpimg.imread(img2, format='png')
+        # add logo
+        if add_logo:
+            img1 = base64.b64decode(njit_logo_str)
+            img1 = io.BytesIO(img1)
+            img1 = mpimg.imread(img1, format='png')
+            img2 = base64.b64decode(caltech_logo)
+            img2 = io.BytesIO(img2)
+            img2 = mpimg.imread(img2, format='png')
 
-                        ax_logo1 = fig.add_axes([0.015, 0.027, 0.07, 0.07])
-                        ax_logo1.imshow(img1)
-                        ax_logo1.axis('off')
-                        ax_logo2 = fig.add_axes([0.005,-0.003, 0.09, 0.08])
-                        ax_logo2.imshow(img2)
-                        ax_logo2.axis('off')
+            ax_logo1 = fig.add_axes([0.015, 0.035, 0.07, 0.07])
+            ax_logo1.imshow(img1)
+            ax_logo1.axis('off')
+            ax_logo2 = fig.add_axes([0.005,-0.003, 0.09, 0.08])
+            ax_logo2.imshow(img2)
+            ax_logo2.axis('off')
 
-                    # add figure title
-                    fig.suptitle('OVRO-LWA '+ str(meta['header']['date-obs'])[0:22], fontsize=12)
+        # add figure title
+        if rfrcor:
+            fig.suptitle('OVRO-LWA '+ str(meta['header']['date-obs'])[0:19] + ' [refraction corrected]', fontsize=12)
+        else:
+            fig.suptitle('OVRO-LWA '+ str(meta['header']['date-obs'])[0:19] + ' [original]', fontsize=12)
 
-    return fig
+    return fig, axes
