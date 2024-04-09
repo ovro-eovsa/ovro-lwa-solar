@@ -15,6 +15,7 @@ from scipy.ndimage import center_of_mass
 from suncasa.io import ndfits
 from shutil import copyfile
 
+from skimage.morphology import convex_hull_image
 from scipy.ndimage import binary_erosion, binary_dilation, binary_closing
 import sunpy.map as smap
 
@@ -30,7 +31,8 @@ def thresh_func(freq):  # freq in Hz
     return 1.1e6 * (1 - 1.8e4 * freq ** (-0.6))
 
 
-def find_center_of_thresh(data_this, thresh, meta, index, min_size_50=1000):
+def find_center_of_thresh(data_this, thresh, meta, 
+                          index, min_size_50=1000,convex_hull=False):
     """
     Find the center of the thresholded image
     
@@ -54,6 +56,9 @@ def find_center_of_thresh(data_this, thresh, meta, index, min_size_50=1000):
     # dialate the image back to the original size
     threshed_img_4th = binary_dilation(threshed_img_3rd, iterations=3)
 
+    if convex_hull:
+        threshed_img_4th = convex_hull_image(threshed_img_4th)
+
     # find the centroid of threshed_img_1st, coords in x_arr, y_arr
     com = center_of_mass(threshed_img_4th)
     # convert to arcsec
@@ -73,7 +78,8 @@ def find_center_of_thresh(data_this, thresh, meta, index, min_size_50=1000):
             threshed_img_1st, threshed_img_2nd, threshed_img_3rd, threshed_img_4th]
 
 
-def refraction_fit_param(fname, thresh_freq=45e6, overbright=2.0e6, min_freqfrac=0.3, return_record=False):
+def refraction_fit_param(fname, thresh_freq=45e6, overbright=2.0e6, min_freqfrac=0.3,
+                          return_record=False, convex_hull=False, background_factor=1/8):
     """
     Take in a multi-frequency fits file and return the refraction fit parameters for:
     `
@@ -98,11 +104,11 @@ def refraction_fit_param(fname, thresh_freq=45e6, overbright=2.0e6, min_freqfrac
     peak_values_tmp = []
     area_collect_tmp = []
     for idx_this, idx_img in enumerate(range(0, freqs_arr.shape[0])):
-        thresh = thresh_func(freqs_arr[idx_img]) / 5
+        thresh = thresh_func(freqs_arr[idx_img]) * background_factor
         data_this = np.squeeze(data[0, idx_img, :, :])
         (com_x_arcsec, com_y_arcsec, com, x_arr_new, y_arr_new, threshed_img,
          threshed_img_1st, threshed_img_2nd, threshed_img_3rd, threshed_img_4th
-         ) = find_center_of_thresh(data_this, thresh, meta, idx_img)
+         ) = find_center_of_thresh(data_this, thresh, meta, idx_img, convex_hull=convex_hull)
         peak_values_tmp.append(np.nanmax(data_this))
         com_x_arr.append(com_x_arcsec)
         com_y_arr.append(com_y_arcsec)
