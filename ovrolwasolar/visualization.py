@@ -226,4 +226,8 @@ def slow_pipeline_default_plot(fname,
         else:
             fig.suptitle('OVRO-LWA '+ str(meta['header']['date-obs'])[0:19] + ' [original]', fontsize=12)
 
-    return fig, axes, ax_spec
+    if 'ax_spec' in locals():
+        return fig, axes, ax_spec
+    else:
+        return fig, axes
+
