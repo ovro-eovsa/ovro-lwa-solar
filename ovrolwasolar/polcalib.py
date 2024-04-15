@@ -975,7 +975,7 @@ def correct_crosshand_phase(msname,crosshand_phase=None, outms=None, inplace=Fal
         tb.close()
     return outms
 
-def check_image(imagename,msname, Ithresh=7, crosshand_phase=None,stokes_thresh=5, outimage='outfile.png'):
+def check_image(imagename,msname, Ithresh=7, crosshand_phase=None,stokes_thresh=5, outimage='outfile.png',dp_max=0.1,dp_min=-0.1):
     rms=[None]*4
     for j,stokes in enumerate(['I','Q','U','V']):
         imname=imagename+"-"+stokes+"-image.fits"
@@ -1015,9 +1015,9 @@ def check_image(imagename,msname, Ithresh=7, crosshand_phase=None,stokes_thresh=
     fig,ax=plt.subplots(nrows=2,ncols=2,sharex=True,sharey=True)
     ax=ax.flatten()
     ax[0].imshow(Idata,origin='lower')
-    ax[1].imshow(Qdata,origin='lower')
-    ax[2].imshow(Udata,origin='lower')
-    ax[3].imshow(Vdata,origin='lower')
+    ax[1].imshow(Qdata/Idata,origin='lower',vmax=dp_max,dmin=dp_min)
+    ax[2].imshow(Udata/Idata,origin='lower',vmax=dp_max,dmin=dp_min)
+    ax[3].imshow(Vdata/Idata,origin='lower',vmax=dp_max,dmin=dp_min)
     
     ax[0].set_xlim([xmin-30,xmax+30])
     ax[1].set_ylim([ymin-30,ymax+30])
