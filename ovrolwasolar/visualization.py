@@ -1,11 +1,14 @@
 import matplotlib.pyplot as plt
 import numpy as np
+import os, sys
 import matplotlib.colors as mcolors
+import matplotlib.dates as mdates
 from casatools import table, msmetadata
 from matplotlib import gridspec
 import sunpy.map as smap
 from astropy.coordinates import SkyCoord
 from astropy import units as u 
+from astropy.time import Time, TimeDelta
 from suncasa.utils import plot_mapX as pmX
 from matplotlib.patches import Ellipse
 import base64
@@ -72,7 +75,9 @@ def inspection_bl_flag(ms_file):
 
 def slow_pipeline_default_plot(fname, 
             freqs_plt = [34.1, 38.7, 43.2, 47.8, 52.4, 57.0, 61.6, 66.2, 70.8, 75.4, 80.0, 84.5],
-            fov = 7998, add_logo=True, apply_refraction_param=False):
+            fov = 7998, add_logo=True, apply_refraction_param=False, 
+            spec_fits=None, spec_dur=600., spec_cmap='viridis', spec_vmin=None, spec_vmax=None, spec_norm='log',
+            spec_frange=[30., 88.]):
     """
     Function to plot the default pipeline output
 
@@ -86,14 +91,58 @@ def slow_pipeline_default_plot(fname,
     # Load the data
 
     from suncasa.io import ndfits
+    from suncasa.dspec import dspec
     meta, rdata = ndfits.read(fname)
+    t_img = Time(meta['header']['date-obs'])
     if 'rfrcor' in meta['header']:
         rfrcor = meta['header']
     else:
         rfrcor = False
 
-    fig = plt.figure(figsize=(8, 6.5))
-    gs = gridspec.GridSpec(3, 4, left=0.07, right=0.98, top=0.94, bottom=0.10, wspace=0.02, hspace=0.02)
+    if spec_fits is None or not os.path.exists(spec_fits):
+        fig = plt.figure(figsize=(8, 6.5))
+        gs = gridspec.GridSpec(3, 4, left=0.07, right=0.98, top=0.94, bottom=0.10, wspace=0.02, hspace=0.02)
+    else:
+        fig = plt.figure(figsize=(8, 8.5))
+        gs_ = gridspec.GridSpec(2, 1, figure=fig, left=0.07, right=0.98, top=0.95, bottom=0.055, hspace=0.15, height_ratios=[4,1.2])
+        gs = gridspec.GridSpecFromSubplotSpec(3, 4, wspace=0.02, hspace=0.02, subplot_spec=gs_[0])
+        ax_spec = fig.add_subplot(gs_[1])
+        pos = ax_spec.get_position()
+        ax_spec.set_position([pos.x0, pos.y0, (pos.x1-pos.x0)*0.9, pos.y1-pos.y0])
+        cmap = plt.get_cmap(spec_cmap)
+        cmap.set_bad(cmap(0.0))
+        # set normalization
+        if spec_norm == 'linear':
+            norm = mcolors.Normalize(vmax=spec_vmax, vmin=spec_vmin)
+        if spec_norm == 'log':
+            norm = mcolors.LogNorm(vmax=spec_vmax, vmin=spec_vmin)
+        d = dspec.Dspec()
+        d.read(spec_fits, source='lwa')
+        bt = t_img - TimeDelta(spec_dur/2., format='sec') 
+        et = t_img + TimeDelta(spec_dur/2., format='sec') 
+        btidx = np.argmin(np.abs(d.time_axis - bt))
+        etidx = np.argmin(np.abs(d.time_axis - et))
+        bfidx = np.argmin(np.abs(d.freq_axis - spec_frange[0]*1e6))
+        efidx = np.argmin(np.abs(d.freq_axis - spec_frange[1]*1e6))
+        time_plt = d.time_axis[btidx:etidx].plot_date
+        freq_plt = d.freq_axis[bfidx:efidx]/1e6
+        spec_plt = d.data[0, 0, bfidx:efidx, btidx:etidx]
+        im = ax_spec.pcolormesh(time_plt, freq_plt, spec_plt,
+                   shading='nearest', norm=norm, cmap=cmap)
+        ax_spec.xaxis_date()
+        ax_spec.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
+        ax_spec.set_xlabel('Time UT')
+        ax_spec.set_ylabel('Frequency [MHz]')
+        #ax_spec.set_title('OVRO-LWA Spectrogram')
+        ax_spec.axvspan(t_img.plot_date, (t_img+TimeDelta(10., format='sec')).plot_date, fill=False, ec='w') 
+        # colorbar
+        pos = ax_spec.get_position()
+        cax = fig.add_axes([pos.x1 + 0.005, pos.y0, 0.01, pos.y1 - pos.y0])
+        cb = plt.colorbar(im, ax=ax_spec, cax=cax)
+        cb.set_label('Flux (sfu)')
+        plt.setp(ax_spec.yaxis.get_majorticklabels(),
+                  rotation=90, ha="center", va="center", rotation_mode="anchor")
+
 
     freqs_mhz = meta['ref_cfreqs']/1e6
     axes = []
@@ -160,10 +209,14 @@ def slow_pipeline_default_plot(fname,
             img2 = io.BytesIO(img2)
             img2 = mpimg.imread(img2, format='png')
 
-            ax_logo1 = fig.add_axes([0.015, 0.035, 0.07, 0.07])
+            if spec_fits is None or not os.path.exists(spec_fits):
+                ax_logo1 = fig.add_axes([0.015, 0.035, 0.07, 0.07])
+                ax_logo2 = fig.add_axes([0.005,-0.003, 0.09, 0.08])
+            else:
+                ax_logo1 = fig.add_axes([0.015,-0.005, 0.07, 0.07])
+                ax_logo2 = fig.add_axes([0.005,-0.030, 0.09, 0.08])
             ax_logo1.imshow(img1)
             ax_logo1.axis('off')
-            ax_logo2 = fig.add_axes([0.005,-0.003, 0.09, 0.08])
             ax_logo2.imshow(img2)
             ax_logo2.axis('off')
 
@@ -173,4 +226,8 @@ def slow_pipeline_default_plot(fname,
         else:
             fig.suptitle('OVRO-LWA '+ str(meta['header']['date-obs'])[0:19] + ' [original]', fontsize=12)
 
-    return fig, axes
+    if 'ax_spec' in locals():
+        return fig, axes, ax_spec
+    else:
+        return fig, axes
+

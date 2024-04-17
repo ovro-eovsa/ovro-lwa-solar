@@ -40,7 +40,7 @@ def find_center_of_thresh(data_this, thresh, meta,
     :param thresh: the threshold
     :param meta: the meta data of the fits file
     :param index: the index of the image contained in the fits file
-    :param min_size_50: The smallest allowable object size at 50 MHz. min_size will scale with 1/(nu[MHz]/50MHz)**2.
+    :param min_size_50: The smallest allowable object area, in pixels, at 50 MHz. min_size will scale with 1/(nu[MHz]/50MHz)**2.
     
     """
     meta_header=meta['header']
