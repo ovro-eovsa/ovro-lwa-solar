@@ -15,6 +15,7 @@ from scipy.ndimage import center_of_mass
 from suncasa.io import ndfits
 from shutil import copyfile
 
+from skimage.morphology import convex_hull_image
 from scipy.ndimage import binary_erosion, binary_dilation, binary_closing
 import sunpy.map as smap
 
@@ -30,7 +31,8 @@ def thresh_func(freq):  # freq in Hz
     return 1.1e6 * (1 - 1.8e4 * freq ** (-0.6))
 
 
-def find_center_of_thresh(data_this, thresh, meta, index, min_size_50=1000):
+def find_center_of_thresh(data_this, thresh, meta, 
+                          index, min_size_50=1000,convex_hull=False):
     """
     Find the center of the thresholded image
     
@@ -38,7 +40,7 @@ def find_center_of_thresh(data_this, thresh, meta, index, min_size_50=1000):
     :param thresh: the threshold
     :param meta: the meta data of the fits file
     :param index: the index of the image contained in the fits file
-    :param min_size_50: The smallest allowable object size at 50 MHz. min_size will scale with 1/(nu[MHz]/50MHz)**2.
+    :param min_size_50: The smallest allowable object area, in pixels, at 50 MHz. min_size will scale with 1/(nu[MHz]/50MHz)**2.
     
     """
     meta_header=meta['header']
@@ -53,6 +55,9 @@ def find_center_of_thresh(data_this, thresh, meta, index, min_size_50=1000):
 
     # dialate the image back to the original size
     threshed_img_4th = binary_dilation(threshed_img_3rd, iterations=3)
+
+    if convex_hull:
+        threshed_img_4th = convex_hull_image(threshed_img_4th)
 
     # find the centroid of threshed_img_1st, coords in x_arr, y_arr
     com = center_of_mass(threshed_img_4th)
@@ -73,7 +78,8 @@ def find_center_of_thresh(data_this, thresh, meta, index, min_size_50=1000):
             threshed_img_1st, threshed_img_2nd, threshed_img_3rd, threshed_img_4th]
 
 
-def refraction_fit_param(fname, thresh_freq=45e6, overbright=2.0e6, min_freqfrac=0.3, return_record=False):
+def refraction_fit_param(fname, thresh_freq=45e6, overbright=2.0e6, min_freqfrac=0.3,
+                          return_record=False, convex_hull=False, background_factor=1/8):
     """
     Take in a multi-frequency fits file and return the refraction fit parameters for:
     `
@@ -98,11 +104,11 @@ def refraction_fit_param(fname, thresh_freq=45e6, overbright=2.0e6, min_freqfrac
     peak_values_tmp = []
     area_collect_tmp = []
     for idx_this, idx_img in enumerate(range(0, freqs_arr.shape[0])):
-        thresh = thresh_func(freqs_arr[idx_img]) / 5
+        thresh = thresh_func(freqs_arr[idx_img]) * background_factor
         data_this = np.squeeze(data[0, idx_img, :, :])
         (com_x_arcsec, com_y_arcsec, com, x_arr_new, y_arr_new, threshed_img,
          threshed_img_1st, threshed_img_2nd, threshed_img_3rd, threshed_img_4th
-         ) = find_center_of_thresh(data_this, thresh, meta, idx_img)
+         ) = find_center_of_thresh(data_this, thresh, meta, idx_img, convex_hull=convex_hull)
         peak_values_tmp.append(np.nanmax(data_this))
         com_x_arr.append(com_x_arcsec)
         com_y_arr.append(com_y_arcsec)
@@ -127,11 +133,17 @@ def refraction_fit_param(fname, thresh_freq=45e6, overbright=2.0e6, min_freqfrac
 
     # peak_values_for_fit_v1 = peak_values_for_fit[idx_not_too_bright]
 
+    # remove nan from com_x com_y
+    idx_nan = np.where(np.isnan(com_x_for_fit_v1) | np.isnan(com_y_for_fit_v1))
+    freq_for_fit_v2 = np.delete(freq_for_fit_v1, idx_nan)
+    com_x_for_fit_v2 = np.delete(com_x_for_fit_v1, idx_nan)
+    com_y_for_fit_v2 = np.delete(com_y_for_fit_v1, idx_nan)
+
     # linear fit
-    if freq_for_fit_v1.size > max(int(len(idx_for_gt_freqthresh[0]) * min_freqfrac), 5):
+    if freq_for_fit_v2.size > max(int(len(idx_for_gt_freqthresh[0]) * min_freqfrac), 5):
     #if freq_for_fit_v1.size > 5:
-        px = np.polyfit(1 / freq_for_fit_v1 ** 2, com_x_for_fit_v1, 1)
-        py = np.polyfit(1 / freq_for_fit_v1 ** 2, com_y_for_fit_v1, 1)
+        px = np.polyfit(1 / freq_for_fit_v2 ** 2, com_x_for_fit_v2, 1)
+        py = np.polyfit(1 / freq_for_fit_v2 ** 2, com_y_for_fit_v2, 1)
     else:
         px = [np.nan, np.nan]
         py = [np.nan, np.nan]
@@ -221,6 +233,8 @@ def apply_refra_coeff(fname_in, px, py, fname_out=None, verbose=False):
 
     datasize = data.shape
     new_data = np.zeros(datasize)
+    old_crval1 = meta['header']["CRVAL1"]
+    old_crval2 = meta['header']["CRVAL2"]
     delta_x = meta['header']["CDELT1"]
     delta_y = meta['header']["CDELT2"]
     nx = meta['header']["NAXIS1"]
@@ -230,9 +244,7 @@ def apply_refra_coeff(fname_in, px, py, fname_out=None, verbose=False):
     for pol in range(datasize[0]):
         for chn in range(datasize[1]):
             datatmp = data[pol, chn, :, :]
-
-            shift_x_tmp, shift_y_tmp = com_x_fitted[chn], com_y_fitted[chn]
-
+            shift_x_tmp, shift_y_tmp = com_x_fitted[chn]-old_crval1, com_y_fitted[chn]-old_crval2
             datatmp = np.roll(datatmp, -int(np.round(shift_y_tmp / delta_y)), axis=0)
             datatmp = np.roll(datatmp, -int(np.round(shift_x_tmp / delta_x)), axis=1)
             new_data[pol, chn, :, :] = datatmp
