@@ -79,8 +79,7 @@ def find_center_of_thresh(data_this, thresh, meta,
 
 
 def refraction_fit_param(fname, thresh_freq=45e6, overbright=2.0e6, min_freqfrac=0.3,
-                          return_record=False, convex_hull=False, background_factor=1/8,
-                          max_separation=3600):
+                          return_record=False, convex_hull=False, background_factor=1/8):
     """
     Take in a multi-frequency fits file and return the refraction fit parameters for:
     `
