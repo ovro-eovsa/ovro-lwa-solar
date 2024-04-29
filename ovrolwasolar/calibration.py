@@ -238,7 +238,10 @@ def do_bandpass_correction(solar_ms, calib_ms=None, bcal=None, caltable_folder='
     IMPORTANT: For slow visibility, if bcal is provided, then calib_ms need not be provided. But if fast_vis is set to True,
                then calib_ms must be a slow visibility dataset.
     '''
-    
+    if (not calib_ms) and (not bcal):
+        logging.error('Neither calib_ms nor bcal provided. Need to provide calibrations to continue. Abort..')
+        return -1
+        
     solar_ms1 = solar_ms[:-3] + "_calibrated.ms"
     if os.path.isdir(solar_ms1):
         logging.debug('Found existing calibrated dataset on disk.')
@@ -251,27 +254,46 @@ def do_bandpass_correction(solar_ms, calib_ms=None, bcal=None, caltable_folder='
     if calib_ms:
         if os.path.exists(calib_ms):
             if not bcal:
-                bcal = caltable_folder + "/" + os.path.basename(calib_ms).replace('.ms', '.bcal')
+                bcal = [caltable_folder + "/" + os.path.basename(calib_ms).replace('.ms', '.bcal')]
             # check if bandpass table already exists
-            if overwrite or not os.path.isdir(os.path.join(caltable_folder,os.path.basename(bcal))):
+            if not isinstance(bcal, list):
+                bcal=[bcal]
+            if overwrite or not os.path.isdir(os.path.join(caltable_folder,os.path.basename(bcal[0]))):
                 logging.debug('Flagging antennas before calibration.')
                 flagging.flag_bad_ants(calib_ms)
-                bcal = gen_calibration(calib_ms, logging_level=logging_level, caltable_fold=caltable_folder)
+                final_bcal = [gen_calibration(calib_ms, logging_level=logging_level, caltable_fold=caltable_folder)]
                 logging.debug('Bandpass calibration table generated using ' + calib_ms)
             else:
                 logging.debug('I found an existing bandpass table. Will reuse it to calibrate.')
-    else:
-        if not os.path.isdir(bcal) and not os.path.isdir(os.path.join(caltable_folder,os.path.basename(bcal))):
-            print('Neither calib_ms nor bcal exists. Need to provide calibrations to continue. Abort..')
-            return -1
-            logging.error('Neither calib_ms nor bcal exists. Need to provide calibrations to continue. Abort..')
-
+    
+    if not isinstance(bcal, list):
+        bcal=[bcal]
+    
+    final_bcal=[]
+    for cal in bcal:
+        if os.path.isdir(cal):
+            final_bcal.append(cal)   
+        elif os.path.isdir(os.path.join(caltable_folder,os.path.basename(cal))):
+            final_bcal.append(os.path.join(caltable_folder,os.path.basename(cal))) 
+    
+    if len(final_bcal)==0:
+        print('Neither calib_ms nor bcal exists. Need to provide calibrations to continue. Abort..')
+        logging.error('Neither calib_ms nor bcal exists. Need to provide calibrations to continue. Abort..')
+        return -1
+    bcal=final_bcal
     # correct_ms_bug(solar_ms)
     
     doantflag=True
-    if bcal and fast_vis==True:
-        bcal=make_fast_caltb_from_slow(calib_ms, solar_ms, os.path.join(caltable_folder,os.path.basename(bcal)))
+    print (fast_vis)
+    print (bcal)
+    if fast_vis:
+        temp=[]
+        for cal in bcal:
+            temp.append(make_fast_caltb_from_slow(calib_ms, solar_ms, cal))
         doantflag=False  ### The antenna flag calculation will be wrong for the fast ms.
+        bcal=temp
+    
+    print (bcal)
     apply_calibration(solar_ms, gaintable=bcal, doantflag=doantflag, doflag=True, do_solar_imaging=False)
     split(vis=solar_ms, outputvis=solar_ms[:-3] + "_calibrated.ms", width=int(freqbin))
     logging.debug('Splitted the input solar MS into a file named ' + solar_ms[:-3] + "_calibrated.ms")
