@@ -147,8 +147,11 @@ def image_ms(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagename='sun
     if os.path.isfile(imagename + "-image.fits"):
         if not overwrite:
             return None, imagename + "-image.helio.fits"
-            
-    utils.make_wsclean_compatible(solar_ms)
+    
+    if fast_vis:
+        utils.make_wsclean_compatible(solar_ms)
+        utils.swap_fastms_pols(solar_ms)
+        utils.correct_fastms_amplitude_scale(solar_ms)
 
     logging.info('==========Working on a new solar ms file {0:s}============='.format(solar_ms))
     time_begin=timeit.default_timer()
@@ -278,6 +281,12 @@ def image_ms_quick(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagenam
             return None, imagename + "-image.helio.fits"
 
     logging.debug('==========Working on a new solar ms file {0:s}============='.format(solar_ms))
+    
+    if fast_vis:
+        utils.make_wsclean_compatible(solar_ms)
+        utils.swap_fastms_pols(solar_ms)
+        utils.correct_fastms_amplitude_scale(solar_ms)
+        
     time_begin=timeit.default_timer()
     time1=timeit.default_timer()
     solar_ms = calibration.do_bandpass_correction(solar_ms, calib_ms=calib_ms, bcal=bcal, \
