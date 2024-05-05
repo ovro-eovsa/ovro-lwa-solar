@@ -119,6 +119,7 @@ def run_wsclean(msfile, imagename, size:int =4096, scale='2arcmin', fast_vis=Fal
             default_kwargs['field']='all'
         else:
             default_kwargs["intervals_out"] =str(len(field.split(',')))
+            default_kwargs['field']='all' # magic, has to be 'all', otherwise only 1st time slot has image
     else:
         default_kwargs['intervals_out']='1'
         default_kwargs['field']='all'

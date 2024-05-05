@@ -104,7 +104,7 @@ def image_ms(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagename='sun
              full_dd_selfcal_rounds=[1, 1], partial_dd_selfcal_rounds=[0, 1], do_final_imaging=True, pol='I', 
              solint_full_DI_selfcal=14400, solint_partial_DI_selfcal=3600, solint_full_DD_selfcal=1800, solint_partial_DD_selfcal=600,
              fast_vis=False, fast_vis_image_model_subtraction=False, delete=True,
-             refant='202', overwrite=False, do_fluxscaling=False):
+             refant='202', overwrite=False, do_fluxscaling=False, apply_primary_beam=True):
 
     """
     Pipeline to calibrate and imaging a solar visibility
@@ -214,8 +214,8 @@ def image_ms(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagename='sun
             deconvolve.run_wsclean(outms, imagename=imagename, auto_mask=5, minuv_l='0', predict=False,
                                    size=imsize , scale=cell, pol=pol, fast_vis=fast_vis, 
                                    field=','.join([str(i) for i in range(num_fields)]))
-        
-        utils.correct_primary_beam(outms, imagename, pol=pol, fast_vis=fast_vis)
+        if apply_primary_beam:
+            utils.correct_primary_beam(outms, imagename, pol=pol, fast_vis=fast_vis)
         if not fast_vis:
             image_list=[]
             for n,pola in enumerate(['I','Q','U','V','XX','YY']):
