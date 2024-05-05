@@ -83,7 +83,8 @@ def run_wsclean(msfile, imagename, size:int =4096, scale='2arcmin', fast_vis=Fal
         'intervals_out':'1',        # number of output images
         'no-reorder':'',            # don't reorder the channels
         'beam_fitting_size':'2',    # beam fitting size
-        'horizon_mask':"2deg"    # horizon mask distance (to mask horizon direction RFI)
+        'horizon_mask':"2deg",      # horizon mask distance (to mask horizon direction RFI)
+        'quiet':'',                 # stop printing to stdout, save time
     }
 
     if auto_pix_fov:

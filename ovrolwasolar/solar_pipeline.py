@@ -227,8 +227,7 @@ def image_ms(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagename='sun
             helio_image = utils.convert_to_heliocentric_coords(outms, image_list)
         else:
             num_fields=utils.get_total_fields(outms)
-            image_names=utils.rename_images(imagename, pol, \
-                                intervals_out= num_fields)
+            image_names=utils.collect_fast_fits(imagename, pol)
             
             image_list=[]
             for name in image_names:
@@ -353,7 +352,7 @@ def solar_pipeline(time_duration, calib_time_duration, freqstr, filepath, time_i
                    observation_integration=8,
                    calib_ms=None, bcal=None, selfcal=False, imagename='sun_only',
                    imsize=512, cell='1arcmin', logfile='analysis.log', logging_level='info',
-                   caltable_folder='caltables',pol='I'):
+                   caltable_folder='caltables',pol='I',refant='202'):
     if logging_level == 'info' or logging_level == 'INFO':
         logging.basicConfig(filename=logfile, level=logging.INFO)
     elif logging_level == 'warning' or logging_level == 'WARNING':

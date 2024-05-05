@@ -198,6 +198,7 @@ def get_selfcal_time_to_apply(msname, caltables):
 def get_keyword(caltable, keyword, return_status=False):
     tb = table()
     success = False
+    val = None # in case of failure [try]
     try:
         tb.open(caltable)
         val = tb.getkeyword(keyword)
@@ -307,49 +308,19 @@ def get_total_fields(msname):
     msmd.done()
     return num_field
     
-def rename_images(imagename,pol='I',img_prefix=None, intervals_out=1,channels_out=1):
+def collect_fast_fits(imagename,pol='I'):
     '''
-    This will create the list of [present name, future name]
-    
-    :param imagename: Imagename supplied to WSClean call.
-    :type imagename: str
-    :param pol: Pol supplied to WSClean. Should be ',' separated list. 
-                Parsing is strict. Default is I
-    :type pol: str
-    :param img_prefix: Image prefix of the renamed images. The times and freq will 
-                        be appened after this, separated by '_'. Default is None.
-                        If None, img_prefix is set to imagename
-    :type img_prefix: str
-    :param intervals_out: Intervals_out passed to WSClean. If 1, time_str is not
-                            appended to img_prefix. Default: 1
-    :type intervals_out: int
-    :param channels_out: Channels_out passed to WSClean. If 1, channels_out is not
-                        appended to img_prefix. Default :1
-    :return: list of the renamed images. Blank list is returned if not present
-    :rtype: list
+    collect the fits file names of fast img
+
+    :param imagename: the image name from previous step of imaging, (e.g., 'sun_only')
+    :param pol: the polarization of the image, default is 'I'
     '''
     pols=pol.split(',')
-    num_pols=len(pols)
-    
     names=[]
     for pol in pols:
-        pol_prefix="-"+pol if num_pols!=1 else ''
-        
+        pol_prefix="-"+pol if len(pols)!=1 else ''
         images=glob.glob(imagename+"-*"+pol_prefix+"-image.fits")
-        
-        for img in images:
-            head=fits.getheader(img)
-            obstime=head['DATE-OBS']
-            obsfreq=round(head['CRVAL3']*1e-6,2) ### MHz
-            time_str=obstime.split('T')[1].replace(':','')
-            final_imagename=imagename if img_prefix is None else img_prefix
-            if intervals_out!=1:
-                final_imagename+='_'+time_str
-            if channels_out!=1:
-                final_imagename+='_'+str(obsfreq)+"MHz"
-            final_imagename+=pol_prefix+"-image.fits"
-            os.system("mv "+img+" "+final_imagename)
-            names.append(final_imagename)
+        names.extend(images)
     return names
     
 def check_corrected_data_present(msname):
@@ -433,7 +404,7 @@ def correct_primary_beam(msfile, imagename, pol='I', fast_vis=False):
                     hdu.flush()
                     hdu.close()
     else:
-        image_names=get_fast_vis_imagenames(msfile,imagename,pol)
+        image_names=collect_fast_fits(imagename,pol)
         for name in image_names:
             if os.path.isfile(name[1]):
                 if pol=='I':
