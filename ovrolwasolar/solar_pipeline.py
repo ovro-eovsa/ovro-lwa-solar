@@ -104,7 +104,7 @@ def image_ms(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagename='sun
              full_dd_selfcal_rounds=[1, 1], partial_dd_selfcal_rounds=[0, 1], do_final_imaging=True, pol='I', 
              solint_full_DI_selfcal=14400, solint_partial_DI_selfcal=3600, solint_full_DD_selfcal=1800, solint_partial_DD_selfcal=600,
              fast_vis=False, fast_vis_image_model_subtraction=False, delete=True,
-             refant='202', overwrite=False, do_fluxscaling=False):
+             refant='202', overwrite=False, do_fluxscaling=False, apply_primary_beam=True):
 
     """
     Pipeline to calibrate and imaging a solar visibility
@@ -147,8 +147,11 @@ def image_ms(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagename='sun
     if os.path.isfile(imagename + "-image.fits"):
         if not overwrite:
             return None, imagename + "-image.helio.fits"
-            
-    utils.make_wsclean_compatible(solar_ms)
+    
+    if fast_vis:
+        utils.make_wsclean_compatible(solar_ms)
+        utils.swap_fastms_pols(solar_ms)
+        utils.correct_fastms_amplitude_scale(solar_ms)
 
     logging.info('==========Working on a new solar ms file {0:s}============='.format(solar_ms))
     time_begin=timeit.default_timer()
@@ -214,8 +217,8 @@ def image_ms(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagename='sun
             deconvolve.run_wsclean(outms, imagename=imagename, auto_mask=5, minuv_l='0', predict=False,
                                    size=imsize , scale=cell, pol=pol, fast_vis=fast_vis, 
                                    field=','.join([str(i) for i in range(num_fields)]))
-        
-        utils.correct_primary_beam(outms, imagename, pol=pol, fast_vis=fast_vis)
+        if apply_primary_beam:
+            utils.correct_primary_beam(outms, imagename, pol=pol, fast_vis=fast_vis)
         if not fast_vis:
             image_list=[]
             for n,pola in enumerate(['I','Q','U','V','XX','YY']):
@@ -227,8 +230,7 @@ def image_ms(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagename='sun
             helio_image = utils.convert_to_heliocentric_coords(outms, image_list)
         else:
             num_fields=utils.get_total_fields(outms)
-            image_names=utils.rename_images(imagename, pol, \
-                                intervals_out= num_fields)
+            image_names=utils.collect_fast_fits(imagename, pol)
             
             image_list=[]
             for name in image_names:
@@ -253,7 +255,7 @@ def image_ms_quick(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagenam
              caltable_folder='caltables/', num_phase_cal=1, num_apcal=1, freqbin=4,
              do_fluxscaling=False, do_final_imaging=True, pol='I', delete=True,
              refant='202', niter0=600, niter_incr=200, overwrite=False,
-             auto_pix_fov=False):
+             auto_pix_fov=False, fast_vis=False, fast_vis_image_model_subtraction=False):
     """
     Pipeline to calibrate and imaging a solar visibility. 
     This is the version that optimizes the speed with a somewhat reduced image dynamic range.
@@ -278,9 +280,16 @@ def image_ms_quick(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagenam
             return None, imagename + "-image.helio.fits"
 
     logging.debug('==========Working on a new solar ms file {0:s}============='.format(solar_ms))
+    
+    if fast_vis:
+        utils.make_wsclean_compatible(solar_ms)
+        utils.swap_fastms_pols(solar_ms)
+        utils.correct_fastms_amplitude_scale(solar_ms)
+        
     time_begin=timeit.default_timer()
     time1=timeit.default_timer()
-    solar_ms = calibration.do_bandpass_correction(solar_ms, calib_ms=calib_ms, bcal=bcal, caltable_folder=caltable_folder, freqbin=freqbin)
+    solar_ms = calibration.do_bandpass_correction(solar_ms, calib_ms=calib_ms, bcal=bcal, \
+                        caltable_folder=caltable_folder, freqbin=freqbin, fast_vis=fast_vis)
     time2=timeit.default_timer()
     logging.debug('Time taken to do the bandpass correction is: {0:.1f} s'.format(time2-time1)) 
     time1=time2
@@ -311,7 +320,8 @@ def image_ms_quick(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagenam
     # Do non-solar source removal
     time1=time2
     print('Removing non-solar sources in the sky')
-    outms = source_subtraction.remove_nonsolar_sources(outms_di, remove_strong_sources_only=True, niter=1000, pol=pol)
+    outms = source_subtraction.remove_nonsolar_sources(outms_di, remove_strong_sources_only=True, niter=1000, \
+                                pol=pol, fast_vis= fast_vis, fast_vis_image_model_subtraction=fast_vis_image_model_subtraction)
     time2=timeit.default_timer()
     logging.debug('Time taken for non-solar source removal is {0:.1f} s'.format(time2-time1))
     logging.debug('The source subtracted MS is ' + outms)
@@ -353,7 +363,7 @@ def solar_pipeline(time_duration, calib_time_duration, freqstr, filepath, time_i
                    observation_integration=8,
                    calib_ms=None, bcal=None, selfcal=False, imagename='sun_only',
                    imsize=512, cell='1arcmin', logfile='analysis.log', logging_level='info',
-                   caltable_folder='caltables',pol='I'):
+                   caltable_folder='caltables',pol='I',refant='202'):
     if logging_level == 'info' or logging_level == 'INFO':
         logging.basicConfig(filename=logfile, level=logging.INFO)
     elif logging_level == 'warning' or logging_level == 'WARNING':
