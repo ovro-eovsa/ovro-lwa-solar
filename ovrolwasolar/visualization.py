@@ -8,6 +8,7 @@ from matplotlib import gridspec
 import sunpy.map as smap
 from astropy.coordinates import SkyCoord
 from astropy import units as u 
+from astropy.io import fits
 from astropy.time import Time, TimeDelta
 from suncasa.utils import plot_mapX as pmX
 from matplotlib.patches import Ellipse
@@ -231,3 +232,43 @@ def slow_pipeline_default_plot(fname,
     else:
         return fig, axes
 
+
+def make_allsky_image_plots(allsky_fitsfiles, vmaxs=[16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5], 
+        vmins=[-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1], cmap='viridis'):
+    """
+    Provide a list of allsky fits files generated from the pipeline, make a 12-panel plot 
+    """
+    fig = plt.figure(figsize=(8, 6.3))
+    gs = gridspec.GridSpec(3, 4, left=0.02, right=0.98, top=0.94, bottom=0.02, wspace=0.02, hspace=0.02)
+    freqs_mhz = []
+    axes = []
+    bands=['32MHz', '36MHz', '41MHz', '46MHz', '50MHz', '55MHz', '59MHz', '64MHz', '69MHz', '73MHz', '78MHz', '82MHz']
+    plotted_fits=[]
+    for i, band in enumerate(bands):
+        ax = fig.add_subplot(gs[i])
+        ax.set_facecolor('black')
+        found_band = False
+        for f in allsky_fitsfiles:
+            if band in f:
+                hdu = fits.open(f)
+                ax.imshow(hdu[0].data[0,0], origin='lower', vmin=vmins[i], vmax=vmaxs[i], cmap=cmap)
+                ax.get_xaxis().set_visible(False)
+                ax.get_yaxis().set_visible(False)
+                ax.get_xaxis().set_ticks([])
+                ax.get_yaxis().set_ticks([])
+                ax.text(0.02, 0.98, '{0:s} MHz'.format(band[:2]), color='w', ha='left', va='top', 
+                    fontsize=11, transform=ax.transAxes)                
+                plotted_fits.append(f)
+                found_band = True
+
+        if not found_band:
+            ax.text(0.5, 0.5, 'No Data', color='w', 
+                ha='center', va='center', fontsize=18, transform=ax.transAxes)
+
+    if len(plotted_fits) > 1:
+        timestr0 = os.path.basename(plotted_fits[0]).split('.')[2]
+        timestr = timestr0[:13]+':'+timestr0[13:15]+':'+timestr0[15:17]
+        fig.suptitle('OVRO-LWA All Sky Images '+ timestr, fontsize=12)
+        return fig, axes
+    else:
+        return -1
