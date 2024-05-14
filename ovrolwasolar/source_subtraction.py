@@ -212,7 +212,7 @@ def remove_nonsolar_sources(msfile, imsize=4096, cell='2arcmin', minuv=0,
         tmpimg = skyimage
 
     tmpms = msfile[:-3] + "_nonsolar_subtracted.ms"
-    
+    present=False
     if fast_vis and not fast_vis_image_model_subtraction:
         md = model_generation(vis=msfile, separate_pol=True) 	    
         modelcl, ft_needed = md.gen_model_cl()
@@ -222,7 +222,8 @@ def remove_nonsolar_sources(msfile, imsize=4096, cell='2arcmin', minuv=0,
             ft(tmpms, complist=modelcl, usescratch=True)
     
     elif not fast_vis or (fast_vis and fast_vis_image_model_subtraction):
-        if os.path.isfile(tmpimg):
+        present=utils.check_for_file_presence(tmpimg,pol=pol)
+        if present:
             deconvolve.run_wsclean(msfile=msfile, imagename=tmpimg, size=imsize,
                             scale=cell, minuv_l=minuv, predict=False,
                             auto_mask=5, pol=pol, niter=niter, auto_pix_fov=auto_pix_fov)
@@ -233,9 +234,11 @@ def remove_nonsolar_sources(msfile, imsize=4096, cell='2arcmin', minuv=0,
     uvsub(tmpms)
     split(vis=tmpms, outputvis=outms, datacolumn='corrected')
     # remove temporary image and ms
-    if delete_tmp_files:
+    if delete_tmp_files and not present:
         os.system("rm -rf " + tmpms)
         os.system("rm -rf " + tmpimg)
+    elif present:
+        os.system("rm -rf " + tmpms)
     return outms
     
     
