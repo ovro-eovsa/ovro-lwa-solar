@@ -187,7 +187,8 @@ def gen_nonsolar_source_model(msfile, imagename="allsky", outimage=None, sol_are
     
 def remove_nonsolar_sources(msfile, imsize=4096, cell='2arcmin', minuv=0,
                             remove_strong_sources_only=True, pol='I', niter=50000, fast_vis=False, 
-                            fast_vis_image_model_subtraction=False, delete_tmp_files=True, auto_pix_fov=False):
+                            fast_vis_image_model_subtraction=False, delete_tmp_files=True, auto_pix_fov=False
+                            skyimage=None):
     """
     Wrapping for removing the nonsolar sources from the solar measurement set
 
@@ -204,25 +205,30 @@ def remove_nonsolar_sources(msfile, imsize=4096, cell='2arcmin', minuv=0,
     
     if fast_vis:
         remove_strong_sources_only=False
-        
-    tmpimg = msfile[:-3] + "_allsky"
+    
+    if skyimage is None:
+        tmpimg = msfile[:-3] + "_allsky"
+    else:
+        tmpimg = skyimage
 
     tmpms = msfile[:-3] + "_nonsolar_subtracted.ms"
-    if not fast_vis or (fast_vis and fast_vis_image_model_subtraction):
-        deconvolve.run_wsclean(msfile=msfile, imagename=tmpimg, size=imsize,
-                            scale=cell, minuv_l=minuv, predict=False,
-                            auto_mask=5, pol=pol, niter=niter, auto_pix_fov=auto_pix_fov)
-        image_nosun = gen_nonsolar_source_model(msfile, imagename=tmpimg,
-                                                remove_strong_sources_only=remove_strong_sources_only, pol=pol)
-        deconvolve.predict_model(msfile, outms=tmpms, image=image_nosun, pol=pol)
-        
-    elif fast_vis and not fast_vis_image_model_subtraction:
+    
+    if fast_vis and not fast_vis_image_model_subtraction:
         md = model_generation(vis=msfile, separate_pol=True) 	    
         modelcl, ft_needed = md.gen_model_cl()
         if ft_needed:
             os.system("cp -r " + msfile + " " + tmpms)
             clearcal(tmpms, addmodel=True)
             ft(tmpms, complist=modelcl, usescratch=True)
+    
+    elif not fast_vis or (fast_vis and fast_vis_image_model_subtraction):
+        if os.path.isfile(tmpimg):
+            deconvolve.run_wsclean(msfile=msfile, imagename=tmpimg, size=imsize,
+                            scale=cell, minuv_l=minuv, predict=False,
+                            auto_mask=5, pol=pol, niter=niter, auto_pix_fov=auto_pix_fov)
+        image_nosun = gen_nonsolar_source_model(msfile, imagename=tmpimg,
+                                                remove_strong_sources_only=remove_strong_sources_only, pol=pol)
+        deconvolve.predict_model(msfile, outms=tmpms, image=image_nosun, pol=pol)
             
     uvsub(tmpms)
     split(vis=tmpms, outputvis=outms, datacolumn='corrected')
