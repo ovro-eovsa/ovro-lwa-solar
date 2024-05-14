@@ -187,8 +187,9 @@ def gen_nonsolar_source_model(msfile, imagename="allsky", outimage=None, sol_are
     
 def remove_nonsolar_sources(msfile, imsize=4096, cell='2arcmin', minuv=0,
                             remove_strong_sources_only=True, pol='I', niter=50000, fast_vis=False, 
-                            fast_vis_image_model_subtraction=False, delete_tmp_files=True, auto_pix_fov=False
-                            skyimage=None):
+                            fast_vis_image_model_subtraction=False, delete_tmp_files=True, auto_pix_fov=False,
+                            delete_allsky=True, skyimage=None):
+
     """
     Wrapping for removing the nonsolar sources from the solar measurement set
 
@@ -234,11 +235,13 @@ def remove_nonsolar_sources(msfile, imsize=4096, cell='2arcmin', minuv=0,
     uvsub(tmpms)
     split(vis=tmpms, outputvis=outms, datacolumn='corrected')
     # remove temporary image and ms
-    if delete_tmp_files and not present:
+    
+    if delete_tmp_files:
         os.system("rm -rf " + tmpms)
-        os.system("rm -rf " + tmpimg)
-    elif present:
-        os.system("rm -rf " + tmpms)
+        
+        if delete_all_sky and not present:
+            os.system("rm -rf " + tmpimg+"*")
+    
     return outms
     
     
