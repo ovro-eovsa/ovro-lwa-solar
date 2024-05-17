@@ -124,6 +124,13 @@ def gen_nonsolar_source_model(msfile, imagename="allsky", outimage=None, sol_are
     :param verbose: Toggle to print out more information
     :return: FITS image with non-solar sources removed
     """
+    if not outimage:
+        outimage = imagename + "_no_sun"
+    present=utils.check_for_file_presence(outimage,pol=pol, suffix='model')
+    if present:
+        logging.debug("I will use existing model for source subtraction ",outimage)
+        return outimage
+    
     imagename1=imagename 
     if pol=='I':
         imagename=imagename+"-image.fits"
@@ -178,9 +185,7 @@ def gen_nonsolar_source_model(msfile, imagename="allsky", outimage=None, sol_are
             new_data[0, 0, soly - sol_area_ypix // 2:soly + sol_area_ypix // 2 + 1,
             solx - sol_area_xpix // 2:solx + sol_area_xpix // 2 + 1] = 0.0000
 
-        if not outimage:
-            outimage = imagename + "_no_sun"
-        print (outimage+prefix+'-model.fits')
+        
         fits.writeto(outimage + prefix+'-model.fits', new_data, header=head, overwrite=True)
     return outimage
     
@@ -224,10 +229,13 @@ def remove_nonsolar_sources(msfile, imsize=4096, cell='2arcmin', minuv=0,
     
     elif not fast_vis or (fast_vis and fast_vis_image_model_subtraction):
         present=utils.check_for_file_presence(tmpimg,pol=pol)
-        if present:
+        
+        if not present:
             deconvolve.run_wsclean(msfile=msfile, imagename=tmpimg, size=imsize,
                             scale=cell, minuv_l=minuv, predict=False,
                             auto_mask=5, pol=pol, niter=niter, auto_pix_fov=auto_pix_fov)
+        else:
+            logging.debug("I will use existing image ",tmpimg)
         image_nosun = gen_nonsolar_source_model(msfile, imagename=tmpimg,
                                                 remove_strong_sources_only=remove_strong_sources_only, pol=pol)
         deconvolve.predict_model(msfile, outms=tmpms, image=image_nosun, pol=pol)
@@ -239,7 +247,7 @@ def remove_nonsolar_sources(msfile, imsize=4096, cell='2arcmin', minuv=0,
     if delete_tmp_files:
         os.system("rm -rf " + tmpms)
         
-        if delete_all_sky and not present:
+        if delete_allsky and not present:
             os.system("rm -rf " + tmpimg+"*")
     
     return outms
