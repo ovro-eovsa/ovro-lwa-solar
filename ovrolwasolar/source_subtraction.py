@@ -227,7 +227,8 @@ def remove_nonsolar_sources(msfile, imsize=4096, cell='2arcmin', minuv=0,
             clearcal(tmpms, addmodel=True)
             ft(tmpms, complist=modelcl, usescratch=True)
     
-    elif not fast_vis or (fast_vis and fast_vis_image_model_subtraction):
+    #elif not fast_vis or (fast_vis and fast_vis_image_model_subtraction):
+    else:
         present=utils.check_for_file_presence(tmpimg,pol=pol)
         
         if not present:
