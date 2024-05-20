@@ -28,6 +28,7 @@ from . import primary_beam
 from .generate_calibrator_model import model_generation
 from . import generate_calibrator_model
 import timeit
+from line_profiler import profile
 
 tb = table()
 me = measures()
@@ -97,7 +98,7 @@ def change_phasecenter(msfile):
     os.system("chgcentre " + msfile + " " + ra1 + " " + dec1)
 
 
-
+@profile
 def image_ms(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagename='sun_only',
              imsize=1024, cell='1arcmin', logfile='analysis.log', logging_level='info',
              caltable_folder='caltables', full_di_selfcal_rounds=[3,2], partial_di_selfcal_rounds=[0, 1],
@@ -249,7 +250,7 @@ def image_ms(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagename='sun
         logging.info('Time taken to complete all processing: {0:.1f} s'.format(time_end-time_begin)) 
         return outms, None
       
-
+@profile
 def image_ms_quick(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagename='sun_only',
              imsize=1024, cell='1arcmin', logfile='analysis.log', logging_level='info',
              caltable_folder='caltables/', num_phase_cal=1, num_apcal=1, freqbin=4,
@@ -360,7 +361,7 @@ def image_ms_quick(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagenam
         return outms, None
         
    
-
+@profile
 def solar_pipeline(time_duration, calib_time_duration, freqstr, filepath, time_integration=8, time_cadence=100,
                    observation_integration=8,
                    calib_ms=None, bcal=None, selfcal=False, imagename='sun_only',

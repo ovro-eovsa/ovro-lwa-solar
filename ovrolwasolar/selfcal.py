@@ -17,13 +17,15 @@ from .primary_beam import analytic_beam as beam
 from . import primary_beam
 from .generate_calibrator_model import model_generation
 from . import generate_calibrator_model
+from line_profiler import profile
+
 import timeit
 tb = table()
 me = measures()
 cl = componentlist()
 msmd = msmetadata()
 
-
+@profile
 def do_selfcal(msfile, num_phase_cal=2, num_apcal=2, applymode='calflag', logging_level='info', caltable_folder='caltables/',
                ms_keyword='di_selfcal_time',pol='I', refant='202', niter0=1000, niter_incr=500, auto_pix_fov=False):
     
