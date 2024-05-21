@@ -105,7 +105,8 @@ def image_ms(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagename='sun
              full_dd_selfcal_rounds=[1, 1], partial_dd_selfcal_rounds=[0, 1], do_final_imaging=True, pol='I', 
              solint_full_DI_selfcal=14400, solint_partial_DI_selfcal=3600, solint_full_DD_selfcal=1800, solint_partial_DD_selfcal=600,
              fast_vis=False, fast_vis_image_model_subtraction=False, delete=True,
-             refant='202', overwrite=False, do_fluxscaling=False, apply_primary_beam=True):
+             refant='202', overwrite=False, do_fluxscaling=False, apply_primary_beam=True, 
+             delete_allsky=True, sky_image=None):
 
     """
     Pipeline to calibrate and imaging a solar visibility
@@ -174,7 +175,8 @@ def image_ms(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagename='sun
         print (outms_di)
         logging.info('Removing the strong sources in the sky')
         outms_di_ = source_subtraction.remove_nonsolar_sources(outms_di,pol=pol, fast_vis=fast_vis,\
-                                        fast_vis_image_model_subtraction=fast_vis_image_model_subtraction)
+                                        fast_vis_image_model_subtraction=fast_vis_image_model_subtraction,\
+                                        delete_allsky=delete_allsky, skyimage=sky_image)
         time2=timeit.default_timer()
         logging.info('Time taken for strong source removal is: {0:.1f} s'.format(time2-time1)) 
         time1=time2
@@ -246,6 +248,8 @@ def image_ms(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagename='sun
         logging.info('Time taken to complete all processing: {0:.1f} s'.format(time_end-time_begin)) 
         return outms, helio_image
     else:
+        if delete==True:
+            os.system("rm -rf *model*")
         time_end=timeit.default_timer()
         logging.info('Time taken to complete all processing: {0:.1f} s'.format(time_end-time_begin)) 
         return outms, None
@@ -257,7 +261,7 @@ def image_ms_quick(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagenam
              do_fluxscaling=False, do_final_imaging=True, pol='I', delete=True,
              refant='202', niter0=600, niter_incr=200, overwrite=False,
              auto_pix_fov=False, fast_vis=False, fast_vis_image_model_subtraction=False,
-             delete_allsky=True, quiet=True):
+             delete_allsky=True, sky_image=None):
     """
     Pipeline to calibrate and imaging a solar visibility. 
     This is the version that optimizes the speed with a somewhat reduced image dynamic range.
@@ -324,9 +328,7 @@ def image_ms_quick(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagenam
     print('Removing non-solar sources in the sky')
     outms = source_subtraction.remove_nonsolar_sources(outms_di, remove_strong_sources_only=True, niter=1000, \
                                 pol=pol, fast_vis= fast_vis, fast_vis_image_model_subtraction=fast_vis_image_model_subtraction,
-                                delete_allsky=delete_allsky, auto_pix_fov=auto_pix_fov, quiet=quiet)
-
-
+                                delete_allsky=delete_allsky, skyimage=sky_image)
     time2=timeit.default_timer()
     logging.debug('Time taken for non-solar source removal is {0:.1f} s'.format(time2-time1))
     logging.debug('The source subtracted MS is ' + outms)

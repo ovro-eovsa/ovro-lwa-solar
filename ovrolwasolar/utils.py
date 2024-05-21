@@ -691,4 +691,14 @@ def recover_fits_from_h5(hdf5_file, fits_out=None):
         # Write out the recovered FITS file 
         hdu_list = fits.HDUList([fits.PrimaryHDU(recover_data, header), fits.BinTableHDU.from_columns(attaching_columns)])
         hdu_list.writeto(fits_out, overwrite=True)
+        
+def check_for_file_presence(imagename,pol,suffix='image'):
+    present=True
+    pols=pol.split(',')
+    for pol in pols:
+        pol_prefix="-"+pol if len(pols)!=1 else ''
+        if not os.path.isfile(imagename+pol_prefix+"-"+suffix+".fits"):
+            present=False
+            break
+    return present   
 
