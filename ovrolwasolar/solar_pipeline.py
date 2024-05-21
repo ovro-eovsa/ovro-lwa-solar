@@ -257,7 +257,7 @@ def image_ms_quick(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagenam
              do_fluxscaling=False, do_final_imaging=True, pol='I', delete=True,
              refant='202', niter0=600, niter_incr=200, overwrite=False,
              auto_pix_fov=False, fast_vis=False, fast_vis_image_model_subtraction=False,
-             delete_allsky=True):
+             delete_allsky=True, quiet=True):
     """
     Pipeline to calibrate and imaging a solar visibility. 
     This is the version that optimizes the speed with a somewhat reduced image dynamic range.
@@ -302,7 +302,7 @@ def image_ms_quick(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagenam
         mstime_str = utils.get_timestr_from_name(solar_ms)
         success = utils.put_keyword(solar_ms, 'di_selfcal_time', mstime_str, return_status=True)
         success = selfcal.do_selfcal(solar_ms, num_phase_cal=num_phase_cal, num_apcal=num_apcal, logging_level=logging_level, pol=pol,
-            refant=refant, niter0=niter0, niter_incr=niter_incr, caltable_folder=caltable_folder, auto_pix_fov=auto_pix_fov)
+            refant=refant, niter0=niter0, niter_incr=niter_incr, caltable_folder=caltable_folder, auto_pix_fov=auto_pix_fov, quiet=quiet)
         outms_di = solar_ms[:-3] + "_selfcalibrated.ms"
         if do_fluxscaling:
             logging.debug('Doing a flux scaling using background strong sources')
@@ -324,7 +324,9 @@ def image_ms_quick(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagenam
     print('Removing non-solar sources in the sky')
     outms = source_subtraction.remove_nonsolar_sources(outms_di, remove_strong_sources_only=True, niter=1000, \
                                 pol=pol, fast_vis= fast_vis, fast_vis_image_model_subtraction=fast_vis_image_model_subtraction,
-                                delete_allsky=delete_allsky)
+                                delete_allsky=delete_allsky, auto_pix_fov=auto_pix_fov, quiet=quiet)
+
+
     time2=timeit.default_timer()
     logging.debug('Time taken for non-solar source removal is {0:.1f} s'.format(time2-time1))
     logging.debug('The source subtracted MS is ' + outms)

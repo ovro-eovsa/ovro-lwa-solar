@@ -16,6 +16,7 @@ from .primary_beam import analytic_beam as beam
 from . import primary_beam
 from .generate_calibrator_model import model_generation
 from .  import generate_calibrator_model
+from line_profiler import profile
 tb = table()
 me = measures()
 cl = componentlist()
@@ -48,6 +49,7 @@ def get_solar_loc_pix(msfile, image="allsky"):
     return x, y
 
 
+@profile
 def get_nonsolar_sources_loc_pix(msfile, image="allsky", verbose=False, min_beam_val=1e-6):
     """
     Converting the RA & DEC coordinates of nonsolar sources to image coordinates in X and Y
@@ -108,7 +110,7 @@ def get_nonsolar_sources_loc_pix(msfile, image="allsky", verbose=False, min_beam
             del srcs[i]
     return srcs
 
-
+@profile
 def gen_nonsolar_source_model(msfile, imagename="allsky", outimage=None, sol_area=400., src_area=200.,
                               remove_strong_sources_only=True, verbose=True, pol='I'):
     """
@@ -184,11 +186,11 @@ def gen_nonsolar_source_model(msfile, imagename="allsky", outimage=None, sol_are
         fits.writeto(outimage + prefix+'-model.fits', new_data, header=head, overwrite=True)
     return outimage
     
-    
+@profile
 def remove_nonsolar_sources(msfile, imsize=4096, cell='2arcmin', minuv=0,
                             remove_strong_sources_only=True, pol='I', niter=50000, fast_vis=False, 
                             fast_vis_image_model_subtraction=False, delete_tmp_files=True, auto_pix_fov=False,
-                            delete_allsky=True):
+                            delete_allsky=True, quiet=True):
     """
     Wrapping for removing the nonsolar sources from the solar measurement set
 
@@ -212,7 +214,7 @@ def remove_nonsolar_sources(msfile, imsize=4096, cell='2arcmin', minuv=0,
     if not fast_vis or (fast_vis and fast_vis_image_model_subtraction):
         deconvolve.run_wsclean(msfile=msfile, imagename=tmpimg, size=imsize,
                             scale=cell, minuv_l=minuv, predict=False,
-                            auto_mask=5, pol=pol, niter=niter, auto_pix_fov=auto_pix_fov)
+                            auto_mask=5, pol=pol, niter=niter, auto_pix_fov=auto_pix_fov, quiet=quiet)
         image_nosun = gen_nonsolar_source_model(msfile, imagename=tmpimg,
                                                 remove_strong_sources_only=remove_strong_sources_only, pol=pol)
         deconvolve.predict_model(msfile, outms=tmpms, image=image_nosun, pol=pol)

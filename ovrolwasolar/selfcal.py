@@ -27,7 +27,8 @@ msmd = msmetadata()
 
 @profile
 def do_selfcal(msfile, num_phase_cal=2, num_apcal=2, applymode='calflag', logging_level='info', caltable_folder='caltables/',
-               ms_keyword='di_selfcal_time',pol='I', refant='202', niter0=1000, niter_incr=500, auto_pix_fov=False):
+               ms_keyword='di_selfcal_time',pol='I', refant='202', niter0=1000, 
+               niter_incr=500, auto_pix_fov=False, quiet=True):
     
     time1=timeit.default_timer()          
     logging.debug('The plan is to do ' + str(num_phase_cal) + " rounds of phase selfcal")
@@ -48,7 +49,7 @@ def do_selfcal(msfile, num_phase_cal=2, num_apcal=2, applymode='calflag', loggin
     for i in range(num_phase_cal):
         imagename = msfile[:-3] + "_self" + str(i)
         deconvolve.run_wsclean(msfile, imagename=imagename, niter=niters[i], 
-                               mgain=0.9, auto_mask=False, auto_threshold=False, pol=pol, auto_pix_fov=auto_pix_fov)
+                               mgain=0.9, auto_mask=False, auto_threshold=False, pol=pol, auto_pix_fov=auto_pix_fov, quiet=quiet)
         good = utils.check_image_quality(imagename, max1, min1)
        
         print(good)
@@ -58,7 +59,7 @@ def do_selfcal(msfile, num_phase_cal=2, num_apcal=2, applymode='calflag', loggin
             logging.debug('Dynamic range has reduced. Doing a round of flagging')
             flagdata(vis=msfile, mode='rflag', datacolumn='corrected')
             deconvolve.run_wsclean(msfile, imagename=imagename, niter=niters[i], mgain=0.9, 
-                                   auto_mask=False, auto_threshold=False, pol=pol, auto_pix_fov=auto_pix_fov)
+                                   auto_mask=False, auto_threshold=False, pol=pol, auto_pix_fov=auto_pix_fov, quiet=quiet)
             
             good = utils.check_image_quality(imagename, max1, min1,reorder=False)
             
@@ -106,7 +107,7 @@ def do_selfcal(msfile, num_phase_cal=2, num_apcal=2, applymode='calflag', loggin
     for i in range(num_phase_cal, num_phase_cal + num_apcal):
         imagename = msfile[:-3] + "_self" + str(i)
         deconvolve.run_wsclean(msfile, imagename=imagename, niter=np.max(niters) + (i+1) * niter_incr,
-                                mgain=0.9, auto_mask=False, auto_threshold=False, pol=pol, auto_pix_fov=auto_pix_fov)
+                                mgain=0.9, auto_mask=False, auto_threshold=False, pol=pol, auto_pix_fov=auto_pix_fov, quiet=quiet)
         
         good = utils.check_image_quality(imagename, max1, min1)
         
@@ -116,7 +117,7 @@ def do_selfcal(msfile, num_phase_cal=2, num_apcal=2, applymode='calflag', loggin
             logging.debug('Dynamic range has reduced. Doing a round of flagging')
             flagdata(vis=msfile, mode='rflag', datacolumn='corrected')
             deconvolve.run_wsclean(msfile, imagename=imagename, niter=np.max(niters),
-                                mgain=0.9, auto_mask=False, auto_threshold=False, pol=pol, auto_pix_fov=auto_pix_fov)
+                                mgain=0.9, auto_mask=False, auto_threshold=False, pol=pol, auto_pix_fov=auto_pix_fov, quiet=quiet)
             
             good = utils.check_image_quality(imagename, max1, min1, reorder=False)
             
@@ -169,7 +170,7 @@ def do_selfcal(msfile, num_phase_cal=2, num_apcal=2, applymode='calflag', loggin
         os.system("cp -r " + final_phase_caltable + " " + caltable_folder)
     time2=timeit.default_timer()
     logging.debug("Time taken for selfcal: "+str(time2-time1)+"seconds")
-    return True
+    return True, imagename
 
 
 def do_fresh_selfcal(solar_ms, num_phase_cal=3, num_apcal=5, logging_level='info',pol='I', refant='202', niter0=600, niter_incr=200):
