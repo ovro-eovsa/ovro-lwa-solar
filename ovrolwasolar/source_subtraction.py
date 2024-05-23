@@ -130,7 +130,7 @@ def gen_nonsolar_source_model(msfile, imagename="allsky", outimage=None, sol_are
         outimage = imagename + "_no_sun"
     present=utils.check_for_file_presence(outimage,pol=pol, suffix='model')
     if present:
-        logging.debug("I will use existing model for source subtraction ",outimage)
+        logging.debug("I will use existing model for source subtraction "+outimage)
         return outimage
     
     imagename1=imagename 
@@ -238,7 +238,7 @@ def remove_nonsolar_sources(msfile, imsize=4096, cell='2arcmin', minuv=0,
                             scale=cell, minuv_l=minuv, predict=False,
                             auto_mask=5, pol=pol, niter=niter, auto_pix_fov=auto_pix_fov)
         else:
-            logging.debug("I will use existing image ",tmpimg)
+            logging.debug("I will use existing image "+tmpimg)
         image_nosun = gen_nonsolar_source_model(msfile, imagename=tmpimg,
                                                 remove_strong_sources_only=remove_strong_sources_only, pol=pol)
         deconvolve.predict_model(msfile, outms=tmpms, image=image_nosun, pol=pol)
