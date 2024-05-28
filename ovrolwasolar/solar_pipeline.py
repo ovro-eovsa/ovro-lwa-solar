@@ -28,6 +28,7 @@ from . import primary_beam
 from .generate_calibrator_model import model_generation
 from . import generate_calibrator_model
 import timeit
+from line_profiler import profile
 
 tb = table()
 me = measures()
@@ -97,7 +98,7 @@ def change_phasecenter(msfile):
     os.system("chgcentre " + msfile + " " + ra1 + " " + dec1)
 
 
-
+@profile
 def image_ms(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagename='sun_only',
              imsize=1024, cell='1arcmin', logfile='analysis.log', logging_level='info',
              caltable_folder='caltables', full_di_selfcal_rounds=[3,2], partial_di_selfcal_rounds=[0, 1],
@@ -253,6 +254,8 @@ def image_ms(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagename='sun
         logging.info('Time taken to complete all processing: {0:.1f} s'.format(time_end-time_begin)) 
         return outms, None
 
+
+
 def manual_split_corrected_ms(vis, outputvis):
     tb.open(vis, nomodify=False)
     try:
@@ -266,14 +269,15 @@ def manual_split_corrected_ms(vis, outputvis):
         tb.close() 
     os.system("mv " + vis + " " + outputvis)
     return outputvis   
-
+  
+@profile
 def image_ms_quick(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagename='sun_only',
              imsize=1024, cell='1arcmin', logfile='analysis.log', logging_level='info',
              caltable_folder='caltables/', num_phase_cal=1, num_apcal=1, freqbin=4,
              do_fluxscaling=False, do_final_imaging=True, pol='I', delete=True,
              refant='202', niter0=600, niter_incr=200, overwrite=False,
              auto_pix_fov=False, fast_vis=False, fast_vis_image_model_subtraction=False,
-             delete_allsky=True, sky_image=None):
+             delete_allsky=True, sky_image=None, quiet=True):
     """
     Pipeline to calibrate and imaging a solar visibility. 
     This is the version that optimizes the speed with a somewhat reduced image dynamic range.
@@ -318,7 +322,7 @@ def image_ms_quick(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagenam
         mstime_str = utils.get_timestr_from_name(solar_ms)
         success = utils.put_keyword(solar_ms, 'di_selfcal_time', mstime_str, return_status=True)
         success = selfcal.do_selfcal(solar_ms, num_phase_cal=num_phase_cal, num_apcal=num_apcal, logging_level=logging_level, pol=pol,
-            refant=refant, niter0=niter0, niter_incr=niter_incr, caltable_folder=caltable_folder, auto_pix_fov=auto_pix_fov)
+            refant=refant, niter0=niter0, niter_incr=niter_incr, caltable_folder=caltable_folder, auto_pix_fov=auto_pix_fov, quiet=quiet)
         outms_di = solar_ms[:-3] + "_selfcalibrated.ms"
         if do_fluxscaling:
             logging.debug('Doing a flux scaling using background strong sources')
@@ -380,7 +384,7 @@ def image_ms_quick(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagenam
         return outms, None
         
    
-
+@profile
 def solar_pipeline(time_duration, calib_time_duration, freqstr, filepath, time_integration=8, time_cadence=100,
                    observation_integration=8,
                    calib_ms=None, bcal=None, selfcal=False, imagename='sun_only',
