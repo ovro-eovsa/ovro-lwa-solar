@@ -155,7 +155,8 @@ def run_wsclean(msfile, imagename, size:int =4096, scale='2arcmin', fast_vis=Fal
     if predict:
         logging.debug("Predicting model visibilities from " + imagename + " in " + msfile)
         time1 = timeit.default_timer()
-        os.system("wsclean -j 1 -mem 2 -no-reorder -predict -pol "+default_kwargs['pol']+" "+ "-name " + imagename + " " + msfile)
+        os.system("wsclean -j 1 -mem 2 -no-reorder -predict -pol "+default_kwargs['pol']+" "+ "-field all -name " + imagename + " " + msfile)
+        ### if field is not all, model visibilities are predicted only for first field. Does not work with fast vis
         time2 = timeit.default_timer()
         logging.debug('Time taken for predicting the model column is {0:.1f} s'.format(time2-time1))
 
@@ -195,7 +196,8 @@ def predict_model(msfile, outms, image="_no_sun",pol='I'):
     """
     os.system("cp -r " + msfile + " " + outms)
     clearcal(outms, addmodel=True)
-    os.system("wsclean -j 1 -mem 2 -no-reorder -predict -pol "+pol+" -name " + image + " " + outms)
+    os.system("wsclean -j 1 -mem 2 -no-reorder -predict -pol "+pol+" -field all -name " + image + " " + outms)
+    #### ### if field is not all, model visibilities are predicted only for first field. Does not work with fast vis
 
 
 
