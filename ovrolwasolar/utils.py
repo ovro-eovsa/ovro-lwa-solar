@@ -592,8 +592,9 @@ def correct_fastms_amplitude_scale(msname):
     return
 
 
-def compress_fits_to_h5(fits_file, hdf5_file, 
-                        theoretical_beam_thresh=True, longest_baseline = 3000):
+def compress_fits_to_h5(fits_file, hdf5_file, beam_ratio=3.0, smaller_than_src = True,
+                        theoretical_beam_thresh=True, longest_baseline = 3000,
+                        purge_corrupted=False,purge_thresh=2):
     """
     Compress an OVRO-LWA fits file to a h5 files
     
@@ -629,14 +630,22 @@ def compress_fits_to_h5(fits_file, hdf5_file,
             # if beam not available, use theoretical beam
                 thresh_arr[i] = beam_size_thresh[i]
 
-    downsize_ratio = (thresh_arr)/ 3 / hdul[0].header['CDELT2']
+    downsize_ratio = (thresh_arr)/ beam_ratio / hdul[0].header['CDELT2']
+
+    if smaller_than_src:
+        downsize_ratio[downsize_ratio < 1] = 1
     
     with h5py.File(hdf5_file, 'w') as f:
         # Create a dataset for the FITS data
         for pol in range(0, data.shape[0]):
             for ch_idx in range(0, len(downsize_ratio)):
-                downsized_data = zoom(data[0,ch_idx,:,:], 1/downsize_ratio[ch_idx], order=3)
-                dset = f.create_dataset('FITS_pol'+str(pol)+'ch'+str(ch_idx).rjust(4,'0') , data=downsized_data,compression="gzip", compression_opts=9)
+                if purge_corrupted and (-np.min(data[pol,ch_idx,:,:])*purge_thresh > np.max(data[pol,ch_idx,:,:])):
+                    logging.warning(f'Pol {pol} Ch {ch_idx} is corrupted, skipped')
+                    downsized_data = np.zeros((1,1))
+                    dset = f.create_dataset('FITS_pol'+str(pol)+'ch'+str(ch_idx).rjust(4,'0') , data=downsized_data,compression="gzip", compression_opts=9)
+                else:
+                    downsized_data = zoom(data[0,ch_idx,:,:], 1/downsize_ratio[ch_idx], order=3)
+                    dset = f.create_dataset('FITS_pol'+str(pol)+'ch'+str(ch_idx).rjust(4,'0') , data=downsized_data,compression="gzip", compression_opts=9)
                 
             # Add FITS header info as attributes
         dset = f.create_dataset('ch_vals', data=ch_vals)
@@ -675,7 +684,10 @@ def recover_fits_from_h5(hdf5_file, fits_out=None):
         for pol in range(0, datashape[0]):
             for ch_idx in range(0, len(ch_vals['cfreqs'])):
                 tmp_small=f['FITS_pol'+str(pol)+'ch'+str(ch_idx).rjust(4,'0')][:]
-                recover_data[pol,ch_idx,:,:] = zoom(tmp_small, datashape[-1]/tmp_small.shape[-1], order=5)
+                if tmp_small.shape[0] == 1:
+                    recover_data[pol,ch_idx,:,:] = tmp_small[0,0]
+                else:
+                    recover_data[pol,ch_idx,:,:] = zoom(tmp_small, datashape[-1]/tmp_small.shape[-1], order=5)
 
         # Read in the header
         header = {}
@@ -691,6 +703,62 @@ def recover_fits_from_h5(hdf5_file, fits_out=None):
         # Write out the recovered FITS file 
         hdu_list = fits.HDUList([fits.PrimaryHDU(recover_data, header), fits.BinTableHDU.from_columns(attaching_columns)])
         hdu_list.writeto(fits_out, overwrite=True)
+
+def check_h5_fits_consistency(fits_file, hdf5_file=None, ignore_corrupted=False, work_dir='./',
+                              tolerance=1e-3, ignore_ratio=2):
+    """
+    Check the consistency between a fits file and a hdf5 file,
+    if there is a hdf5 file, then compare the two files
+    
+    :param fits_file: the fits file to be compared
+    :param hdf5_file: the hdf5 file to be compared, if None then the hdf will be fits file replacing ".fits"
+    :param ignore_corrupted: if True, ignore the check of the data in the fits file
+            corrupted data has -np.min*ignore_ratio>np.max
+    """
+    import h5py
+    hdf5_file = hdf5_file if hdf5_file is not None else fits_file.replace('.fits', '.hdf')
+
+    pass_check = True
+    try:
+        recover_fits_from_h5(hdf5_file, fits_out=work_dir+'tmp.fits')
+        hdu_tmp = fits.open(work_dir+'tmp.fits')
+        hdu = fits.open(fits_file)
+
+        # check header
+        header_tmp = hdu_tmp[0].header
+        header = hdu[0].header
+        for key in header.keys():
+            if key not in header_tmp.keys():
+                logging.warning(f'Key {key} not in the recovered fits header')
+                pass_check = 1
+            elif header[key] != header_tmp[key]:
+                logging.warning(f'Key {key} not consistent in the recovered fits header')    
+                pass_check = 2
+        
+        # check data
+        data_tmp = hdu_tmp[0].data
+        data = hdu[0].data
+        checked_items = 0
+        for pol in range(0, data.shape[0]):
+            for ch_idx in range(0, data.shape[1]):
+                if ignore_corrupted and (-np.min(data[pol,ch_idx,:,:])*ignore_ratio > np.max(data[pol,ch_idx,:,:])):
+                    continue
+                else:
+                    checked_items += 1
+                    if np.mean(np.abs(data[pol,ch_idx,:,:] - data_tmp[pol,ch_idx,:,:])
+                               )/np.max(np.abs(data[pol,ch_idx,:,:])) > tolerance:
+                        logging.warning(f'Pol {pol} Ch {ch_idx} not consistent')
+                        pass_check = 3
+                        break
+        logging.info(f'Checked {checked_items} items in the fits file')
+    except:
+        pass
+
+    # clean up
+    os.system(f'rm -rf {work_dir}tmp.fits')
+
+    return pass_check
+    
         
 def check_for_file_presence(imagename,pol,suffix='image'):
     present=True
