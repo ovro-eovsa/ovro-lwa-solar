@@ -26,7 +26,7 @@ me = measures()
 cl = componentlist()
 msmd = msmetadata()
 
-def run_wsclean(msfile, imagename, size:int =4096, scale='2arcmin', fast_vis=False, field=None, dry_run=False,
+def run_wsclean(msfile, imagename, size:int =4096, scale='2arcmin', fast_vis=False, field=None, dry_run=False, rm_misc=True,
             predict=True, auto_pix_fov = False, telescope_size = 3200, im_fov=182*3600, pix_scale_factor=1.5,
             **kwargs):  ### uvrange is in lambda units
     """
@@ -143,9 +143,10 @@ def run_wsclean(msfile, imagename, size:int =4096, scale='2arcmin', fast_vis=Fal
         except Exception as e:
             proc.terminate()
             raise e
-            
-        for str1 in ['residual','psf']:
-            os.system("rm -rf "+imagename+"*"+str1+"*.fits") 
+
+        if rm_misc:            
+            for str1 in ['residual','psf']:
+                os.system("rm -rf "+imagename+"*"+str1+"*.fits") 
         time2 = timeit.default_timer()
         logging.debug('Time taken for all sky imaging is {0:.1f} s'.format(time2-time1))
 

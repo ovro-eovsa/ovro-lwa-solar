@@ -594,7 +594,7 @@ def correct_fastms_amplitude_scale(msname):
 
 def compress_fits_to_h5(fits_file, hdf5_file, beam_ratio=3.0, smaller_than_src = True,
                         theoretical_beam_thresh=True, longest_baseline = 3000,
-                        purge_corrupted=False,purge_thresh=2):
+                        purge_corrupted=False,purge_thresh=1.5):
     """
     Compress an OVRO-LWA fits file to a h5 files
     
@@ -635,6 +635,7 @@ def compress_fits_to_h5(fits_file, hdf5_file, beam_ratio=3.0, smaller_than_src =
     if smaller_than_src:
         downsize_ratio[downsize_ratio < 1] = 1
     
+    count_avail=0
     with h5py.File(hdf5_file, 'w') as f:
         # Create a dataset for the FITS data
         for pol in range(0, data.shape[0]):
@@ -644,6 +645,7 @@ def compress_fits_to_h5(fits_file, hdf5_file, beam_ratio=3.0, smaller_than_src =
                     downsized_data = np.zeros((1,1))
                     dset = f.create_dataset('FITS_pol'+str(pol)+'ch'+str(ch_idx).rjust(4,'0') , data=downsized_data,compression="gzip", compression_opts=9)
                 else:
+                    count_avail+=1
                     downsized_data = zoom(data[0,ch_idx,:,:], 1/downsize_ratio[ch_idx], order=3)
                     dset = f.create_dataset('FITS_pol'+str(pol)+'ch'+str(ch_idx).rjust(4,'0') , data=downsized_data,compression="gzip", compression_opts=9)
                 
@@ -653,7 +655,10 @@ def compress_fits_to_h5(fits_file, hdf5_file, beam_ratio=3.0, smaller_than_src =
         dset.attrs['original_shape'] = data.shape
         for key, value in header.items():
             dset.attrs[key] = value
-
+    if count_avail == 0:
+        logging.warning(f'No available data in the fits file {fits_file}')
+        # remove h5 if no data available
+        os.system(f'rm -rf {hdf5_file}')
 
 def recover_fits_from_h5(hdf5_file, fits_out=None):
     """
