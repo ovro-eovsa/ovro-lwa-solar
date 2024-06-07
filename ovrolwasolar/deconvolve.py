@@ -26,7 +26,7 @@ me = measures()
 cl = componentlist()
 msmd = msmetadata()
 
-def run_wsclean(msfile, imagename, size:int =4096, scale='2arcmin', fast_vis=False, field=None,
+def run_wsclean(msfile, imagename, size:int =4096, scale='2arcmin', fast_vis=False, field=None, dry_run=False, rm_misc=True,
             predict=True, auto_pix_fov = False, telescope_size = 3200, im_fov=182*3600, pix_scale_factor=1.5,
             **kwargs):  ### uvrange is in lambda units
     """
@@ -126,8 +126,6 @@ def run_wsclean(msfile, imagename, size:int =4096, scale='2arcmin', fast_vis=Fal
     if default_kwargs['intervals_out']!='1' and predict:
         raise RuntimeError("Prediction cannot be done with multiple images.")
     
-    time1 = timeit.default_timer()
-
     cmd_clean = "wsclean "
     # Add additional arguments from default_params
     for key, value in default_kwargs.items():
@@ -137,28 +135,30 @@ def run_wsclean(msfile, imagename, size:int =4096, scale='2arcmin', fast_vis=Fal
 
     cmd_clean += " -name " + imagename + " " + msfile
     
-    #TODO: put -weighting in free param
-
-    logging.debug(cmd_clean)
-    try:
-        proc=subprocess.run(shlex.split(cmd_clean))
-    except Exception as e:
-        proc.terminate()
-        raise e
-        
-    for str1 in ['residual','psf']:
-        os.system("rm -rf "+imagename+"*"+str1+"*.fits") 
-    time2 = timeit.default_timer()
-    logging.debug('Time taken for all sky imaging is {0:.1f} s'.format(time2-time1))
-
-   
-    if predict:
-        logging.debug("Predicting model visibilities from " + imagename + " in " + msfile)
+    if not dry_run:
         time1 = timeit.default_timer()
-        os.system("wsclean -j 1 -mem 2 -no-reorder -predict -pol "+default_kwargs['pol']+" "+ "-field all -name " + imagename + " " + msfile)
-        ### if field is not all, model visibilities are predicted only for first field. Does not work with fast vis
+        logging.debug(cmd_clean)
+        try:
+            proc=subprocess.run(shlex.split(cmd_clean))
+        except Exception as e:
+            proc.terminate()
+            raise e
+
+        if rm_misc:            
+            for str1 in ['residual','psf']:
+                os.system("rm -rf "+imagename+"*"+str1+"*.fits") 
         time2 = timeit.default_timer()
-        logging.debug('Time taken for predicting the model column is {0:.1f} s'.format(time2-time1))
+        logging.debug('Time taken for all sky imaging is {0:.1f} s'.format(time2-time1))
+
+        if predict:
+            logging.debug("Predicting model visibilities from " + imagename + " in " + msfile)
+            time1 = timeit.default_timer()
+            os.system("wsclean -j 1 -mem 2 -no-reorder -predict -pol "+default_kwargs['pol']+" "+ "-field all -name " + imagename + " " + msfile)
+            ### if field is not all, model visibilities are predicted only for first field. Does not work with fast vis
+            time2 = timeit.default_timer()
+            logging.debug('Time taken for predicting the model column is {0:.1f} s'.format(time2-time1))
+
+    return cmd_clean
 
 
 def find_smallest_fftw_sz_number(n):
