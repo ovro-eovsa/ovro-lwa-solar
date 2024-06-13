@@ -120,6 +120,9 @@ def determine_region_for_subtraction(imgdata, source,subtraction_area,cell,solar
     :param solar_pix: (solar x, solar y) coords
     :param no_subtraction_region: This is the region around sun, which will never
                                    be subtracted. We use a square of size this number.
+                                   In arcminutes
+    :param min_subtraction_region: This is the minimum size of the subtraction region.
+                                    In arcminutes.
     '''
     srcx = source['xpix']
     srcy = source['ypix']
@@ -178,12 +181,13 @@ def gen_nonsolar_source_model(msfile, imagename="allsky", outimage=None, sol_are
     :param imagename: input all sky image
     :param outimage: output all sky image without other sources
     :param sol_area: size around the Sun in arcmin to be left alone
-    :param src_area: size around the source to be taken away
+    :param src_area: size around the source to be taken away, in arcminutes
     :param remove_strong_sources_only: If True, remove only known strong sources.
         If False, remove everything other than Sun.
     :param verbose: Toggle to print out more information
     :param no_subtraction_region: This is the region around sun, which will never
                                    be subtracted. We use a square of size this number.
+                                   This is in arcminutes.
     :return: FITS image with non-solar sources removed
     """
     if not outimage:
