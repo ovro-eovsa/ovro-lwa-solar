@@ -137,7 +137,7 @@ class woody_beam():
                     Qfctr = self.Qbeam.reshape(self.gridsize*self.gridsize)[index]
                     Ufctr = self.Ubeam.reshape(self.gridsize*self.gridsize)[index]
                     Vfctr = self.Vbeam.reshape(self.gridsize*self.gridsize)[index]
-                    self.jones_matrices[i,:,:]=np.array([[Ifctr+Qfctr,Ufctr-1j*Vfctr],[Ufctr+1j*Vfctr,Ifctr-Qfctr]])
+                    self.jones_matrices[i,:,:]=np.array([[Ifctr+Qfctr,Ufctr+1j*Vfctr],[Ufctr-1j*Vfctr,Ifctr-Qfctr]])
                 else:
                     raise RuntimeError
             except:

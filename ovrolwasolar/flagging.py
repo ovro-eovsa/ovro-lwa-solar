@@ -7,7 +7,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 from . import utils
 import logging, glob
-from . import primary_beam
 import h5py
 #from sklearn.cluster import KMeans
 

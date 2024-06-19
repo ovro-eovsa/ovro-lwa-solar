@@ -4,19 +4,10 @@ from casatools import table, measures, componentlist, msmetadata
 import math
 import sys, os, time
 import numpy as np
-from astropy.coordinates import SkyCoord
-import astropy.units as u
-from astropy.wcs import WCS
 from astropy.io import fits
-import matplotlib.pyplot as plt
-from . import utils,flagging,calibration,deconvolve
+from . import utils,calibration,deconvolve
 from . import flux_scaling
 import logging, glob
-from .file_handler import File_Handler
-from .primary_beam import analytic_beam as beam 
-from . import primary_beam
-from .generate_calibrator_model import model_generation
-from . import generate_calibrator_model
 from line_profiler import profile
 
 import timeit

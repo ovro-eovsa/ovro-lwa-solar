@@ -6,13 +6,8 @@ import sys, os, time
 import numpy as np
 import logging, glob
 from astropy.time import Time
-
 from . import utils,flagging
-from .file_handler import File_Handler
-from .primary_beam import analytic_beam as beam 
-from . import primary_beam
 from .generate_calibrator_model import model_generation
-from . import generate_calibrator_model
 import timeit
 tb = table()
 me = measures()

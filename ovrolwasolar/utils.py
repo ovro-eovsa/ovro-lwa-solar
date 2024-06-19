@@ -4,7 +4,6 @@ from astropy.io import fits
 from casatools import image, table, msmetadata, quanta, measures
 import numpy as np
 import logging, glob
-from . import primary_beam
 from .primary_beam import analytic_beam as beam 
 from .generate_calibrator_model import model_generation
 from . import generate_calibrator_model
