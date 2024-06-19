@@ -293,10 +293,9 @@ def do_bandpass_correction(solar_ms, calib_ms=None, bcal=None, caltable_folder='
         else:
             logging.debug('I am told to overwrite it. Proceed with bandpass correction.')
             os.system('rm -rf '+solar_ms1)
-    
-    if os.path.isdir(bcal[0]) and not overwrite:
-        logging.debug('I found an existing bandpass table. Will reuse it to calibrate.')
-    elif calib_ms:
+     
+        
+    if calib_ms:
         if os.path.exists(calib_ms):
             if not bcal:
                 bcal = [caltable_folder + "/" + os.path.basename(calib_ms).replace('.ms', '.bcal')]
@@ -311,6 +310,14 @@ def do_bandpass_correction(solar_ms, calib_ms=None, bcal=None, caltable_folder='
                 logging.debug('Bandpass calibration table generated using ' + calib_ms)
             else:
                 logging.debug('I found an existing bandpass table. Will reuse it to calibrate.')
+    else:
+        if not isinstance(bcal, list):
+            bcal=[bcal]
+        if os.path.isdir(bcal[0]) and not overwrite:
+            logging.debug('I found an existing bandpass table. Will reuse it to calibrate.')   
+        else:
+            logging.error("Calibration table does not exist/should be overwritten. Please provide"+\
+                        " calibration MS")
     
     if not isinstance(bcal, list):
         bcal=[bcal]
