@@ -110,9 +110,70 @@ def get_nonsolar_sources_loc_pix(msfile, image="allsky", verbose=False, min_beam
             del srcs[i]
     return srcs
 
+def determine_region_for_subtraction(imgdata, source,subtraction_area,cell,solar_pix,
+                                        no_subtraction_region, min_subtraction_region=60):
+    '''
+    :param source: This has the source coordinates in pixel units
+    :param subtraction area: Rectangular region centered on the source 
+                                which should be subtracted. In arcminutes
+    :param cell: cell size along X in arcminutes
+    :param solar_pix: (solar x, solar y) coords
+    :param no_subtraction_region: This is the region around sun, which will never
+                                   be subtracted. We use a square of size this number.
+                                   In arcminutes
+    :param min_subtraction_region: This is the minimum size of the subtraction region.
+                                    In arcminutes.
+    '''
+    srcx = source['xpix']
+    srcy = source['ypix']
+    solx,soly=solar_pix
+    dx,dy=cell
+    
+    src_area_xpix = subtraction_area / dx
+    src_area_ypix = subtraction_area / dy
+    bbox = [[srcy - src_area_ypix // 2, srcy + src_area_ypix // 2],
+                    [srcx - src_area_xpix // 2, srcx + src_area_xpix // 2]]
+                        
+    dist=np.sqrt(((solx-srcx)**2+(soly-srcy)**2)*dx*dy)
+    
+    if dist>subtraction_area:
+        logging.debug("Distance larger than the default subtraction region. Going ahead with default.")
+        print ("Distance larger than the default subtraction region. Going ahead with default.")
+    else:
+        peak=np.nanmax(imgdata[0,0,int(bbox[0][0]):int(bbox[0][1]),int(bbox[1][0]):int(bbox[1][1])])
+        pos=np.where(abs(imgdata[0,0,int(bbox[0][0]):int(bbox[0][1]),int(bbox[1][0]):int(bbox[1][1])]-peak)<1e-3)
+        print (pos)
+        srcx=pos[1][0]+int(bbox[1][0])
+        srcy=pos[0][0]+int(bbox[0][0])
+        print (srcx,srcy)
+        logging.debug("Distance smaller than the default subtraction region. Will shrink.")
+        while dist<subtraction_area and subtraction_area>min_subtraction_region:
+            subtraction_area=max(min_subtraction_region, subtraction_area/2)
+            
+            src_area_xpix = subtraction_area / dx
+            src_area_ypix = subtraction_area / dy
+            
+            bbox = [[srcy - src_area_ypix // 2, srcy + src_area_ypix // 2],
+                        [srcx - src_area_xpix // 2, srcx + src_area_xpix // 2]]
+            distances=np.zeros(4)
+            distances[0]=np.sqrt(((solx-bbox[1][0])**2+(soly-bbox[0][0])**2)*dx*dy)
+            distances[1]=np.sqrt(((solx-bbox[1][1])**2+(soly-bbox[0][1])**2)*dx*dy)
+            distances[2]=np.sqrt(((solx-bbox[1][0])**2+(soly-bbox[0][1])**2)*dx*dy)
+            distances[3]=np.sqrt(((solx-bbox[1][1])**2+(soly-bbox[0][0])**2)*dx*dy)
+            dist=np.min(distances)
+        logging.debug("Final subtraction region is "+str(subtraction_area))
+        print ("Final subtraction region is "+str(subtraction_area))
+    slicey, slicex = slice(int(bbox[0][0]), int(bbox[0][1]) + 1), slice(int(bbox[1][0]), int(bbox[1][1]) + 1)
+    
+    print('Adding source {0:s} to model at x {1:d}, y {2:d} '
+                          'with flux {3:.1f} Jy'.format(source['label'], srcx, srcy, np.max(imgdata[0, 0, slicey, slicex])))
+    return bbox
+
+    
+    
 @profile
 def gen_nonsolar_source_model(msfile, imagename="allsky", outimage=None, sol_area=400., src_area=200.,
-                              remove_strong_sources_only=True, verbose=True, pol='I'):
+                              remove_strong_sources_only=True, verbose=True, pol='I', no_subtraction_region=120):
     """
     Take the full sky image, remove non-solar sources from the image
 
@@ -120,10 +181,13 @@ def gen_nonsolar_source_model(msfile, imagename="allsky", outimage=None, sol_are
     :param imagename: input all sky image
     :param outimage: output all sky image without other sources
     :param sol_area: size around the Sun in arcmin to be left alone
-    :param src_area: size around the source to be taken away
+    :param src_area: size around the source to be taken away, in arcminutes
     :param remove_strong_sources_only: If True, remove only known strong sources.
         If False, remove everything other than Sun.
     :param verbose: Toggle to print out more information
+    :param no_subtraction_region: This is the region around sun, which will never
+                                   be subtracted. We use a square of size this number.
+                                   This is in arcminutes.
     :return: FITS image with non-solar sources removed
     """
     if not outimage:
@@ -168,18 +232,20 @@ def gen_nonsolar_source_model(msfile, imagename="allsky", outimage=None, sol_are
         head=fits.getheader(imagename + prefix+"-model.fits")
         if remove_strong_sources_only:
             new_data = np.zeros_like(data)
-            src_area_xpix = src_area / dx
-            src_area_ypix = src_area / dy
             for s in srcs:
-                src_x = s['xpix']
-                src_y = s['ypix']
-                bbox = [[src_y - src_area_ypix // 2, src_y + src_area_ypix // 2],
-                        [src_x - src_area_xpix // 2, src_x + src_area_xpix // 2]]
+                bbox = determine_region_for_subtraction(data,s,src_area,(dx,dy),(solx,soly),no_subtraction_region)
                 slicey, slicex = slice(int(bbox[0][0]), int(bbox[0][1]) + 1), slice(int(bbox[1][0]), int(bbox[1][1]) + 1)
                 new_data[0, 0, slicey, slicex] = data[0, 0, slicey, slicex]
-                if verbose:
-                    print('Adding source {0:s} to model at x {1:d}, y {2:d} '
-                          'with flux {3:.1f} Jy'.format(s['label'], src_x, src_y, np.max(data[0, 0, slicey, slicex])))
+            
+               
+            no_subtraction_region_ypix=no_subtraction_region/dy
+            no_subtraction_region_xpix=no_subtraction_region/dx
+            
+            bbox = [[soly - no_subtraction_region_ypix // 2, soly + no_subtraction_region_ypix // 2],
+                        [solx - no_subtraction_region_xpix // 2, solx + no_subtraction_region_xpix // 2]]
+            slicey, slicex = slice(int(bbox[0][0]), int(bbox[0][1]) + 1), slice(int(bbox[1][0]), int(bbox[1][1]) + 1)
+            new_data[0, 0, slicey, slicex] = 0.0
+            #print (bbox)
         else:
             new_data = np.copy(data)
             sol_area_xpix = int(sol_area / dx)
