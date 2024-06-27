@@ -710,7 +710,7 @@ def recover_fits_from_h5(hdf5_file, fits_out=None, return_data=False):
             meta = {'header':header}
             for col in attaching_columns:
                 meta[col.name] = col.array
-        return meta, recover_data
+            return meta, recover_data
 
         # Write out the recovered FITS file
         hdu_list = fits.HDUList([fits.PrimaryHDU(recover_data, header), fits.BinTableHDU.from_columns(attaching_columns)])
