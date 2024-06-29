@@ -101,8 +101,11 @@ def change_phasecenter(msfile):
 @profile
 def image_ms(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagename='sun_only',
              imsize=1024, cell='1arcmin', logfile='analysis.log', logging_level='info',
-             caltable_folder='caltables', full_di_selfcal_rounds=[3,2], partial_di_selfcal_rounds=[0, 1],
-             full_dd_selfcal_rounds=[1, 1], partial_dd_selfcal_rounds=[0, 1], do_final_imaging=True, pol='I', 
+             caltable_folder='caltables', 
+             full_di_selfcal_rounds=[3,2], partial_di_selfcal_rounds=[0, 1],
+             full_dd_selfcal_rounds=[1, 1], partial_dd_selfcal_rounds=[0, 1], 
+             do_dd_selfcal=True,
+             do_final_imaging=True, pol='I', 
              solint_full_DI_selfcal=14400, solint_partial_DI_selfcal=3600, solint_full_DD_selfcal=1800, solint_partial_DD_selfcal=600,
              fast_vis=False, fast_vis_image_model_subtraction=False, delete=True,
              refant='202', overwrite=False, do_fluxscaling=False, apply_primary_beam=True, 
@@ -183,25 +186,28 @@ def image_ms(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagename='sun
         logging.info('The strong source subtracted MS is ' + outms_di_)
         logging.info('Starting to do Stokes I selfcal towards direction of sun')
         
-        if not fast_vis:
-            outms_dd = selfcal.DD_selfcal(outms_di_, logging_level=logging_level, full_dd_selfcal_rounds=full_dd_selfcal_rounds,
-                                  partial_dd_selfcal_rounds=partial_dd_selfcal_rounds, pol=pol, refant=refant, 
-                                  solint_full_selfcal=solint_full_DD_selfcal, solint_partial_selfcal=solint_partial_DD_selfcal)
-            time2=timeit.default_timer()
-            logging.info('Time taken for DD selfcal is: {0:.1f} s'.format(time2-time1))
-            time1=time2
-            logging.info('Removing almost all sources in the sky except Sun')
-            print ('Removing almost all sources in the sky except Sun')
-            outms = source_subtraction.remove_nonsolar_sources(outms_dd, remove_strong_sources_only=False, pol=pol)
-            time2=timeit.default_timer()
-            logging.info('Time taken for weak source removal is: {0:.1f} s'.format(time2-time1)) 
-            time1=time2
-            logging.info('The source subtracted MS is ' + outms)
+        if do_dd_selfcal:
+            if not fast_vis:
+                outms_dd = selfcal.DD_selfcal(outms_di_, logging_level=logging_level, full_dd_selfcal_rounds=full_dd_selfcal_rounds,
+                                    partial_dd_selfcal_rounds=partial_dd_selfcal_rounds, pol=pol, refant=refant, 
+                                    solint_full_selfcal=solint_full_DD_selfcal, solint_partial_selfcal=solint_partial_DD_selfcal)
+                time2=timeit.default_timer()
+                logging.info('Time taken for DD selfcal is: {0:.1f} s'.format(time2-time1))
+                time1=time2
+                logging.info('Removing almost all sources in the sky except Sun')
+                print ('Removing almost all sources in the sky except Sun')
+                outms = source_subtraction.remove_nonsolar_sources(outms_dd, remove_strong_sources_only=False, pol=pol)
+                time2=timeit.default_timer()
+                logging.info('Time taken for weak source removal is: {0:.1f} s'.format(time2-time1)) 
+                time1=time2
+                logging.info('The source subtracted MS is ' + outms)
+            else:
+                outms = selfcal.DD_selfcal(outms_di_, logging_level=logging_level, full_dd_selfcal_rounds=full_dd_selfcal_rounds,
+                                    partial_dd_selfcal_rounds=partial_dd_selfcal_rounds, pol=pol, refant=refant, 
+                                    solint_full_selfcal=solint_full_DD_selfcal, solint_partial_selfcal=solint_partial_DD_selfcal,
+                                    fast_vis=fast_vis, calib_ms=calib_ms)
         else:
-            outms = selfcal.DD_selfcal(outms_di_, logging_level=logging_level, full_dd_selfcal_rounds=full_dd_selfcal_rounds,
-                                  partial_dd_selfcal_rounds=partial_dd_selfcal_rounds, pol=pol, refant=refant, 
-                                  solint_full_selfcal=solint_full_DD_selfcal, solint_partial_selfcal=solint_partial_DD_selfcal,
-                                  fast_vis=fast_vis, calib_ms=calib_ms)
+            outms = outms_di_
     else:
         logging.info('Removing almost all sources in the sky except Sun')
         outms = source_subtraction.remove_nonsolar_sources(solar_ms,pol=pol)
@@ -277,7 +283,8 @@ def image_ms_quick(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagenam
              do_fluxscaling=False, do_final_imaging=True, pol='I', delete=True,
              refant='202', niter0=600, niter_incr=200, overwrite=False,
              auto_pix_fov=False, fast_vis=False, fast_vis_image_model_subtraction=False,
-             delete_allsky=True, sky_image=None, quiet=True, remove_strong_sources_only=False):
+             delete_allsky=True, sky_image=None, quiet=True, remove_strong_sources_only=False,
+             src_sb_sol_area=200., src_sb_src_area=200., shape_sun_mask='circ', include_edge_source=-1):
     """
     Pipeline to calibrate and imaging a solar visibility. 
     This is the version that optimizes the speed with a somewhat reduced image dynamic range.
@@ -348,7 +355,8 @@ def image_ms_quick(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagenam
     outms = source_subtraction.remove_nonsolar_sources(outms_di, 
             remove_strong_sources_only=remove_strong_sources_only, niter=1000, \
             pol=pol, fast_vis= fast_vis, fast_vis_image_model_subtraction=fast_vis_image_model_subtraction,
-            delete_allsky=delete_allsky, skyimage=sky_image)
+            delete_allsky=delete_allsky, skyimage=sky_image, sol_area=src_sb_sol_area, src_area= src_sb_src_area,
+            shape_sun_mask=shape_sun_mask, include_edge_source=include_edge_source)
     time2=timeit.default_timer()
     logging.debug('Time taken for non-solar source removal is {0:.1f} s'.format(time2-time1))
     logging.debug('The source subtracted MS is ' + outms)
