@@ -660,24 +660,25 @@ def compress_fits_to_h5(fits_file, hdf5_file, beam_ratio=3.0, smaller_than_src =
         # remove h5 if no data available
         os.system(f'rm -rf {hdf5_file}')
 
-def recover_fits_from_h5(hdf5_file, fits_out=None):
+def recover_fits_from_h5(hdf5_file, fits_out=None, return_data=False):
     """
     Recover a fits file from a compressed hdf5 file
-    
+
     :param hdf5_file: the hdf5 file to be read
     :param fits_out: the fits file to be recovered. If not given, default to '{filename}.fits' in current directory
+    :param return_data: if True, return the fits data and header directly without creating the fits file
     """
     import h5py
     from scipy.ndimage import zoom
 
-    if fits_out is None:
+    if fits_out is None and not return_data:
         fits_out = './' + os.path.basename(hdf5_file).replace('.hdf', '.fits')
 
     with h5py.File(hdf5_file, 'r') as f:
         # Read in the ch_vals
         ch_vals = f['ch_vals'][:]
         ch_vals_names = f['ch_vals'].attrs['arr_name']
-        ch_vals = {ch_vals_names[i]:ch_vals[i] for i in range(len(ch_vals_names))}
+        ch_vals = {ch_vals_names[i]: ch_vals[i] for i in range(len(ch_vals_names))}
         attaching_columns = []
         for key in ch_vals.keys():
             attaching_columns.append(fits.Column(name=key, format='E', array=ch_vals[key]))
@@ -688,26 +689,33 @@ def recover_fits_from_h5(hdf5_file, fits_out=None):
         recover_data = np.zeros(datashape)
         for pol in range(0, datashape[0]):
             for ch_idx in range(0, len(ch_vals['cfreqs'])):
-                tmp_small=f['FITS_pol'+str(pol)+'ch'+str(ch_idx).rjust(4,'0')][:]
+                tmp_small = f['FITS_pol' + str(pol) + 'ch' + str(ch_idx).rjust(4, '0')][:]
                 if tmp_small.shape[0] == 1:
-                    recover_data[pol,ch_idx,:,:] = tmp_small[0,0]
+                    recover_data[pol, ch_idx, :, :] = tmp_small[0, 0]
                 else:
-                    recover_data[pol,ch_idx,:,:] = zoom(tmp_small, datashape[-1]/tmp_small.shape[-1], order=5)
+                    recover_data[pol, ch_idx, :, :] = zoom(tmp_small, datashape[-1] / tmp_small.shape[-1], order=5)
 
         # Read in the header
         header = {}
         for key in f['ch_vals'].attrs.keys():
             header[key] = f['ch_vals'].attrs[key]
-        
+
         header.pop('arr_name', None)
         header.pop('original_shape', None)
 
         # convert header to fits header obj
         header = fits.Header(header)
 
-        # Write out the recovered FITS file 
+        if return_data:
+            meta = {'header':header}
+            for col in attaching_columns:
+                meta[col.name] = col.array
+            return meta, recover_data
+
+        # Write out the recovered FITS file
         hdu_list = fits.HDUList([fits.PrimaryHDU(recover_data, header), fits.BinTableHDU.from_columns(attaching_columns)])
         hdu_list.writeto(fits_out, overwrite=True)
+
 
 def check_h5_fits_consistency(fits_file, hdf5_file=None, ignore_corrupted=False, work_dir='./',
                               tolerance=1e-3, ignore_ratio=2):
