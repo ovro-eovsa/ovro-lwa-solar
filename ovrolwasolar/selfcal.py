@@ -264,7 +264,7 @@ def DI_selfcal(solar_ms, solint_full_selfcal=14400, solint_partial_selfcal=3600,
                     if calib_ms:
                         di_cal=convert_caltables_for_fast_vis(solar_ms,calib_ms,di_cal)
                     else:
-                        raise RuntimeError("Supplying a calibration MS is mandatory for imaging fast visibilities")
+                        logging.warning("Slow MS not provided. Using default")
 
                 applycal(solar_ms, gaintable=di_cal, calwt=[False] * len(di_cal), applymode=applymode)
                 flagdata(vis=solar_ms, mode='rflag', datacolumn='corrected')
@@ -395,7 +395,7 @@ def DD_selfcal(solar_ms, solint_full_selfcal=1800, solint_partial_selfcal=600, c
                     if calib_ms:
                         caltables=convert_caltables_for_fast_vis(solar_ms,calib_ms,caltables)
                     else:
-                        raise RuntimeError("Supplying a calibration MS is mandatory for imaging fast visibilities")
+                        logging.warning("Slow MS not provided. Using default.")
 
             applycal(solar_ms, gaintable=caltables, calwt=[False] * len(caltables), applymode='calonly')
             flagdata(vis=solar_ms, mode='rflag', datacolumn='corrected')

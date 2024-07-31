@@ -262,19 +262,7 @@ def image_ms(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagename='sun
 
 
 
-def manual_split_corrected_ms(vis, outputvis):
-    tb.open(vis, nomodify=False)
-    try:
-        corrected_data = tb.getcol('CORRECTED_DATA')
-        tb.putcol('DATA', corrected_data)
-        tb.flush()
-    except Exception as e:
-        logging.debug("Hand split method did not work")
-        raise e
-    finally:
-        tb.close() 
-    os.system("mv " + vis + " " + outputvis)
-    return outputvis   
+
   
 @profile
 def image_ms_quick(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagename='sun_only',
@@ -341,7 +329,7 @@ def image_ms_quick(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagenam
             logging.debug('Splitted the selfcalibrated MS into a file named ' + solar_ms[:-3] + "_selfcalibrated.ms")
             #split(vis=solar_ms, outputvis=outms_di, datacolumn='corrected')
             ##### putting in a hand-split in an effort to run the realtime pipeline continuously
-            manual_split_corrected_ms(solar_ms, outms_di)
+            utils.manual_split_corrected_ms(solar_ms, outms_di)
             
         time2=timeit.default_timer()
         logging.debug('Time taken for selfcal and fluxscaling is: {0:.1f} s'.format(time2-time1))

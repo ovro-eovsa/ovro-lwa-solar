@@ -401,7 +401,7 @@ def remove_nonsolar_sources(msfile, imsize=4096, cell='2arcmin', minuv=0, auto_p
         deconvolve.predict_model(msfile, outms=tmpms, image=image_nosun, pol=pol)
             
     uvsub(tmpms)
-    split(vis=tmpms, outputvis=outms, datacolumn='corrected')
+    utils.manual_split_corrected_ms(vis=tmpms, outputvis=outms)# datacolumn='corrected'
     # remove temporary image and ms
     
     if delete_tmp_files:
