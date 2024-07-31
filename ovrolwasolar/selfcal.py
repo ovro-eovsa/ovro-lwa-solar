@@ -334,10 +334,11 @@ def DI_selfcal(solar_ms, solint_full_selfcal=14400, solint_partial_selfcal=3600,
         logging.debug('Splitted the selfcalibrated MS into a file named ' + solar_ms[:-3] + "_selfcalibrated.ms")
         corrected_data_present=utils.check_corrected_data_present(solar_ms)
         if corrected_data_present:
-            datacolumn='corrected'
+            datacolumn='CORRECTED'
+            utils.manual_split_corrected_ms(vis=solar_ms, outputvis=solar_ms_slfcaled)
         else:
-            datacolumn='data'
-        split(vis=solar_ms, outputvis=solar_ms_slfcaled, datacolumn=datacolumn)
+            datacolumn='DATA'
+            utils.manual_split_corrected_ms(vis=solar_ms, outputvis=solar_ms_slfcaled, datacolumn=datacolumn)
             
 
     return solar_ms_slfcaled
