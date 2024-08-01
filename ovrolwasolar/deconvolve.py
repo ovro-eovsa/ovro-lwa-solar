@@ -86,6 +86,9 @@ def run_wsclean(msfile, imagename, size:int =4096, scale='2arcmin', fast_vis=Fal
         'horizon_mask':"2deg",      # horizon mask distance (to mask horizon direction RFI)
         'quiet':'',                 # stop printing to stdout, save time
     }
+    
+    if fast_vis:
+        default_kwargs['weight']='briggs 0.5'
 
     if auto_pix_fov:
         msmd = msmetadata()
