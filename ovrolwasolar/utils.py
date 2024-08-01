@@ -784,6 +784,7 @@ def check_for_file_presence(imagename,pol,suffix='image'):
     return present 
     
 def manual_split_corrected_ms(vis, outputvis, datacolumn='CORRECTED_DATA'):
+    tb=table()
     if datacolumn=='CORRECTED_DATA':
         tb.open(vis, nomodify=False)
         try:
