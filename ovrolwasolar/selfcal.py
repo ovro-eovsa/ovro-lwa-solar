@@ -25,6 +25,9 @@ def do_selfcal(msfile, num_phase_cal=2, num_apcal=2, applymode='calflag', loggin
     logging.debug('The plan is to do ' + str(num_phase_cal) + " rounds of phase selfcal")
     logging.debug('The plan is to do ' + str(num_apcal) + " rounds of amplitude-phase selfcal")
     
+    if pol!='I':
+        pol='XX,YY'
+        
     num_pol=2
     if pol=='XX,YY':
         num_pol=4
