@@ -107,7 +107,8 @@ def get_nonsolar_sources_loc_pix(msfile, image="allsky", verbose=False, min_beam
             del srcs[i]
     return srcs
 
-def determine_region_for_subtraction(imgdata, source,subtraction_area,cell,solar_pix,
+
+def mask_source_for_subtraction(imgdata, source,subtraction_area,cell,solar_pix,
                                         no_subtraction_region, min_subtraction_region=60):
     '''
     :param source: This has the source coordinates in pixel units
@@ -166,11 +167,97 @@ def determine_region_for_subtraction(imgdata, source,subtraction_area,cell,solar
                           'with flux {3:.1f} Jy'.format(source['label'], srcx, srcy, np.max(imgdata[0, 0, slicey, slicex])))
     return bbox
 
+
+def mask_all_non_sun(imgdata, solar_pix, cell, shape="rect", blur_border=0,
+                     include_edge_source = -1, mask_size=200):
+    """
+    Mask all non-solar sources from the image
+
+    :param imgdata: input image data
+    :param solar_pix: pixel location of the Sun
+    :param shape ["rect", "circ",]
+    :param mask_size: size of the mask in arcminutes
+    :param include_edge_source: 1 to include sources at the edge (to the final image, (meaning not flagging the edge source)),
+      -1 to exclude them
+    :return: image with non-solar sources masked
+    """
+
+    from scipy import ndimage
+    from skimage import filters
+    from skimage.morphology import binary_erosion, binary_dilation, disk
+    from skimage.measure import label, regionprops
+
+    data_copy = np.copy(imgdata) # should not be modified during the process
+    new_data = np.zeros_like(imgdata)
+    mask = np.zeros_like(imgdata)
+    (solx,soly)=solar_pix
+    dx,dy=cell
+
+    # check if the method is valid
+    if shape not in ["rect", "circ"]:
+        logging.warning("Method not recognized. Using default rect method")
+        shape = "rect"
+
+    if shape == "rect":
+        sol_area_xpix = int(mask_size / dx)
+        sol_area_ypix = int(mask_size / dy)
+        new_data[0, 0, soly - sol_area_ypix // 2:soly + sol_area_ypix // 2 + 1,
+            solx - sol_area_xpix // 2:solx + sol_area_xpix // 2 + 1] = 0
+        mask[0, 0, soly - sol_area_ypix // 2:soly + sol_area_ypix // 2 + 1,
+            solx - sol_area_xpix // 2:solx + sol_area_xpix // 2 + 1] = 1.0000
+
+    elif shape == "circ":
+        xx, yy = np.meshgrid(np.arange(imgdata.shape[3]), np.arange(imgdata.shape[2]))
+        r = np.sqrt((xx - solx) ** 2 + (yy - soly) ** 2)
+        r_in_pix = mask_size / dx
+        mask[0,0,r < r_in_pix] = 1.0000
+        new_data[0, 0, r < r_in_pix] = 0
+
+
+    if include_edge_source != 0:
+        mask_tmp = mask.squeeze()
+        masked_data_tmp = new_data.squeeze()
+        data_copy_tmp = data_copy.squeeze()
+        # edge 
+        mask_edge = filters.sobel(mask_tmp)
+        thresholded  = data_copy_tmp> ((data_copy_tmp*mask_tmp)*1e-3)
+
+        # expand the mask by 10 pixels disk
+        masked_source = ndimage.morphology.grey_dilation(thresholded, size=(12,12))>1e-3
+            
+        # for the regions intersect with the edge, added to the mask
+        regions_sources = label(masked_source)
+        props = regionprops(regions_sources)
+        for prop in props:
+            mask_one_source = (regions_sources == prop.label)
+            if np.sum(mask_one_source * mask_edge) > 0.5:
+                if include_edge_source == 1: # include the edge source in the model to subtract
+                    mask_tmp[ mask_one_source ] = 0
+                    masked_data_tmp[ mask_one_source ] = data_copy_tmp[ mask_one_source ]
+                elif include_edge_source == -1: # exclude the edge source from the model to subtract
+                    mask_tmp[ mask_one_source ] = 1
+                    masked_data_tmp[ mask_one_source ] = 0
+        
+        new_data = masked_data_tmp.reshape(new_data.shape)
+        mask = mask_tmp.reshape(mask.shape)
+
+    if blur_border > 0:
+        from scipy.ndimage import gaussian_filter
+        mask_tmp_blurred = gaussian_filter(mask_tmp, sigma=blur_border)
+        mask = mask_tmp_blurred.reshape(mask.shape)
+        new_data = data_copy * (1 - mask)
+    
+    
+    return new_data, mask
+
+
     
     
 @profile
-def gen_nonsolar_source_model(msfile, imagename="allsky", outimage=None, sol_area=400., src_area=200.,
-                              remove_strong_sources_only=True, verbose=True, pol='I', no_subtraction_region=120):
+def gen_nonsolar_source_model(msfile, imagename="allsky", outimage=None, 
+            sol_area=400., src_area=200., overwrite_exist=False,
+            remove_strong_sources_only=True, verbose=True, pol='I', no_subtraction_region=120,
+            shape_sun_mask="circ", include_edge_source = -1, mask_blur_border_pix=3):
     """
     Take the full sky image, remove non-solar sources from the image
 
@@ -185,14 +272,16 @@ def gen_nonsolar_source_model(msfile, imagename="allsky", outimage=None, sol_are
     :param no_subtraction_region: This is the region around sun, which will never
                                    be subtracted. We use a square of size this number.
                                    This is in arcminutes.
-    :return: FITS image with non-solar sources removed
+    :param shape_sun_mask: shape of the mask around the Sun. Default is "circ"
+    :param include_edge_source: 1 to flag the edge source, -1 to keep them in final image
+    :return: FITS image with non-solar sources removed, the masked data and the mask
     """
     if not outimage:
         outimage = imagename + "_no_sun"
     present=utils.check_for_file_presence(outimage,pol=pol, suffix='model')
-    if present:
+    if present and not overwrite_exist:
         logging.debug("I will use existing model for source subtraction "+outimage)
-        return outimage
+        return outimage, np.nan, np.nan # placeholder for data and mask
     
     imagename1=imagename 
     if pol=='I':
@@ -229,12 +318,13 @@ def gen_nonsolar_source_model(msfile, imagename="allsky", outimage=None, sol_are
         head=fits.getheader(imagename + prefix+"-model.fits")
         if remove_strong_sources_only:
             new_data = np.zeros_like(data)
+            mask = np.ones_like(data)
             for s in srcs:
-                bbox = determine_region_for_subtraction(data,s,src_area,(dx,dy),(solx,soly),no_subtraction_region)
+                bbox = mask_source_for_subtraction(data,s,src_area,(dx,dy),(solx,soly),no_subtraction_region)
                 slicey, slicex = slice(int(bbox[0][0]), int(bbox[0][1]) + 1), slice(int(bbox[1][0]), int(bbox[1][1]) + 1)
                 new_data[0, 0, slicey, slicex] = data[0, 0, slicey, slicex]
+                mask[0, 0, slicey, slicex] = 0.0000
             
-               
             no_subtraction_region_ypix=no_subtraction_region/dy
             no_subtraction_region_xpix=no_subtraction_region/dx
             
@@ -244,21 +334,19 @@ def gen_nonsolar_source_model(msfile, imagename="allsky", outimage=None, sol_are
             new_data[0, 0, slicey, slicex] = 0.0
             #print (bbox)
         else:
-            new_data = np.copy(data)
-            sol_area_xpix = int(sol_area / dx)
-            sol_area_ypix = int(sol_area / dy)
-            new_data[0, 0, soly - sol_area_ypix // 2:soly + sol_area_ypix // 2 + 1,
-            solx - sol_area_xpix // 2:solx + sol_area_xpix // 2 + 1] = 0.0000
-
+            new_data, mask = mask_all_non_sun(data, (solx, soly), (dx, dy),
+                    mask_size=sol_area, blur_border=mask_blur_border_pix,
+                    shape=shape_sun_mask, include_edge_source = include_edge_source)
         
         fits.writeto(outimage + prefix+'-model.fits', new_data, header=head, overwrite=True)
-    return outimage
-    
+    return outimage, new_data, mask
+
 @profile
-def remove_nonsolar_sources(msfile, imsize=4096, cell='2arcmin', minuv=0,
-                            remove_strong_sources_only=True, pol='I', niter=50000, fast_vis=False, 
-                            fast_vis_image_model_subtraction=False, delete_tmp_files=True, auto_pix_fov=False,
-                            delete_allsky=True, skyimage=None):
+def remove_nonsolar_sources(msfile, imsize=4096, cell='2arcmin', minuv=0, auto_pix_fov=False,
+        remove_strong_sources_only=True, pol='I', niter=50000, fast_vis=False, 
+        fast_vis_image_model_subtraction=False, sol_area=400., src_area=200.,
+        no_subtraction_region=120, shape_sun_mask="circ", include_edge_source = -1, mask_blur_border_pix=3,
+        delete_tmp_files=True, delete_allsky=True, skyimage=None,):
 
     """
     Wrapping for removing the nonsolar sources from the solar measurement set
@@ -303,11 +391,14 @@ def remove_nonsolar_sources(msfile, imsize=4096, cell='2arcmin', minuv=0,
         else:
             logging.debug("I will use existing image "+tmpimg)
         image_nosun = gen_nonsolar_source_model(msfile, imagename=tmpimg,
-                                                remove_strong_sources_only=remove_strong_sources_only, pol=pol)
+                remove_strong_sources_only=remove_strong_sources_only, pol=pol,
+                shape_sun_mask= shape_sun_mask, include_edge_source= include_edge_source,
+                no_subtraction_region=no_subtraction_region,mask_blur_border_pix = mask_blur_border_pix,
+                sol_area=sol_area, src_area=src_area)[0]
         deconvolve.predict_model(msfile, outms=tmpms, image=image_nosun, pol=pol)
             
     uvsub(tmpms)
-    split(vis=tmpms, outputvis=outms, datacolumn='corrected')
+    utils.manual_split_corrected_ms(vis=tmpms, outputvis=outms)# datacolumn='corrected'
     # remove temporary image and ms
     
     if delete_tmp_files:

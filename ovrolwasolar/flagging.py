@@ -29,8 +29,8 @@ def get_antids(msfile):
     tb.close()
     msmd = msmetadata()
     msmd.open(msfile)
-    core_ant_name_list = ['LWA{0:03d}'.format(i + 1) for i in range(0, 256)]
-    exp_ant_name_list = ['LWA{0:03d}'.format(i + 1) for i in range(256, 366)]
+    core_ant_name_list = ['LWA{0:03d}'.format(i + 1) for i in range(0, 251)]
+    exp_ant_name_list = ['LWA{0:03d}'.format(i + 1) for i in range(251, 366)]
     core_ant_ids = []
     exp_ant_ids = []
     for ms_ant_name in ms_ant_names:
