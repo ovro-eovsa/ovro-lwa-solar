@@ -188,7 +188,7 @@ class model_generation():
         I_factor=0.5*(XX_factor+YY_factor)
         Q_factor=0.5*(XX_factor-YY_factor)
         U_factor=np.real(XY_factor)
-        V_factor=-np.imag(XY_factor)
+        V_factor=np.imag(XY_factor)
         if current_pol_index==0:
             return I_factor
         elif current_pol_index==1:

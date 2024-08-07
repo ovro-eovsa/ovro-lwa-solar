@@ -6,13 +6,8 @@ import sys, os, time
 import numpy as np
 import logging, glob
 from astropy.time import Time
-
 from . import utils,flagging
-from .file_handler import File_Handler
-from .primary_beam import analytic_beam as beam 
-from . import primary_beam
 from .generate_calibrator_model import model_generation
-from . import generate_calibrator_model
 import timeit
 tb = table()
 me = measures()
@@ -298,6 +293,7 @@ def do_bandpass_correction(solar_ms, calib_ms=None, bcal=None, caltable_folder='
         else:
             logging.debug('I am told to overwrite it. Proceed with bandpass correction.')
             os.system('rm -rf '+solar_ms1)
+
     
     if not bcal:
         bcal = [caltable_folder + "/" + os.path.basename(calib_ms).replace('.ms', '.bcal')]
@@ -318,6 +314,14 @@ def do_bandpass_correction(solar_ms, calib_ms=None, bcal=None, caltable_folder='
                 logging.debug('Bandpass calibration table generated using ' + calib_ms)
             else:
                 logging.debug('I found an existing bandpass table. Will reuse it to calibrate.')
+    else:
+        if not isinstance(bcal, list):
+            bcal=[bcal]
+        if os.path.isdir(bcal[0]) and not overwrite:
+            logging.debug('I found an existing bandpass table. Will reuse it to calibrate.')   
+        else:
+            logging.error("Calibration table does not exist/should be overwritten. Please provide"+\
+                        " calibration MS")
     
     
     final_bcal=[]

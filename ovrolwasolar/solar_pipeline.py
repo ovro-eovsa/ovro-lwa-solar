@@ -15,18 +15,11 @@ from casatools import table, measures, componentlist, msmetadata
 import math
 import sys, os, time
 import numpy as np
-from astropy.coordinates import SkyCoord
 import astropy.units as u
-from astropy.wcs import WCS
 from astropy.io import fits
-import matplotlib.pyplot as plt
 from . import utils,flagging,calibration,selfcal,source_subtraction,deconvolve,flux_scaling
 import logging, glob
 from .file_handler import File_Handler
-from .primary_beam import analytic_beam as beam 
-from . import primary_beam
-from .generate_calibrator_model import model_generation
-from . import generate_calibrator_model
 import timeit
 from line_profiler import profile
 
@@ -108,8 +101,8 @@ def image_ms(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagename='sun
              do_final_imaging=True, pol='I', 
              solint_full_DI_selfcal=14400, solint_partial_DI_selfcal=3600, solint_full_DD_selfcal=1800, solint_partial_DD_selfcal=600,
              fast_vis=False, fast_vis_image_model_subtraction=False, delete=True,
-             refant='202', overwrite=False, do_fluxscaling=False, apply_primary_beam=True, 
-             delete_allsky=True, sky_image=None):
+             refant='202', overwrite=False, do_fluxscaling=False, do_polcal=False,apply_primary_beam=True,
+             delete_allsky=True,sky_image=None):
 
     """
     Pipeline to calibrate and imaging a solar visibility
@@ -210,7 +203,7 @@ def image_ms(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagename='sun
             outms = outms_di_
     else:
         logging.info('Removing almost all sources in the sky except Sun')
-        outms = source_subtraction.remove_nonsolar_sources(solar_ms,pol=pol)
+        outms = source_subtraction.remove_nonsolar_sources(solar_ms,pol=pol, remove_strong_sources_only=False)
         logging.info('The source subtracted MS is ' + outms)
 
     logging.info('Changing the phasecenter to position of Sun')

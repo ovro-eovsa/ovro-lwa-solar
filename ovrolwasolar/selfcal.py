@@ -4,19 +4,10 @@ from casatools import table, measures, componentlist, msmetadata
 import math
 import sys, os, time
 import numpy as np
-from astropy.coordinates import SkyCoord
-import astropy.units as u
-from astropy.wcs import WCS
 from astropy.io import fits
-import matplotlib.pyplot as plt
-from . import utils,flagging,calibration,deconvolve
+from . import utils,calibration,deconvolve
 from . import flux_scaling
 import logging, glob
-from .file_handler import File_Handler
-from .primary_beam import analytic_beam as beam 
-from . import primary_beam
-from .generate_calibrator_model import model_generation
-from . import generate_calibrator_model
 from line_profiler import profile
 
 import timeit
@@ -28,12 +19,15 @@ msmd = msmetadata()
 @profile
 def do_selfcal(msfile, num_phase_cal=2, num_apcal=2, applymode='calflag', logging_level='info', caltable_folder='caltables/',
                ms_keyword='di_selfcal_time',pol='I', refant='202', niter0=1000, 
-               niter_incr=500, auto_pix_fov=False, quiet=True):
+               niter_incr=500, auto_pix_fov=False, quiet=True, bandpass_selfcal=False):
     
     time1=timeit.default_timer()          
     logging.debug('The plan is to do ' + str(num_phase_cal) + " rounds of phase selfcal")
     logging.debug('The plan is to do ' + str(num_apcal) + " rounds of amplitude-phase selfcal")
     
+    if pol!='I':
+        pol='XX,YY'
+        
     num_pol=2
     if pol=='XX,YY':
         num_pol=4
@@ -85,7 +79,8 @@ def do_selfcal(msfile, num_phase_cal=2, num_apcal=2, applymode='calflag', loggin
                 return good
         logging.debug("Finding gain solutions and writing in into " + imagename + ".gcal")
         time1=timeit.default_timer()
-        gaincal(vis=msfile, caltable=imagename + ".gcal", uvrange=">10lambda",
+        if not bandpass_selfcal:
+            gaincal(vis=msfile, caltable=imagename + ".gcal", uvrange=">10lambda",
                 calmode='p', solmode='L1R', rmsthresh=[10, 8, 6], refant=refant)
         time2=timeit.default_timer()
         logging.debug('Solving for selfcal gain solutions took {0:.1f} s'.format(time2-time1))
@@ -152,7 +147,8 @@ def do_selfcal(msfile, num_phase_cal=2, num_apcal=2, applymode='calflag', loggin
                 return good
         caltable = imagename + "_ap_over_p.gcal"
 
-        gaincal(vis=msfile, caltable=caltable, uvrange=">10lambda",
+        if not bandpass_selfcal:
+            gaincal(vis=msfile, caltable=caltable, uvrange=">10lambda",
                 calmode='ap', solnorm=True, normtype='median', solmode='L1R',
                 rmsthresh=[10, 8, 6], gaintable=final_phase_caltable, refant=refant)
         utils.put_keyword(caltable, ms_keyword, utils.get_keyword(msfile, ms_keyword))

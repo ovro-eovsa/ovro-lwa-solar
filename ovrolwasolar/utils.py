@@ -4,7 +4,6 @@ from astropy.io import fits
 from casatools import image, table, msmetadata, quanta, measures
 import numpy as np
 import logging, glob
-from . import primary_beam
 from .primary_beam import analytic_beam as beam 
 from .generate_calibrator_model import model_generation
 from . import generate_calibrator_model
@@ -35,6 +34,33 @@ def get_sun_pos(msfile, str_output=True):
     return d0_j2000
 
 
+def get_solar_azel(msfile):
+    '''
+    Returns az ,el of sun in degrees.
+    
+    :param msfile: Name of MS 
+    :type msfile: str
+    
+    :return: az,el in degrees
+    '''
+    me=measures()
+    m = get_sun_pos(msfile, str_output=False)
+    logging.debug('Solar ra: ' + str(m['m0']['value']))
+    logging.debug('Solar dec: ' + str(m['m1']['value']))
+    tb=table()
+    tb.open(msfile)
+    t0 = tb.getcell('TIME', 0)
+    tb.close()
+    ovro = me.observatory('OVRO_MMA')
+    timeutc = me.epoch('UTC', '%fs' % t0)
+    me.doframe(ovro)
+    me.doframe(timeutc)
+    d = me.measure(m, 'AZEL')
+    logging.debug('Solar azimuth: ' + str(d['m0']['value']))
+    logging.debug('Solar elevation: ' + str(d['m1']['value']))
+    elev = d['m1']['value']*180/np.pi
+    az=d['m0']['value']*180/np.pi
+    return az,elev
 def get_msinfo(msfile):
     """
     Return some basic information of an OVRO-LWA measurement set
@@ -388,23 +414,8 @@ def correct_primary_beam(msfile, imagename, pol='I', fast_vis=False):
     provide full name of files. No addition to filename is done.
     If single file is provided, we can add '.image.fits' to it. 
     '''
-    me=measures()
-    m = get_sun_pos(msfile, str_output=False)
-    logging.debug('Solar ra: ' + str(m['m0']['value']))
-    logging.debug('Solar dec: ' + str(m['m1']['value']))
-    tb=table()
-    tb.open(msfile)
-    t0 = tb.getcell('TIME', 0)
-    tb.close()
-    ovro = me.observatory('OVRO_MMA')
-    timeutc = me.epoch('UTC', '%fs' % t0)
-    me.doframe(ovro)
-    me.doframe(timeutc)
-    d = me.measure(m, 'AZEL')
-    logging.debug('Solar azimuth: ' + str(d['m0']['value']))
-    logging.debug('Solar elevation: ' + str(d['m1']['value']))
-    elev = d['m1']['value']*180/np.pi
-    az=d['m0']['value']*180/np.pi
+    
+    az,elev=get_solar_azel(msfile)
     pb=beam(msfile=msfile)
     pb.srcjones(az=[az],el=[elev])
     jones_matrices=pb.get_source_pol_factors(pb.jones_matrices[0,:,:])
@@ -472,11 +483,87 @@ def correct_primary_beam(msfile, imagename, pol='I', fast_vis=False):
                 hdu.close()
     return
 
+def get_solar_loc_pix(msfile, image="allsky"):
+    """
+    Get the x, y pixel location of the Sun from an all-sky image
+
+    :param msfile: path to CASA measurement set
+    :param image: all sky image made from the measurement set
+    :return: pixel value in X and Y for solar disk center
+    """
+    from astropy.wcs.utils import skycoord_to_pixel
+    from astropy.coordinates import SkyCoord
+    import astropy.units as u
+    from astropy.wcs import WCS
+    
+    m = get_sun_pos(msfile, str_output=False)
+    ra = m['m0']['value']
+    dec = m['m1']['value']
+    coord = SkyCoord(ra * u.rad, dec * u.rad, frame='icrs')
+    logging.debug('RA, Dec of Sun is ' + str(ra) + ", " + str(dec) + ' rad')
+    head=fits.getheader(image)
+    w = WCS(head)
+    pix = skycoord_to_pixel(coord, w)
+    if np.isnan(pix[0]):
+        logging.warning('Sun is not in the image')
+        return None, None
+    x = int(pix[0])
+    y = int(pix[1])
+    logging.debug('Pixel location of Sun is ' + str(x) + " " + str(y) + " in imagename " + image)
+    return x, y
+
+
+def get_rms(data,thresh=7):
+    '''
+    This function returns the rms of the data. As a first cut, it calculates
+    the std. Then it calculates the std again, by only considering pixels which
+    are lower than the thresh*rms
+    
+    :param data: image data
+    :type data: numpy ndarray
+    :param thresh: threshold above rms to remove true sources in rms caluclation.
+                    Default: 7
+    :type thresh: float
+    :return: rms
+    :rtype: float
+    '''
+    rms=np.nanstd(data)
+    pos=np.where(abs(data)<thresh*rms)
+    rms=np.nanstd(data[pos])
+    return rms
+
+
+def blank_all_pixels(imagename):
+    hdu=fits.open(imagename,mode='update')
+    try:
+        hdu[0].data*=0.0
+        hdu.flush()
+    finally:
+        hdu.close()
+    return
+
+
+def get_uvlambda_from_uvdist(u,v,msname=None, freqs=None):
+    msmd = msmetadata()
+    msmd.open(msname)
+    chan_freqs = msmd.chanfreqs(0)
+    msmd.done()
+    
+    wavelengths=299792458/chan_freqs
+    
+    u=np.expand_dims(u,1)
+    u=np.repeat(u,len(chan_freqs),axis=1)
+    ulambda=(u/wavelengths).T
+    
+    v=np.expand_dims(v,1)
+    v=np.repeat(u,len(chan_freqs),axis=1)
+    vlambda=(v/wavelengths).T
+    return ulambda,vlambda
 
 def swap_fastms_pols(msname):
     '''
     This function corrects for the polarisation swap present in the fast MS data
-    correction_date provides the date on which the swap was corrected in the 
+     the date on which the swap was corrected in the 
     X engine itself. Details of this isse has been discussed in 
     https://github.com/ovro-lwa/lwa-issues/issues/486
     

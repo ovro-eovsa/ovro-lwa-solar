@@ -49,9 +49,12 @@ class woody_beam():
         self.Qbeam=None
         self.Vbeam=None
         self.freq=None
-        self.msfile=msfile
+        if self.freq is None:
+            self.msfile=msfile
         
     def ctrl_freq(self):
+        if self.freq is not None:
+            return
         msmd=msmetadata()
         msmd.open(self.msfile)
         self.freq = msmd.meanfreq(0)*1e-6
@@ -137,7 +140,7 @@ class woody_beam():
                     Qfctr = self.Qbeam.reshape(self.gridsize*self.gridsize)[index]
                     Ufctr = self.Ubeam.reshape(self.gridsize*self.gridsize)[index]
                     Vfctr = self.Vbeam.reshape(self.gridsize*self.gridsize)[index]
-                    self.jones_matrices[i,:,:]=np.array([[Ifctr+Qfctr,Ufctr-1j*Vfctr],[Ufctr+1j*Vfctr,Ifctr-Qfctr]])
+                    self.jones_matrices[i,:,:]=np.array([[Ifctr+Qfctr,Ufctr+1j*Vfctr],[Ufctr-1j*Vfctr,Ifctr-Qfctr]])
                 else:
                     raise RuntimeError
             except:
@@ -165,8 +168,9 @@ class jones_beam:
             self.beam_file_path=beam_file_path
         except:
             self._beam_file_path=None
-        self.freq=None
-        self.msfile=msfile
+        self.freq=freq
+        if self.freq is None:
+            self.msfile=msfile
         self.num_theta=181
         self.num_phi=361
         self.start_freq=10
@@ -181,6 +185,9 @@ class jones_beam:
         
         
     def ctrl_freq(self):
+        if self.freq is not None:
+            return
+
         msmd=msmetadata()
         msmd.open(self.msfile)
         self.freq = msmd.meanfreq(0) * 1e-6

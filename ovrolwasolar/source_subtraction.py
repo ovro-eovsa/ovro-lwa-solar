@@ -9,11 +9,8 @@ import astropy.units as u
 from astropy.wcs import WCS
 from astropy.io import fits
 import matplotlib.pyplot as plt
-from . import utils,flagging,calibration,selfcal,deconvolve
+from . import utils,deconvolve
 import logging, glob
-from .file_handler import File_Handler
-from .primary_beam import analytic_beam as beam 
-from . import primary_beam
 from .generate_calibrator_model import model_generation
 from .  import generate_calibrator_model
 from line_profiler import profile
