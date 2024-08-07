@@ -264,7 +264,7 @@ def DI_selfcal(solar_ms, solint_full_selfcal=14400, solint_partial_selfcal=3600,
                     if calib_ms:
                         di_cal=convert_caltables_for_fast_vis(solar_ms,calib_ms,di_cal)
                     else:
-                        raise RuntimeError("Supplying a calibration MS is mandatory for imaging fast visibilities")
+                        logging.warning("Slow MS not provided. Using default")
 
                 applycal(solar_ms, gaintable=di_cal, calwt=[False] * len(di_cal), applymode=applymode)
                 flagdata(vis=solar_ms, mode='rflag', datacolumn='corrected')
@@ -334,10 +334,11 @@ def DI_selfcal(solar_ms, solint_full_selfcal=14400, solint_partial_selfcal=3600,
         logging.debug('Splitted the selfcalibrated MS into a file named ' + solar_ms[:-3] + "_selfcalibrated.ms")
         corrected_data_present=utils.check_corrected_data_present(solar_ms)
         if corrected_data_present:
-            datacolumn='corrected'
+            datacolumn='CORRECTED'
+            utils.manual_split_corrected_ms(vis=solar_ms, outputvis=solar_ms_slfcaled)
         else:
-            datacolumn='data'
-        split(vis=solar_ms, outputvis=solar_ms_slfcaled, datacolumn=datacolumn)
+            datacolumn='DATA'
+            utils.manual_split_corrected_ms(vis=solar_ms, outputvis=solar_ms_slfcaled, datacolumn=datacolumn)
             
 
     return solar_ms_slfcaled
@@ -395,7 +396,7 @@ def DD_selfcal(solar_ms, solint_full_selfcal=1800, solint_partial_selfcal=600, c
                     if calib_ms:
                         caltables=convert_caltables_for_fast_vis(solar_ms,calib_ms,caltables)
                     else:
-                        raise RuntimeError("Supplying a calibration MS is mandatory for imaging fast visibilities")
+                        logging.warning("Slow MS not provided. Using default.")
 
             applycal(solar_ms, gaintable=caltables, calwt=[False] * len(caltables), applymode='calonly')
             flagdata(vis=solar_ms, mode='rflag', datacolumn='corrected')

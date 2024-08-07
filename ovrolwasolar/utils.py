@@ -781,5 +781,22 @@ def check_for_file_presence(imagename,pol,suffix='image'):
         if not os.path.isfile(imagename+pol_prefix+"-"+suffix+".fits"):
             present=False
             break
-    return present   
+    return present 
+    
+def manual_split_corrected_ms(vis, outputvis, datacolumn='CORRECTED_DATA'):
+    tb=table()
+    if datacolumn=='CORRECTED_DATA':
+        tb.open(vis, nomodify=False)
+        try:
+            corrected_data = tb.getcol('CORRECTED_DATA')
+            tb.putcol('DATA', corrected_data)
+            tb.flush()
+        except Exception as e:
+            logging.debug("Hand split method did not work")
+            raise e
+        finally:
+            tb.close() 
+    
+    os.system("mv " + vis + " " + outputvis)
+    return outputvis     
 
