@@ -346,7 +346,7 @@ def image_ms_quick(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagenam
     logging.debug('The source subtracted MS is ' + outms)
     time1=time2
 
-    logging.debug('Changing the phasecenter to position of Sun')
+    logging.info('Changing the phasecenter to position of Sun')
     change_phasecenter(outms)
     time2=timeit.default_timer()
     logging.debug('Time taken for changing phasecenter: {0:.1f} s'.format(time2-time1))
