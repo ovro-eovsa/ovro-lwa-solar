@@ -7,7 +7,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from . import utils
 import logging, glob
-from . import primary_beam
+import h5py
 #from sklearn.cluster import KMeans
 
 
@@ -542,3 +542,47 @@ def perform_baseline_flagging(msfile, overwrite=True, new_msfile=None, verbose=T
     tb.open(ms_new, nomodify=False)
     tb.putcol('FLAG', new_flag_data)
     tb.close()
+
+
+def make_cross_coor_flagging(ms_file, outh5):
+    """
+    create cross-correlation matrix for flagging
+    recorded as
+
+    in uv index:
+    when idx_ant1 < idx_ant2, the entry is flag ratio
+    when idx_ant1 >= idx_ant2, the entry is amplitude of correlation
+    
+    return a n_ant*n_ant matrix
+    """
+
+    tb.open(ms_file)
+
+    # Extract DATA Column
+    visibility_data = tb.getcol('DATA')
+
+    # extract ant1 and2 columns
+    ant1 = tb.getcol('ANTENNA1')
+    ant2 = tb.getcol('ANTENNA2')
+    stokes_I = 0.5 * (visibility_data[0,:,:] + visibility_data[3,:,:])
+
+    # Extract FLAG Column
+    flag_data = tb.getcol('FLAG')
+
+    # Close the table
+    tb.close()
+    
+    unique_ant1 = np.unique(ant1)
+    num_ant = unique_ant1.shape[-1]    
+
+    img_cross = np.zeros((num_ant, num_ant))
+    for idx in range(stokes_I.shape[1]):
+        idx1 = np.max([ant1[idx], ant2[idx]])
+        idx2 = np.min([ant1[idx], ant2[idx]])
+        img_cross[idx2,idx1]= np.mean(np.abs(flag_data[0,:,idx].squeeze()), axis=0)
+        img_cross[idx1,idx2]= np.mean(np.abs(stokes_I[:,idx]), axis=0)
+    
+    # save to hdf5 file
+    with h5py.File(outh5, 'w') as f:
+        f.create_dataset('cormat', data=img_cross)
+        f.attrs['timeobs'] = msmd.sourcetimes()['0']['value']

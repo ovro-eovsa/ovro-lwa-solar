@@ -1,11 +1,15 @@
 import matplotlib.pyplot as plt
 import numpy as np
+import os, sys
 import matplotlib.colors as mcolors
+import matplotlib.dates as mdates
 from casatools import table, msmetadata
 from matplotlib import gridspec
 import sunpy.map as smap
 from astropy.coordinates import SkyCoord
 from astropy import units as u 
+from astropy.io import fits
+from astropy.time import Time, TimeDelta
 from suncasa.utils import plot_mapX as pmX
 from matplotlib.patches import Ellipse
 import base64
@@ -72,7 +76,9 @@ def inspection_bl_flag(ms_file):
 
 def slow_pipeline_default_plot(fname, 
             freqs_plt = [34.1, 38.7, 43.2, 47.8, 52.4, 57.0, 61.6, 66.2, 70.8, 75.4, 80.0, 84.5],
-            fov = 7998,add_logo=True, apply_refraction_corr=False):
+            fov = 7998, add_logo=True, apply_refraction_param=False, 
+            spec_fits=None, spec_dur=600., spec_cmap='viridis', spec_vmin=None, spec_vmax=None, spec_norm='log',
+            spec_frange=[30., 88.]):
     """
     Function to plot the default pipeline output
 
@@ -80,91 +86,189 @@ def slow_pipeline_default_plot(fname,
     :param freqs_plt: list : list of frequencies to plot
     :param fov: float : field of view (default -3999 to 3999 arcsec)
     :param add_logo: bool : add logo to the plot
-    :param apply_refraction_corr: bool : apply refraction correction to the plot
+    :param apply_refraction_param: bool : apply refraction correction to the plot. 
+                Will be ignored if REFCOR in the FITS header is True
     """
     # Load the data
 
     from suncasa.io import ndfits
+    from suncasa.dspec import dspec
     meta, rdata = ndfits.read(fname)
+    t_img = Time(meta['header']['date-obs'])
+    if 'rfrcor' in meta['header']:
+        rfrcor = meta['header']
+    else:
+        rfrcor = False
 
-    fig = plt.figure(figsize=(8, 6.5))
-    gs = gridspec.GridSpec(3, 4, left=0.07, right=0.98, top=0.94, bottom=0.10, wspace=0.02, hspace=0.02)
+    if spec_fits is None or not os.path.exists(spec_fits):
+        fig = plt.figure(figsize=(8, 6.5))
+        gs = gridspec.GridSpec(3, 4, left=0.07, right=0.98, top=0.94, bottom=0.10, wspace=0.02, hspace=0.02)
+    else:
+        fig = plt.figure(figsize=(8, 8.5))
+        gs_ = gridspec.GridSpec(2, 1, figure=fig, left=0.07, right=0.98, top=0.95, bottom=0.055, hspace=0.15, height_ratios=[4,1.2])
+        gs = gridspec.GridSpecFromSubplotSpec(3, 4, wspace=0.02, hspace=0.02, subplot_spec=gs_[0])
+        ax_spec = fig.add_subplot(gs_[1])
+        pos = ax_spec.get_position()
+        ax_spec.set_position([pos.x0, pos.y0, (pos.x1-pos.x0)*0.9, pos.y1-pos.y0])
+        cmap = plt.get_cmap(spec_cmap)
+        cmap.set_bad(cmap(0.0))
+        # set normalization
+        if spec_norm == 'linear':
+            norm = mcolors.Normalize(vmax=spec_vmax, vmin=spec_vmin)
+        if spec_norm == 'log':
+            norm = mcolors.LogNorm(vmax=spec_vmax, vmin=spec_vmin)
+        d = dspec.Dspec()
+        d.read(spec_fits, source='lwa')
+        bt = t_img - TimeDelta(spec_dur/2., format='sec') 
+        et = t_img + TimeDelta(spec_dur/2., format='sec') 
+        btidx = np.argmin(np.abs(d.time_axis - bt))
+        etidx = np.argmin(np.abs(d.time_axis - et))
+        bfidx = np.argmin(np.abs(d.freq_axis - spec_frange[0]*1e6))
+        efidx = np.argmin(np.abs(d.freq_axis - spec_frange[1]*1e6))
+        time_plt = d.time_axis[btidx:etidx].plot_date
+        freq_plt = d.freq_axis[bfidx:efidx]/1e6
+        spec_plt = d.data[0, 0, bfidx:efidx, btidx:etidx]
+        im = ax_spec.pcolormesh(time_plt, freq_plt, spec_plt,
+                   shading='nearest', norm=norm, cmap=cmap)
+        ax_spec.xaxis_date()
+        ax_spec.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
+        ax_spec.set_xlabel('Time UT')
+        ax_spec.set_ylabel('Frequency [MHz]')
+        #ax_spec.set_title('OVRO-LWA Spectrogram')
+        ax_spec.axvspan(t_img.plot_date, (t_img+TimeDelta(10., format='sec')).plot_date, fill=False, ec='w') 
+        # colorbar
+        pos = ax_spec.get_position()
+        cax = fig.add_axes([pos.x1 + 0.005, pos.y0, 0.01, pos.y1 - pos.y0])
+        cb = plt.colorbar(im, ax=ax_spec, cax=cax)
+        cb.set_label('Flux (sfu)')
+        plt.setp(ax_spec.yaxis.get_majorticklabels(),
+                  rotation=90, ha="center", va="center", rotation_mode="anchor")
 
-    if True:
-                freqs_mhz = meta['ref_cfreqs']/1e6
-                for i in range(12):
-                    ax = fig.add_subplot(gs[i])
-                    freq_plt = freqs_plt[i]
-                    ax.set_facecolor('black')
-                    plt.setp(ax,xlabel='Solar X [arcsec]', ylabel='Solar Y [arcsec]')
-                    ax.text(0.02, 0.98, '{0:.0f} MHz'.format(freq_plt), color='w', ha='left', va='top', 
-                            fontsize=11, transform=ax.transAxes)                
-                    plt.setp(ax.yaxis.get_majorticklabels(),
-                              rotation=90, ha="center", va="center", rotation_mode="anchor")
 
-                    if np.min(np.abs(freqs_mhz - freq_plt)) < 2.:
-                        bd = np.argmin(np.abs(freqs_mhz - freq_plt)) 
-                        bmaj,bmin,bpa = meta['bmaj'][bd],meta['bmin'][bd],meta['bpa'][bd]
-                        beam0 = Ellipse((-fov/2*0.75, -fov/2*0.75), bmaj*3600,
-                                bmin*3600, angle=(-(90-bpa)),  fc='None', lw=2, ec='w')
+    freqs_mhz = meta['ref_cfreqs']/1e6
+    axes = []
+    for i in range(12):
+        ax = fig.add_subplot(gs[i])
+        freq_plt = freqs_plt[i]
+        ax.set_facecolor('black')
+        plt.setp(ax,xlabel='Solar X [arcsec]', ylabel='Solar Y [arcsec]')
+        ax.text(0.02, 0.98, '{0:.0f} MHz'.format(freq_plt), color='w', ha='left', va='top', 
+                fontsize=11, transform=ax.transAxes)                
+        plt.setp(ax.yaxis.get_majorticklabels(),
+                  rotation=90, ha="center", va="center", rotation_mode="anchor")
 
-                        rmap_plt_ = smap.Map(np.squeeze(rdata[0, bd, :, :]/1e6), meta['header'])
-                        rmap_plt = pmX.Sunmap(rmap_plt_)
+        if np.min(np.abs(freqs_mhz - freq_plt)) < 2.:
+            bd = np.argmin(np.abs(freqs_mhz - freq_plt)) 
+            bmaj,bmin,bpa = meta['bmaj'][bd],meta['bmin'][bd],meta['bpa'][bd]
+            beam0 = Ellipse((-fov/2*0.75, -fov/2*0.75), bmaj*3600,
+                    bmin*3600, angle=(-(90-bpa)),  fc='None', lw=2, ec='w')
 
-                        if apply_refraction_corr:
-                            # check if keyword is present
-                            if 'refra_shift_x' in meta.keys():
-                                com_x_corr = meta["refra_shift_x"][bd]
-                                com_y_corr = meta["refra_shift_y"][bd]
-                                rmap_plt.xrange = rmap_plt.xrange - com_x_corr*u.arcsec
-                                rmap_plt.yrange = rmap_plt.yrange - com_y_corr*u.arcsec
-                                 
-                        vmaxplt = np.percentile(rdata[0, bd, :, :]/1e6, 99.9)
-                        if np.isnan(vmaxplt):
-                             vmaxplt = np.inf
-                        im = rmap_plt.imshow(axes=ax, cmap='hinodexrt', vmin=0, vmax=vmaxplt)
-                        # set background black
+            rmap_plt_ = smap.Map(np.squeeze(rdata[0, bd, :, :]/1e6), meta['header'])
+            rmap_plt = pmX.Sunmap(rmap_plt_)
 
-                        rmap_plt.draw_limb(ls='-', color='w', alpha=0.8)
-                        ax.add_artist(beam0)
+            if apply_refraction_param and not rfrcor:
+                # check if keyword is present
+                if 'refra_shift_x' in meta.keys():
+                    com_x_corr = meta["refra_shift_x"][bd]
+                    com_y_corr = meta["refra_shift_y"][bd]
+                    rmap_plt.xrange = rmap_plt.xrange - com_x_corr*u.arcsec
+                    rmap_plt.yrange = rmap_plt.yrange - com_y_corr*u.arcsec
+                     
+            vmaxplt = np.percentile(rdata[0, bd, :, :]/1e6, 99.9)
+            if np.isnan(vmaxplt):
+                 vmaxplt = np.inf
+            im = rmap_plt.imshow(axes=ax, cmap='hinodexrt', vmin=0, vmax=vmaxplt)
+            # set background black
 
-                        freq_mhz = meta['ref_cfreqs'][bd]/1e6
-                        ax.text(0.99, 0.02, r"$T_B^{\rm max}=$"+ str(np.round(vmaxplt,2))+'MK', color='w', ha='right', va='bottom',
-                                    fontsize=10, transform=ax.transAxes)
-                        
-                    else:
-                        ax.text(0.5, 0.5, 'No Data', color='w', 
-                                ha='center', va='center', fontsize=18, transform=ax.transAxes)
-                    ax.set_xlim([-fov/2, fov/2])
-                    ax.set_ylim([-fov/2, fov/2])
-                    
-                    
+            rmap_plt.draw_limb(ls='-', color='w', alpha=0.5)
+            ax.add_artist(beam0)
 
-                    if i not in [8,9,10,11]: 
-                        ax.set_xlabel('')
-                        ax.get_xaxis().set_ticks([])
-                    if i not in [0, 4, 8]:
-                        ax.set_ylabel('')
-                        ax.get_yaxis().set_ticks([])
-                        
+            freq_mhz = meta['ref_cfreqs'][bd]/1e6
+            ax.text(0.99, 0.02, r"$T_B^{\rm max}=$"+ str(np.round(vmaxplt,2))+'MK', color='w', ha='right', va='bottom',
+                        fontsize=10, transform=ax.transAxes)
+            
+        else:
+            ax.text(0.5, 0.5, 'No Data', color='w', 
+                    ha='center', va='center', fontsize=18, transform=ax.transAxes)
+        ax.set_xlim([-fov/2, fov/2])
+        ax.set_ylim([-fov/2, fov/2])
 
-                    # add logo
-                    if add_logo:
-                        img1 = base64.b64decode(njit_logo_str)
-                        img1 = io.BytesIO(img1)
-                        img1 = mpimg.imread(img1, format='png')
-                        img2 = base64.b64decode(caltech_logo)
-                        img2 = io.BytesIO(img2)
-                        img2 = mpimg.imread(img2, format='png')
+        if i not in [8,9,10,11]: 
+            ax.set_xlabel('')
+            ax.get_xaxis().set_ticks([])
+        if i not in [0, 4, 8]:
+            ax.set_ylabel('')
+            ax.get_yaxis().set_ticks([])
+        axes.append(ax)
 
-                        ax_logo1 = fig.add_axes([0.015, 0.027, 0.07, 0.07])
-                        ax_logo1.imshow(img1)
-                        ax_logo1.axis('off')
-                        ax_logo2 = fig.add_axes([0.005,-0.003, 0.09, 0.08])
-                        ax_logo2.imshow(img2)
-                        ax_logo2.axis('off')
+        # add logo
+        if add_logo:
+            img1 = base64.b64decode(njit_logo_str)
+            img1 = io.BytesIO(img1)
+            img1 = mpimg.imread(img1, format='png')
+            img2 = base64.b64decode(caltech_logo)
+            img2 = io.BytesIO(img2)
+            img2 = mpimg.imread(img2, format='png')
 
-                    # add figure title
-                    fig.suptitle('OVRO-LWA '+ str(meta['header']['date-obs'])[0:22], fontsize=12)
+            if spec_fits is None or not os.path.exists(spec_fits):
+                ax_logo1 = fig.add_axes([0.015, 0.035, 0.07, 0.07])
+                ax_logo2 = fig.add_axes([0.005,-0.003, 0.09, 0.08])
+            else:
+                ax_logo1 = fig.add_axes([0.015,-0.005, 0.07, 0.07])
+                ax_logo2 = fig.add_axes([0.005,-0.030, 0.09, 0.08])
+            ax_logo1.imshow(img1)
+            ax_logo1.axis('off')
+            ax_logo2.imshow(img2)
+            ax_logo2.axis('off')
 
-    return fig
+        # add figure title
+        if rfrcor:
+            fig.suptitle('OVRO-LWA '+ str(meta['header']['date-obs'])[0:19] + ' [refraction corrected]', fontsize=12)
+        else:
+            fig.suptitle('OVRO-LWA '+ str(meta['header']['date-obs'])[0:19] + ' [original]', fontsize=12)
+
+    if 'ax_spec' in locals():
+        return fig, axes, ax_spec
+    else:
+        return fig, axes
+
+
+def make_allsky_image_plots(allsky_fitsfiles, vmaxs=[16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5], 
+        vmins=[-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1], cmap='viridis'):
+    """
+    Provide a list of allsky fits files generated from the pipeline, make a 12-panel plot 
+    """
+    fig = plt.figure(figsize=(8, 6.3))
+    gs = gridspec.GridSpec(3, 4, left=0.02, right=0.98, top=0.94, bottom=0.02, wspace=0.02, hspace=0.02)
+    freqs_mhz = []
+    axes = []
+    bands=['32MHz', '36MHz', '41MHz', '46MHz', '50MHz', '55MHz', '59MHz', '64MHz', '69MHz', '73MHz', '78MHz', '82MHz']
+    plotted_fits=[]
+    for i, band in enumerate(bands):
+        ax = fig.add_subplot(gs[i])
+        ax.set_facecolor('black')
+        found_band = False
+        for f in allsky_fitsfiles:
+            if band in f:
+                hdu = fits.open(f)
+                ax.imshow(hdu[0].data[0,0], origin='lower', vmin=vmins[i], vmax=vmaxs[i], cmap=cmap)
+                ax.get_xaxis().set_visible(False)
+                ax.get_yaxis().set_visible(False)
+                ax.get_xaxis().set_ticks([])
+                ax.get_yaxis().set_ticks([])
+                ax.text(0.02, 0.98, '{0:s} MHz'.format(band[:2]), color='w', ha='left', va='top', 
+                    fontsize=11, transform=ax.transAxes)                
+                plotted_fits.append(f)
+                found_band = True
+
+        if not found_band:
+            ax.text(0.5, 0.5, 'No Data', color='w', 
+                ha='center', va='center', fontsize=18, transform=ax.transAxes)
+
+    if len(plotted_fits) > 1:
+        timestr0 = os.path.basename(plotted_fits[0]).split('.')[2]
+        timestr = timestr0[:13]+':'+timestr0[13:15]+':'+timestr0[15:17]
+        fig.suptitle('OVRO-LWA All Sky Images '+ timestr, fontsize=12)
+        return fig, axes
+    else:
+        return -1

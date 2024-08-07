@@ -10,33 +10,19 @@ import astropy.units as u
 from astropy.wcs import WCS
 from astropy.io import fits
 import matplotlib.pyplot as plt
-from . import utils,flagging,calibration,selfcal,source_subtraction
-import logging, glob
-from . import utils,flagging
-from .file_handler import File_Handler
-from .primary_beam import analytic_beam as beam 
-from . import primary_beam
-from .generate_calibrator_model import model_generation
-from . import generate_calibrator_model
-from . import polcalib
-
+from . import utils
+import logging, glob, shlex, subprocess
 import timeit
 tb = table()
 me = measures()
 cl = componentlist()
 msmd = msmetadata()
 
-def run_wsclean(msfile, imagename, size:int =4096, scale='2arcmin', fast_vis=False, field=None,
+def run_wsclean(msfile, imagename, size:int =4096, scale='2arcmin', fast_vis=False, field=None, dry_run=False, rm_misc=True,
             predict=True, auto_pix_fov = False, telescope_size = 3200, im_fov=182*3600, pix_scale_factor=1.5,
             **kwargs):  ### uvrange is in lambda units
     """
     Wrapper for imaging using wsclean, use the parameter of wsclean in args. 
-    
-    Additional features: For polarized clean, if join_polarizations is not in kwargs,
-                        join_polarizations will be added by default to the WSClean call.
-                        
-                        If pol == either of ['I','XX','YY','XX,YY'] and no_negative not in 
-                        kwargs, no_negative keyword will be added to WSClean call
     
     To be noted:
 
@@ -75,23 +61,24 @@ def run_wsclean(msfile, imagename, size:int =4096, scale='2arcmin', fast_vis=Fal
     
     default_kwargs={
         'j':'1',                    # number of threads
-        'mem': '2',		            # fraction of memory usage	
-        'weight':'briggs 0',         # weighting scheme
+        'mem':'2',                 # fraction of memory usage
+        'weight':'uniform',         # weighting scheme
         'no_dirty':'',              # don't save dirty image
         'no_update_model_required':'', # don't update model required
+        'no_negative':'',           # no negative gain for CLEAN
         'niter':'10000',            # number of iterations
         'mgain':'0.8',              # maximum gain in each cycle
-        'auto_threshold':'5',       # auto threshold
+        'auto_threshold':'3',       # auto threshold
         'auto_mask':'8',            # auto mask
         'pol':'I',                  # polarization
         'minuv_l':'10',             # minimum uv distance in lambda
         'intervals_out':'1',        # number of output images
         'no-reorder':'',            # don't reorder the channels
         'beam_fitting_size':'2',    # beam fitting size
-        'horizon_mask':"2deg"    # horizon mask distance (to mask horizon direction RFI)
+        'horizon_mask':"2deg",      # horizon mask distance (to mask horizon direction RFI)
+        'quiet':'',                 # stop printing to stdout, save time
     }
-    
-    
+
     if auto_pix_fov:
         msmd = msmetadata()
         msmd.open(msfile)
@@ -124,61 +111,59 @@ def run_wsclean(msfile, imagename, size:int =4096, scale='2arcmin', fast_vis=Fal
             default_kwargs['field']='all'
         else:
             default_kwargs["intervals_out"] =str(len(field.split(',')))
+            default_kwargs['field']='all' # magic, has to be 'all', otherwise only 1st time slot has image
     else:
         default_kwargs['intervals_out']='1'
         default_kwargs['field']='all'
     if default_kwargs['intervals_out']!='1' and predict:
         raise RuntimeError("Prediction cannot be done with multiple images.")
     
-    time1 = timeit.default_timer()
-
     cmd_clean = "wsclean "
     # Add additional arguments from default_params
     for key, value in default_kwargs.items():
         # Convert Python-style arguments to command line format
         cli_arg = key.replace('_', '-')
         cmd_clean += f" -{cli_arg} {value} " if value != '' else f" -{cli_arg} "
-        
+
     if ('I' in default_kwargs['pol']) and ('join_polarizations' not in default_kwargs.keys()) and \
-            ('Q' in default_kwargs['pol'] or 'U' in default_kwargs['pol'] \
-            or 'V' in default_kwargs['pol']):
-        cmd_clean+= " -join-polarizations "
-    
-    elif (default_kwargs['pol']=='I' or default_kwargs['pol']=='XX' or default_kwargs['pol']=='YY' \
-            or default_kwargs['pol']=='XX,YY') and ('no_negative' not in default_kwargs.keys()):
-        cmd_clean+= " -no-negative " 
-        
+              ('Q' in default_kwargs['pol'] or 'U' in default_kwargs['pol'] \               
+              or 'V' in default_kwargs['pol']):                                                      
+          cmd_clean+= " -join-polarizations "                                                        
+    elif (default_kwargs['pol']=='I' or default_kwargs['pol']=='XX' or default_kwargs['pol']=='YY'
+              or default_kwargs['pol']=='XX,YY') and ('no_negative' not in default_kwargs.keys()):  
+          cmd_clean+= " -no-negative "                                                              
+
     cmd_clean += " -name " + imagename + " " + msfile
     
-    
-
-    logging.debug(cmd_clean)
-    os.system(cmd_clean)
-    
-    for str1 in ['residual','psf']:
-       os.system("rm -rf "+imagename+"*"+str1+"*.fits") 
-    time2 = timeit.default_timer()
-    logging.debug('Time taken for all sky imaging is {0:.1f} s'.format(time2-time1))
-
-    if default_kwargs['intervals_out']!='1':
-        image_names=utils.get_fast_vis_imagenames(imagename,pol=pol,msfile=msfile)
-        for name in image_names:
-            wsclean_imagename=name[0]
-            final_imagename=name[1]
-            os.system("mv "+wsclean_imagename+" "+final_imagename)
-
-    if predict:
-        enforce_threshold_on_model(msfile,imagename,pol=default_kwargs['pol'])
-        logging.debug("Predicting model visibilities from " + imagename + " in " + msfile)
+    if not dry_run:
         time1 = timeit.default_timer()
-        os.system("wsclean -predict -pol "+default_kwargs['pol']+" "+ "-name " + imagename + \
-                " -j "+default_kwargs['j']+" -mem "+default_kwargs['mem']+" " + msfile)
+        logging.debug(cmd_clean)
+        try:
+            proc=subprocess.run(shlex.split(cmd_clean))
+        except Exception as e:
+            proc.terminate()
+            raise e
+
+        if rm_misc:            
+            for str1 in ['residual','psf']:
+                os.system("rm -rf "+imagename+"*"+str1+"*.fits") 
         time2 = timeit.default_timer()
-        logging.debug('Time taken for predicting the model column is {0:.1f} s'.format(time2-time1))
+        logging.debug('Time taken for all sky imaging is {0:.1f} s'.format(time2-time1))
+
+        if predict:
+            logging.debug("Predicting model visibilities from " + imagename + " in " + msfile)
+            time1 = timeit.default_timer()
+            os.system("wsclean -j 1 -mem 2 -no-reorder -predict -pol "+default_kwargs['pol']+" "+ "-field all -name " + imagename + " " + msfile)
+            ### if field is not all, model visibilities are predicted only for first field. Does not work with fast vis
+            time2 = timeit.default_timer()
+            logging.debug('Time taken for predicting the model column is {0:.1f} s'.format(time2-time1))
+
+    return cmd_clean
 
 def enforce_threshold_on_model(imagename,thresh=7,pol='I',src_area=100, msfile=None, \
                                 sol_area=400., neg_thresh=1.5, enforce_polarised_beam_thresholding=False):
     '''
+
     imagename is the prefix of the image and is same as that supplied to the WSClean call
     This function will first determine the pixels for which the Stokes I/XX/YY/RR/LL image is less than 
     than thresh x rms . Then it will go to the polarised models and put all such pixels to
@@ -289,6 +274,7 @@ def enforce_threshold_on_model(imagename,thresh=7,pol='I',src_area=100, msfile=N
     for pol1 in pols:
         if num_pol==1:
             modelname=imagename+"-model.fits"
+
         else:
             modelname=imagename+"-"+pol1+"-model.fits"
         
@@ -329,6 +315,7 @@ def enforce_polarised_beam_threshold(stokes_data, Idata, beam_factors, stokes,th
     elif stokes in ['I','XX','YY','RR','LL']:
         factor=0.0  ### do nothing for Stokes I data
     else:
+
         logging.warning("Only Q,U,V supported.")
         return
     
@@ -337,8 +324,6 @@ def enforce_polarised_beam_threshold(stokes_data, Idata, beam_factors, stokes,th
     stokes_data[abs(stokes_data)<abs(threshold*thresh)]=0.0
     stokes_data[abs(stokes_data)>abs(threshold*thresh)]-=threshold
     return
-    
-    
 
 def find_smallest_fftw_sz_number(n):
     """
@@ -373,10 +358,10 @@ def predict_model(msfile, outms, image="_no_sun",pol='I'):
     :param image: input all sky image with non-solar sources, generated by gen_nonsolar_source_model()
     :return: N/A, but with an output CASA measurement set written into the same area as in the input ms
     """
-    enforce_threshold_on_model(image,pol=pol,msfile=msfile)
     os.system("cp -r " + msfile + " " + outms)
     clearcal(outms, addmodel=True)
-    os.system("wsclean -predict -pol "+pol+" -name " + image + " -j 1 -mem 2 " + outms)
+    os.system("wsclean -j 1 -mem 2 -no-reorder -predict -pol "+pol+" -field all -name " + image + " " + outms)
+    #### ### if field is not all, model visibilities are predicted only for first field. Does not work with fast vis
 
 
 
