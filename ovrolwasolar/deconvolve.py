@@ -129,8 +129,8 @@ def run_wsclean(msfile, imagename, size:int =4096, scale='2arcmin', fast_vis=Fal
         cmd_clean += f" -{cli_arg} {value} " if value != '' else f" -{cli_arg} "
 
     if ('I' in default_kwargs['pol']) and ('join_polarizations' not in default_kwargs.keys()) and \
-              ('Q' in default_kwargs['pol'] or 'U' in default_kwargs['pol'] \               
-              or 'V' in default_kwargs['pol']):                                                      
+            ('Q' in default_kwargs['pol'] or 'U' in default_kwargs['pol'] \
+            or 'V' in default_kwargs['pol']):                                                      
           cmd_clean+= " -join-polarizations "                                                        
     elif (default_kwargs['pol']=='I' or default_kwargs['pol']=='XX' or default_kwargs['pol']=='YY'
               or default_kwargs['pol']=='XX,YY') and ('no_negative' not in default_kwargs.keys()):  

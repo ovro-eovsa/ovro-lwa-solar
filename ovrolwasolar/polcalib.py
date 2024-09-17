@@ -300,7 +300,7 @@ def get_beam_factors(alt,az,freq,normalise=True):
         factors[i,0]=np.real(0.5*(pol_fac[0,0]+pol_fac[1,1]))
         factors[i,1]=np.real(0.5*(pol_fac[0,0]-pol_fac[1,1]))
         factors[i,2]=np.real(0.5*(pol_fac[0,1]+pol_fac[1,0]))
-        factors[i,3]=np.real(1j*0.5*(pol_fac[0,1]-pol_fac[1,0]))
+        factors[i,3]=np.real(-1j*0.5*(pol_fac[0,1]-pol_fac[1,0]))
     
     if normalise:
         return factors/np.expand_dims(factors[:,0],axis=1) ## all factors are in respect to I value
