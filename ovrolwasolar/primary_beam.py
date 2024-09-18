@@ -40,6 +40,13 @@ class analytic_beam():
         return jones_matrix**2
             
 class woody_beam():
+    '''
+    This class uses a beam_file_path. This path is the location where all the relevant
+    beamfiles are located. If freq is provided, then msfile is not required. However, if
+    freq is not provided, msfile is must. In this case, the frequency used is the central
+    frequency corresponding to the msfile. This code can only accept one frequency, but can
+    work simulatenously over multiple sources. This code uses the Woody beam model.
+    '''
     def __init__(self,msfile=None,beam_file_path='/opt/beam/',freq=None):
         try:
             self.beam_file_path=beam_file_path
@@ -55,6 +62,9 @@ class woody_beam():
             self.msfile=msfile
         
     def ctrl_freq(self):
+        '''
+        Reads the central frequency of the MS file for the spw 0.
+        '''
         if self.freq is not None:
             return
         msmd=msmetadata()
@@ -63,6 +73,10 @@ class woody_beam():
         msmd.done()
         
     def get_beam_file(self):
+        '''
+        Gets all the beamfiles from the relevant location and then chooses the file
+        while is most relevant for the frequency which the user has requested.
+        '''
         all_beam_files=glob.glob(self.beam_file_path+'/beamIQUV_*.npz')
         all_freqs=np.array([float(file1.split('/')[-1].split('_')[-1].split('.npz')[0]) for file1 in all_beam_files])
        
@@ -72,6 +86,10 @@ class woody_beam():
         return all_beam_files[ind]
     
     def read_beam_file(self):
+        '''
+        Reads the beamfile. If reading the beamfile is unsuccessfull, then it switches
+        to the analytical beam.
+        '''
         try:
             self.azelgrid = np.load(self.beam_file_path+'/azelgrid.npy')
             self.gridsize = self.azelgrid.shape[-1]
@@ -121,11 +139,14 @@ class woody_beam():
         The function name is srcjones to keep naming consistent with Jones_beam class.
         But this function returns I,Q,U,V beams.
         Compute beam scaling factor
+        Can work simulatenously over multiple sources. So the az and el can be two arrays.
+        The number of sources is assumed to be equal to the number of elements in alt/az
         Args:
             az: azimuth in degrees
             el: elevation in degrees
 
         Returns: [I,Q,U,V] flux factors, where for an unpolarized source [I,Q,U,V] = [1,0,0,0]
+        
 
         """
         num_sources=len(az)
@@ -158,196 +179,21 @@ class woody_beam():
         '''
         
         return  jones_matrix    
-                
-                
+                             
+        
 class jones_beam:
     """
     For loading and returning LWA dipole beam values (derived from simulations made by Nivedita)
+    Can only take one frequency at a time now. 
+    The beamfile path should contain the absolute path of the beamfile. 
+    If freq is provided, then msfile is not required. However, if
+    freq is not provided, msfile is must. In this case, the frequency used is the central
+    frequency corresponding to the msfile.
     """
     
-    def __init__(self,msfile=None,beam_file_path='/data07/msurajit/primary_beam_files/',freq=None):
-        try:
-            self.beam_file_path=beam_file_path
-        except:
-            self._beam_file_path=None
-        self.freq=freq
-        if self.freq is None:
-            self.msfile=msfile
-        self.num_theta=181
-        self.num_phi=361
-        self.start_freq=10
-        self.freq_step=1
-        self.num_freqs=91
-        self.num_header=10
-        self.beam_files=['LWA_x_10to100.ffe','LWA_y_10to100.ffe']  ### assume order [X,Y]
-        self.e_theta=[]
-        self.e_phi=[]
-        self.gain_theta=[]
-        self.gain_phi=[]
-        
-        
-    def ctrl_freq(self):
-        if self.freq is not None:
-            return
-
-        msmd=msmetadata()
-        msmd.open(self.msfile)
-        self.freq = msmd.meanfreq(0) * 1e-6
-        msmd.done()
-        
-    
-    @property
-    def beam_file_path(self):
-        return self._beam_file_path
-        
-    @beam_file_path.setter
-    def beam_file_path(self,value):
-        if value and os.path.isdir(value):
-            self._beam_file_path=value
-        else:
-            logging.warning("Beam file does not exist in give path."+\
-                    "Switching to analytical beam.")
-            self._beam_file_path=None
-    
-    @property
-    def msfile(self):
-        return self._msfile
-    
-    @msfile.setter
-    def msfile(self,value):
-        if os.path.isdir(value):
-            self._msfile=value
-        else:
-            raise RuntimeError  
-    
-    def read_beam_file(self,datafile):  ### freq in MHz
-        freq_index=(int(self.freq)-self.start_freq)
-        tot_params=self.num_theta*self.num_phi
-        
-
-        tot_lines=(tot_params+self.num_header)*self.num_freqs
-        header=(tot_params+self.num_header)*freq_index
-        
-  
-        data=np.genfromtxt(datafile,skip_header=int(header),max_rows=int(tot_params))
-
-        e_theta=data[:,2]+1j*data[:,3]
-        e_phi=data[:,4]+1j*data[:,5]
-        theta=data[:,0]
-        phi=data[:,1]
-        gain_total=10**(data[:,8]/10)
-        gain_theta=10**(data[:,6]/10)
-        gain_phi=10**(data[:,7]/10)
-        
-        
-        e_theta=e_theta.reshape(self.num_phi,self.num_theta)
-        e_phi=e_phi.reshape(self.num_phi,self.num_theta)
-        gain_theta=gain_theta.reshape(self.num_phi,self.num_theta)
-        gain_phi=gain_phi.reshape(self.num_phi,self.num_theta)
-        gain_total=gain_total.reshape(self.num_phi,self.num_theta)
-
-        theta=theta.reshape(self.num_phi,self.num_theta)
-        theta=theta[:,:91].flatten()
-    
-        phi=phi.reshape(self.num_phi,self.num_theta)
-        
-        phi=phi[:,:91].flatten()
-        
-        
-        e_theta=e_theta[:,:91].flatten()
-        e_phi=e_phi[:,:91].flatten()
-        gain_theta=gain_theta[:,:91].flatten()
-        gain_phi=gain_phi[:,:91].flatten()
-        gain_total=gain_total[:,:91].flatten()
-       
-    
-        return  theta,phi,e_theta,e_phi, gain_theta, gain_phi, gain_total 
-        
-            
-
-    def srcjones(self,az,el):
-        """Compute beam scaling factor
-        Args:
-            (az,el) coordinates
-
-        Returns: Jones matrix at coordinates (az,el)
-
-        """
-        
-        print (az,el)
-        el=90-el
-        
-        self.ctrl_freq()
-        
-        if len(self.gain_theta)<2:
-            print (self.beam_file_path)
-            if self.beam_file_path is not None:
-                for file1 in self.beam_files:
-                    datafile=self.beam_file_path+"/"+file1
-                   
-                    if os.path.isfile(datafile):
-                        theta,phi,e_theta,e_phi,gain_theta,gain_phi,gain_total=self.read_beam_file(datafile)
-                        self.e_theta.append(e_theta)
-                        self.e_phi.append(e_phi)
-                        self.gain_theta.append(gain_theta)
-                        self.gain_phi.append(gain_phi)
-                    else:
-                        raise RuntimeError("Beam file does not exist. Switching to analytical beam")  
-            
-            else:
-                raise RuntimeError("Beam file does not exist. Switching to analytical beam")
-        
-       
-        num_sources=len(az)
-        
-        jones_matrices=np.zeros((num_sources,2,2),dtype='complex')
-        
-        max_e1=np.max(np.abs(np.array(e_theta)))
-        max_e2=np.max(np.abs(np.array(e_phi)))
-        max_e=max(max_e1,max_e2)
-        
-        #print (np.size(P),np.size(grid_el),np.shape(self.gain_theta[0]))
-        sources_e_theta_x=gd((phi,theta), self.e_theta[0], (az,el), method='nearest')
-        sources_e_theta_y=gd((phi,theta), self.e_theta[1], (az,el), method='nearest')
-        sources_e_phi_x=gd((phi,theta), self.e_phi[0], (az,el), method='nearest')
-        sources_e_phi_y=gd((phi,theta), self.e_phi[1], (az,el), method='nearest')
-        
-        for i in range(num_sources):
-            jones_matrices[i,:,:]=[[sources_e_theta_x[i],sources_e_phi_x[i]],\
-                                    [sources_e_theta_y[i],sources_e_phi_y[i]]] #### interchanging theta and phi
-                                    						  ### as it seems phi values are larger
-        
-        self.jones_matrices=jones_matrices/max_e  ### normalising
-        print (self.jones_matrices)
-        
-        return
-        
-
-    @staticmethod
-    def get_source_pol_factors(jones_matrix):  ### in [[XX,XY],[YX,YY]] format
-        '''
-        I am assuming that the source is unpolarised. At these low frequencies this is a good assumption.
-        '''
-        J1=jones_matrix
-        J2=np.zeros_like(J1)
-        
-        J2[0,0]=np.conj(J1[0,0])
-        J2[0,1]=np.conj(J1[1,0])
-        J2[1,0]=np.conj(J1[0,1])
-        J2[1,1]=np.conj(J1[1,1])
-        
-        J3=np.matmul(J1,J2)  
-        #J3=J3/np.sum(np.abs(J3))*2 #### check normalisation
-        return  J3  
-        
-class jones_beam_new:
-    """
-    For loading and returning LWA dipole beam values (derived from simulations made by Nivedita)
-    Can only take one frequency at a time now.
-    """
-    
-    def __init__(self,beamfile,msfile=None,freq=None):
-        self.beamfile=beamfile
+    def __init__(self,beam_file_path='/lustre/msurajit/beam_model_nivedita/OVRO-LWA_soil_pt.h5',\
+                    msfile=None,freq=None):
+        self.beamfile=beam_file_path
         self.freq=freq
         if self.freq is None:
             self.msfile=msfile
@@ -357,6 +203,9 @@ class jones_beam_new:
         self.num_freq=self.freq.size
         
     def ctrl_freq(self):
+        '''
+        Reads the central frequency of the MS file for the spw 0.
+        '''
         if self.freq is not None:
             return
         msmd=msmetadata()
@@ -392,7 +241,10 @@ class jones_beam_new:
     
     def read_beam_file(self):  ### freq in MHz
         '''
-        az,za units: radian
+        az,za units: radian. 
+        Note that while the beamfiles accept in radian units, this function takes
+        the alt,azimuth in degrees. The altitude is converted to zenith angle within
+        the code.
         '''
         with h5py.File(self.beamfile,'r') as hf:
             self.model_freqs=np.array(hf['freq_Hz'])*1e-6  ### converting to MHz
@@ -440,8 +292,13 @@ class jones_beam_new:
 
     def srcjones(self,az,el):
         """Compute beam scaling factor
+        Can work simultaneously over multiple sources. So the az and el can be two arrays.
+        The number of sources is assumed to be equal to the number of elements in alt/az
+        We have implemented an approximate normalization of the beam, which is used by default.
+        While the function to do a more accurate normalization is already implemented, it is
+        not used by default.
         Args:
-            (az,el) coordinates
+            (az,el) coordinates in degrees
 
         Returns: Jones matrix at coordinates (az,el)
 
