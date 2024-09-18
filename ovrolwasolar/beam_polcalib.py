@@ -9,7 +9,7 @@ from .primary_beam import jones_beam as beam
 import h5py,os
 from scipy.interpolate import interpn
 import matplotlib.colors as colors
-import lmfit
+import lmfit,logging
 
 def compute_primary_beam_from_beamfiles(freqs,tims):
     '''
@@ -153,7 +153,7 @@ def get_primary_beam(freqs,times,freq_sep=1,tim_sep=300,outfile="primary_beam.hd
     if not os.path.isfile(outfile) or overwrite:
         beam=compute_primary_beam_from_beamfiles(freqs_to_compute_beam,Time(times_to_compute_beam,\
                                                     format='mjd',scale='utc'))
-    
+        logging.debug("Primary beam successfully computed.")
         with h5py.File(outfile,"w") as  hf:
             hf.create_dataset("freqs_MHz",data=freqs_to_compute_beam)
             hf.create_dataset("times_mjd",data=times_to_compute_beam)
@@ -398,6 +398,7 @@ def align_theta_with_freq(theta,freqs):
         aligned_theta[j]+=additives[ind]*np.pi
     aligned_theta[aligned_theta<-np.pi]+=2*np.pi
     aligned_theta[aligned_theta>np.pi]-=2*np.pi
+    logging.debug("Crosshand phase have been successfully aligned.")
     return aligned_theta
         
 
@@ -422,6 +423,7 @@ def correct_crosshand_phase(stokes_data,primary_beam,freqs,\
     '''
     if not isinstance(crosshand_theta,np.ndarray):
         crosshand_theta=determine_crosshand_phase(stokes_data,primary_beam,freqs)
+        logging.debug("Crosshand phase have been successfully determined.")
         if doplot:
             plt.plot(freqs,crosshand_theta,'o-')
             plt.savefig(figname)
@@ -448,7 +450,7 @@ def correct_crosshand_phase(stokes_data,primary_beam,freqs,\
     
     corrected_stokes_data[2,...]=stokes_data[2,...]*cos_theta+stokes_data[3,...]*sin_theta
     corrected_stokes_data[3,...]=-stokes_data[2,...]*sin_theta+stokes_data[3,...]*cos_theta
-    
+    logging.debug("Crosshand phase have been successfully corrected.")
     return corrected_stokes_data 
     
 def determine_stokesI_leakage(pol_frac,QU_only=False):
@@ -504,6 +506,7 @@ def correct_leakage_from_stokesI(stokes_data,primary_beam,freqs=None,polynomial=
         
     if not isinstance(polynomial,np.ndarray):
         poly=determine_stokesI_leakage(frac_pol,QU_only=QU_only)
+        logging.debug("Leakage from Stokes I to other Stokes parameters have been successfully determined.")
         np.save(outfile,poly)
         if doplot:
             fig,ax=plt.subplots(nrows=1,ncols=2)
@@ -533,7 +536,7 @@ def correct_leakage_from_stokesI(stokes_data,primary_beam,freqs=None,polynomial=
                                         stokes_data[0,i,:]
     if QU_only:
         stokes_corrected[3,...]=stokes_data[3,...]
-    
+    logging.debug("Leakage from Stokes I to other Stokes parameters have been successfully corrected.")
     return stokes_corrected
     
 
