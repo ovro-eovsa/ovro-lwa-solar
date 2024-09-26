@@ -67,12 +67,7 @@ class beam_polcal():
             beamfac.srcjones(az=az,el=alt)
             
             for i in range(num_tims):
-                #pol_fac=beamfac.get_source_pol_factors(np.squeeze(beamfac.jones_matrices)[i,:,:])
                 pol_fac=beamfac.get_muller_matrix_stokes(beamfac.jones_matrices[i,:,:])
-                #factors[j,i,0]=np.real(0.5*(pol_fac[0,0]+pol_fac[1,1]))
-                #factors[j,i,1]=np.real(0.5*(pol_fac[0,0]-pol_fac[1,1]))
-                #factors[j,i,2]=np.real(0.5*(pol_fac[0,1]+pol_fac[1,0]))
-                #factors[j,i,3]=np.real(-1j*0.5*(pol_fac[0,1]-pol_fac[1,0]))
                 factors[j,i,0]=pol_fac[0,0].real### I primary beam
                 factors[j,i,1]=pol_fac[1,0].real ### leakage from I to Q due to primary_beam
                 factors[j,i,2]=pol_fac[2,0].real ### leakage from I to U due to primary_beam

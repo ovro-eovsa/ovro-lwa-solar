@@ -353,19 +353,57 @@ class jones_beam:
         return
         
 
-    @staticmethod
-    def get_source_pol_factors(jones_matrix):  ### in [[XX,XY],[YX,YY]] format
+    
+    def get_source_pol_factors(self,jones_matrix):  ### in [[XX,XY],[YX,YY]] format
         '''
         I am assuming that the source is unpolarised. At these low frequencies this is a good assumption.
         '''
+        muller=self.get_muller_matrix_stokes(jones_matrix)
+        Imuller= muller[:,0] ### this is the contribution of I to other stokes
+        Ifctr=Imuller[0]
+        Qfctr=Imuller[1]
+        Ufctr=Imuller[2]
+        Vfctr=Imuller[3]
+        return np.array([[Ifctr+Qfctr,Ufctr+1j*Vfctr],[Ufctr-1j*Vfctr,Ifctr-Qfctr]])
+        
+    
+    def get_muller_matrix_XY(self,jones_matrix):                                       
+        '''
+        The muller matrix is in XY coordinate frame
+        So 
+        (XX_obs,XY_obs,YX_obs,YY_obs).T=((M00,M01,M02,M03),\
+                                         (M10,M11, M12, M13),\
+                                         (M20, M21, M22, M23),\
+                                         (M30, M31, M32, M33)) (XX,XY,YX,YY).T
+        Note that this Muller Matrix is not normalised.
+        '''
         J1=jones_matrix
-        J2=np.zeros_like(J1)
+        J2=np.conj(J1)
         
-        J2[0,0]=np.conj(J1[0,0])
-        J2[0,1]=np.conj(J1[1,0])
-        J2[1,0]=np.conj(J1[0,1])
-        J2[1,1]=np.conj(J1[1,1])
+        XY_muller_matrix=np.zeros((4,4),dtype=complex)
         
-        J3=np.matmul(J1,J2)  
+        XY_muller_matrix[0:2,0:2]=J1[0,0]*J2
+        XY_muller_matrix[0:2,2:4]=J1[0,1]*J2
+        XY_muller_matrix[2:4,0:2]=J1[1,0]*J2
+        XY_muller_matrix[2:4,2:4]=J1[1,1]*J2
+        
         #J3=J3/np.sum(np.abs(J3))*2 #### check normalisation
-        return  J3          
+        return  XY_muller_matrix  
+        
+    def get_muller_matrix_stokes(self,jones_matrix):                                       
+        '''
+        The muller matrix is in Stokes coordinate frame
+        So 
+        (I_obs,Q_obs,U_obs,V_obs).T=((M00,M01,M02,M03),\
+                                         (M10,M11, M12, M13),\
+                                         (M20, M21, M22, M23),\
+                                         (M30, M31, M32, M33)) (I,Q,U,V).T
+        Note that this Muller Matrix is not normalised.
+        '''
+        XY_muller_matrix=self.get_muller_matrix_XY(jones_matrix)
+        T=0.5*np.array([[1,0,0,1],[1,0,0,-1],[0,1,1,0],\
+                                    [0,-1j,1j,0]],dtype=complex)   ### see eq 8 of Hamaker et al. 1996
+        S=np.array([[1,1,0,0],[0,0,1,1j],[0,0,1,-1j],\
+                                    [1,-1,0,0]],dtype=complex)   ### see eq 9 of Hamaker et al. 1996
+        stokes_muller_matrix=np.matmul(np.matmul(T,XY_muller_matrix),S)
+        return  stokes_muller_matrix              
