@@ -19,6 +19,7 @@ class beam_polcal():
         self.database=database
         self.crosshand_theta=None  ### if supplied later, must be an ndarray
         self.model_beam_file='/home/surajit/ovro-lwa-solar/defaults/OVRO-LWA_soil_pt.h5'
+        self.record_crosshand_phase=False
     
     @property
     def filename(self):
@@ -420,6 +421,9 @@ class beam_polcal():
 
        
     def write_to_database(self,overwrite=False): 
+        pos=np.where(np.isnan(self.crosshand_theta)==True)
+        self.crosshand_theta[pos]=1e3
+        
         if not os.path.isfile(self.database):
             hfdb=h5py.File(self.database,'w')
         else:
@@ -442,6 +446,7 @@ class beam_polcal():
             logging.debug("Successfully updated database.")
         finally:
             hfdb.close()
+        self.crosshand_theta[pos]=np.nan
     
     def get_crosshand_phase_from_database(self):
         if not os.path.isfile(self.database):
@@ -498,11 +503,8 @@ class beam_polcal():
                 plt.savefig(figname)
                 plt.close()
             
-                
-            pos=np.where(np.isnan(self.crosshand_theta)==True)
-            self.crosshand_theta[pos]=1e3
-            self.write_to_database()
-            self.crosshand_theta[pos]=np.nan
+            if not self.record_crosshand_phase:    
+                self.write_to_database()
             
                 
         
