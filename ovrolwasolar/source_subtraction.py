@@ -286,37 +286,31 @@ def gen_nonsolar_source_model(msfile, imagename="allsky", outimage=None,
         logging.debug("I will use existing model for source subtraction "+outimage)
         return outimage, np.nan, np.nan # placeholder for data and mask
     
-    imagename1=imagename 
-    if pol=='I':
-        imagename=imagename+"-image.fits"
-    else:
-        imagename=imagename+"-XX-image.fits"
-    if os.path.isfile(imagename)==False:
-        imagename=imagename+"-I-image.fits"
-    solx, soly = get_solar_loc_pix(msfile, imagename)
-    srcs = get_nonsolar_sources_loc_pix(msfile, imagename)
-    
-    head = fits.getheader(imagename)
-    if head['cunit1'] == 'deg':
-        dx = np.abs(head['cdelt1'] * 60.)
-    else:
-        print(head['cunit1'] + ' not recognized as "deg". Model could be wrong.')
-    if head['cunit2'] == 'deg':
-        dy = np.abs(head['cdelt2'] * 60.)
-    else:
-        print(head['cunit2'] + ' not recognized as "deg". Model could be wrong.')
+    imagename1=imagename
+    pols=pol.split(',')
+    names=[]
+    for pol in pols:
+        pol_prefix="-"+pol if len(pols)!=1 else '' 
+        imagename=imagename+pol_prefix+"-image.fits"
+        
+        if os.path.isfile(imagename):
+            solx, soly = get_solar_loc_pix(msfile, imagename)
+            srcs = get_nonsolar_sources_loc_pix(msfile, imagename)
+            
+            head = fits.getheader(imagename)
+            if head['cunit1'] == 'deg':
+                dx = np.abs(head['cdelt1'] * 60.)
+            else:
+                print(head['cunit1'] + ' not recognized as "deg". Model could be wrong.')
+            if head['cunit2'] == 'deg':
+                dy = np.abs(head['cdelt2'] * 60.)
+            else:
+                print(head['cunit2'] + ' not recognized as "deg". Model could be wrong.')
+            break
    
     imagename=imagename1
-    for pola in ['I','XX','YY']:
-        if pol=='I' and pola=='I':
-            prefix=''
-        elif pola=='XX' and pol!='I':
-            prefix='-XX'
-        elif pola=='YY' and pol!='I':
-            prefix='-YY'
-        else:
-            continue
-        print (pola,pol) 
+    for pol in pols:
+        pol_prefix="-"+pol if len(pols)!=1 else '' 
         data = fits.getdata(imagename + prefix+"-model.fits")
         head=fits.getheader(imagename + prefix+"-model.fits")
         if remove_strong_sources_only:
