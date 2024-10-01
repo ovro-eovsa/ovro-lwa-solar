@@ -131,8 +131,11 @@ def mask_source_for_subtraction(imgdata, source,subtraction_area,cell,solar_pix,
     src_area_ypix = subtraction_area / dy
     bbox = [[srcy - src_area_ypix // 2, srcy + src_area_ypix // 2],
                     [srcx - src_area_xpix // 2, srcx + src_area_xpix // 2]]
-                        
-    dist=np.sqrt(((solx-srcx)**2+(soly-srcy)**2)*dx*dy)
+    
+    if isinstance(solx,int) or isinstance(solx,float):                    
+        dist=np.sqrt(((solx-srcx)**2+(soly-srcy)**2)*dx*dy)
+    else:
+        dist=1e8
     
     if dist>subtraction_area:
         logging.debug("Distance larger than the default subtraction region. Going ahead with default.")
@@ -283,39 +286,33 @@ def gen_nonsolar_source_model(msfile, imagename="allsky", outimage=None,
         logging.debug("I will use existing model for source subtraction "+outimage)
         return outimage, np.nan, np.nan # placeholder for data and mask
     
-    imagename1=imagename 
-    if pol=='I':
-        imagename=imagename+"-image.fits"
-    else:
-        imagename=imagename+"-XX-image.fits"
-    if os.path.isfile(imagename)==False:
-        imagename=imagename+"-I-image.fits"
-    solx, soly = get_solar_loc_pix(msfile, imagename)
-    srcs = get_nonsolar_sources_loc_pix(msfile, imagename)
-    
-    head = fits.getheader(imagename)
-    if head['cunit1'] == 'deg':
-        dx = np.abs(head['cdelt1'] * 60.)
-    else:
-        print(head['cunit1'] + ' not recognized as "deg". Model could be wrong.')
-    if head['cunit2'] == 'deg':
-        dy = np.abs(head['cdelt2'] * 60.)
-    else:
-        print(head['cunit2'] + ' not recognized as "deg". Model could be wrong.')
+    imagename1=imagename
+    pols=pol.split(',')
+    names=[]
+    for pol in pols:
+        pol_prefix="-"+pol if len(pols)!=1 else '' 
+        imagename=imagename+pol_prefix+"-image.fits"
+        
+        if os.path.isfile(imagename):
+            solx, soly = get_solar_loc_pix(msfile, imagename)
+            srcs = get_nonsolar_sources_loc_pix(msfile, imagename)
+            
+            head = fits.getheader(imagename)
+            if head['cunit1'] == 'deg':
+                dx = np.abs(head['cdelt1'] * 60.)
+            else:
+                print(head['cunit1'] + ' not recognized as "deg". Model could be wrong.')
+            if head['cunit2'] == 'deg':
+                dy = np.abs(head['cdelt2'] * 60.)
+            else:
+                print(head['cunit2'] + ' not recognized as "deg". Model could be wrong.')
+            break
    
     imagename=imagename1
-    for pola in ['I','XX','YY']:
-        if pol=='I' and pola=='I':
-            prefix=''
-        elif pola=='XX' and pol!='I':
-            prefix='-XX'
-        elif pola=='YY' and pol!='I':
-            prefix='-YY'
-        else:
-            continue
-        print (pola,pol) 
-        data = fits.getdata(imagename + prefix+"-model.fits")
-        head=fits.getheader(imagename + prefix+"-model.fits")
+    for pol in pols:
+        pol_prefix="-"+pol if len(pols)!=1 else '' 
+        data = fits.getdata(imagename + pol_prefix+"-model.fits")
+        head=fits.getheader(imagename + pol_prefix+"-model.fits")
         if remove_strong_sources_only:
             new_data = np.zeros_like(data)
             mask = np.ones_like(data)
@@ -325,20 +322,21 @@ def gen_nonsolar_source_model(msfile, imagename="allsky", outimage=None,
                 new_data[0, 0, slicey, slicex] = data[0, 0, slicey, slicex]
                 mask[0, 0, slicey, slicex] = 0.0000
             
-            no_subtraction_region_ypix=no_subtraction_region/dy
-            no_subtraction_region_xpix=no_subtraction_region/dx
-            
-            bbox = [[soly - no_subtraction_region_ypix // 2, soly + no_subtraction_region_ypix // 2],
-                        [solx - no_subtraction_region_xpix // 2, solx + no_subtraction_region_xpix // 2]]
-            slicey, slicex = slice(int(bbox[0][0]), int(bbox[0][1]) + 1), slice(int(bbox[1][0]), int(bbox[1][1]) + 1)
-            new_data[0, 0, slicey, slicex] = 0.0
+            if isinstance(solx,int) or isinstance(solx,float):        
+                no_subtraction_region_ypix=no_subtraction_region/dy
+                no_subtraction_region_xpix=no_subtraction_region/dx
+                
+                bbox = [[soly - no_subtraction_region_ypix // 2, soly + no_subtraction_region_ypix // 2],
+                            [solx - no_subtraction_region_xpix // 2, solx + no_subtraction_region_xpix // 2]]
+                slicey, slicex = slice(int(bbox[0][0]), int(bbox[0][1]) + 1), slice(int(bbox[1][0]), int(bbox[1][1]) + 1)
+                new_data[0, 0, slicey, slicex] = 0.0
             #print (bbox)
         else:
             new_data, mask = mask_all_non_sun(data, (solx, soly), (dx, dy),
                     mask_size=sol_area, blur_border=mask_blur_border_pix,
                     shape=shape_sun_mask, include_edge_source = include_edge_source)
         
-        fits.writeto(outimage + prefix+'-model.fits', new_data, header=head, overwrite=True)
+        fits.writeto(outimage + pol_prefix+'-model.fits', new_data, header=head, overwrite=True)
     return outimage, new_data, mask
 
 @profile
