@@ -2,7 +2,7 @@ import numpy as np
 import math,os,logging
 from casatasks import clearcal, ft
 from casatools import table, measures, componentlist, msmetadata
-from .primary_beam import analytic_beam as beam
+from .primary_beam import jones_beam as beam
 
 from astropy.io import fits
 from . import primary_beam, utils
@@ -288,9 +288,10 @@ class model_generation():
         
         modelcl = self.vis.replace('.ms', '.cl')
         
-         
+        pb=beam(msfile=self.vis)
+        pb.read_beam_file()
         for s in srcs:
-            pb=beam(msfile=self.vis)
+            print (np.array([s['az']]),np.array([s['el']]))
             pb.srcjones(np.array([s['az']]),np.array([s['el']]))
             matrix=pb.get_source_pol_factors(pb.jones_matrices[0,:,:])
 
