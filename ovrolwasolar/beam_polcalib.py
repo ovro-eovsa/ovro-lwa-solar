@@ -475,7 +475,7 @@ class beam_polcal():
         finally:
             hfdb.close()
             
-        self.crosshand_theta=np.interp(self.freqs,cross_phase_database,freqs_database)
+        self.crosshand_theta=np.interp(self.freqs,freqs_database,cross_phase_database)
 
         
     def correct_crosshand_phase(self,doplot=False,figname='crosshand_phase_with_freq.png'):
@@ -503,8 +503,7 @@ class beam_polcal():
                 plt.savefig(figname)
                 plt.close()
             
-            if not self.record_crosshand_phase:    
-                self.write_to_database()
+            
             
                 
         

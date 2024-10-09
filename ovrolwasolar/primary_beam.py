@@ -327,7 +327,6 @@ class jones_beam:
         if self._beamfile:
             #print (np.size(P),np.size(grid_el),np.shape(self.gain_theta[0]))
             interpolating_function = RegularGridInterpolator((self.model_freqs,self.theta_pts,self.phi_pts), self.Xpol_etheta)
-            print (self.freq,za_rad,az_rad)
             sources_e_theta_x= interpolating_function((self.freq,za_rad,az_rad))
             
 
