@@ -388,6 +388,7 @@ def remove_nonsolar_sources(msfile, imsize=4096, cell='2arcmin', minuv=0, auto_p
         present=utils.check_for_file_presence(tmpimg,pol=pol)
         
         if not present:
+            print("Tried to find "+tmpimg+" but it does not exist. Will create it.")    
             deconvolve.run_wsclean(msfile=msfile, imagename=tmpimg, size=imsize,
                             scale=cell, minuv_l=minuv, predict=False,
                             auto_mask=5, pol=pol, niter=niter, auto_pix_fov=auto_pix_fov)
