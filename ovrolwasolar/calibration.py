@@ -314,7 +314,7 @@ def do_bandpass_correction(solar_ms, calib_ms=None, bcal=None, caltable_folder='
             if overwrite or not os.path.isdir(os.path.join(caltable_folder,os.path.basename(bcal[0]))) :
                 logging.debug('Flagging antennas before calibration.')
                 flagging.flag_bad_ants(calib_ms)
-                final_bcal = [gen_calibration(calib_ms, logging_level=logging_level, caltable_fold=caltable_folder)]
+                bcal = [gen_calibration(calib_ms, bcaltb=bcal[0], logging_level=logging_level, caltable_fold=caltable_folder)]
                 logging.debug('Bandpass calibration table generated using ' + calib_ms)
             else:
                 logging.debug('I found an existing bandpass table. Will reuse it to calibrate.')
@@ -335,8 +335,7 @@ def do_bandpass_correction(solar_ms, calib_ms=None, bcal=None, caltable_folder='
     # correct_ms_bug(solar_ms)
     
     doantflag=True
-    print (fast_vis)
-    print (bcal)
+    
     if fast_vis:
         temp=[]
         for cal in bcal:
