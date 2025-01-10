@@ -7,6 +7,7 @@ import logging, glob
 from .primary_beam import analytic_beam as beam 
 from .generate_calibrator_model import model_generation
 from . import generate_calibrator_model
+from astropy.coordinates import get_sun, EarthLocation,SkyCoord, AltAz
 
 def get_sun_pos(msfile, str_output=True):
     """
@@ -32,6 +33,19 @@ def get_sun_pos(msfile, str_output=True):
         d0_j2000_str = 'J2000 %frad %frad' % (d0_j2000['m0']['value'], d0_j2000['m1']['value'])
         return d0_j2000_str
     return d0_j2000
+
+def get_solar_altaz_multiple_times(times):
+    '''
+    :param times: A astropy Time object. Can have multiple times
+    returns az,el in degrees for OVRO
+    '''
+    observing_location=EarthLocation.of_site('ovro')
+    solar_loc=get_sun(times)
+    frame = AltAz(location=observing_location, obstime=times)
+    azel=solar_loc.transform_to(frame)
+    az=azel.az.value
+    alt=azel.alt.value
+    return az,alt
 
 
 def get_solar_azel(msfile):

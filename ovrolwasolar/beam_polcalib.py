@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 from scipy.optimize import minimize
 from functools import partial
 from suncasa import dspec
+from . import utils
 from astropy.coordinates import get_sun, EarthLocation,SkyCoord, AltAz
 from astropy.time import Time
 from .primary_beam import jones_beam as beam
@@ -10,13 +11,15 @@ import h5py,os
 from scipy.interpolate import interpn
 import matplotlib.colors as colors
 import lmfit,logging
+import pandas as pd
+from scipy.interpolate import griddata
 
 class beam_polcal():
     def __init__(self,filename,database,time_avg=1,freq_avg=1):
         self.filename=filename
         self.time_avg=time_avg
         self.freq_avg=freq_avg
-        self.database=database
+        self.crosshand_database=database
         self.crosshand_theta=None  ### if supplied later, must be an ndarray
         self.model_beam_file='/home/surajit/ovro-lwa-solar/defaults/OVRO-LWA_soil_pt.h5'
         self.record_crosshand_phase=False
@@ -33,12 +36,10 @@ class beam_polcal():
         else:
             raise IOError(value+" does not exist")
     
-    
-    
+        
     @staticmethod
     def compute_primary_beam_from_beamfiles(freqs,tims,model_beam_file):
         '''
-        :param tims: A astropy Time object. Can have multiple times
         :param freq: list/array of frequencies in MHz
         
         This function returns the I,Q,U,V factors, normalised to their
@@ -48,12 +49,7 @@ class beam_polcal():
         Also this will only provide the first column of the fuller Muller
         matrix and hence should only be used when the source is unpolarised.
         '''
-        observing_location=EarthLocation.of_site('ovro')
-        solar_loc=get_sun(tims)
-        frame = AltAz(location=observing_location, obstime=tims)
-        azel=solar_loc.transform_to(frame)
-        az=azel.az.value
-        alt=azel.alt.value
+        az,alt=utils.get_solar_altaz_multiple_times(tims)
 
         num_tims=len(alt)
         num_freqs=freqs.size
@@ -424,10 +420,10 @@ class beam_polcal():
         pos=np.where(np.isnan(self.crosshand_theta)==True)
         self.crosshand_theta[pos]=1e3
         
-        if not os.path.isfile(self.database):
-            hfdb=h5py.File(self.database,'w')
+        if not os.path.isfile(self.crosshand_database):
+            hfdb=h5py.File(self.crosshand_database,'w')
         else:
-            hfdb=h5py.File(self.database,'a')
+            hfdb=h5py.File(self.crosshand_database,'a')
         try:
             median_mjd=np.median(self.times.mjd)
             key=(Time(median_mjd,format='mjd')).isot.split('T')[0].replace('-','')
@@ -449,10 +445,10 @@ class beam_polcal():
         self.crosshand_theta[pos]=np.nan
     
     def get_crosshand_phase_from_database(self):
-        if not os.path.isfile(self.database):
+        if not os.path.isfile(self.crosshand_database):
             raise IOError("Database does not exist. Solve for crosshandphase and"+\
                             " create database using write_to_database.")
-        hfdb=h5py.File(self.database,'r')
+        hfdb=h5py.File(self.crosshand_database,'r')
         
         try:
             keys=list(hfdb.keys())
@@ -503,10 +499,6 @@ class beam_polcal():
                 plt.savefig(figname)
                 plt.close()
             
-            
-            
-                
-        
         corrected_stokes_data=np.zeros_like(self.stokes_data)
         corrected_stokes_data[0,...]=self.stokes_data[0,...]
         corrected_stokes_data[1,...]=self.stokes_data[1,...]
@@ -527,32 +519,342 @@ class beam_polcal():
             corrected_data[i,...]=stokes_data[i,...]/primary_beam[i+3,...]
         return corrected_data
         
-        
-        
     
-def determine_stokesI_leakage(pol_frac,QU_only=False):
-    '''
-    This function determines the leakage from Stokes I by fitiing a straight line to
-    the polarisation fraction of each Stokes parameter. This is done on each frequency.
-    :param pol_frac: Polarisation fraction of Q,U and V.
-    :param QU_only: Leakage subtraction will be done only on Stokes V.
-    :return a npy ndarray of polyfit results. Shape: num_stokes x num_freqs x 2 (numpy polyfit convention)
-    '''
-    num_freqs=pol_frac.shape[1]
-    poly=np.zeros((4,num_freqs,2))
-    poly[0,...]=0
-    if QU_only:
-        max_pol_ind=2
-    else:
-        max_pol_ind=3
-    #print (pol_frac[1,0,:])
-    for j in range(1,max_pol_ind+1):
+    def add_leakage_entry(self,entry,database=None):
+        '''
+        entry should be a pandas dataframe/dictionary with the following keys
+        datetime_mjd, az (degrees), el (degrees), Q/I leakage, U/I leakage, V/I leakage
+        
+        column names: datetime_mjd, az,el, Q/I_34MHz, U/I_34MHz, V/I_34MHz
+        Similar to this we do the following frequencies 34, 39, 43, 48, 52,\
+        57, 62, 66, 71, 75, 80 and 84 MHz. 
+        
+        Leakage values more than 100, implies no solution found.
+        
+        Also if database exists, we assume that some entries also exist. 
+        
+        Only appends entries which have unique datetimes
+        '''
+        if not hasattr(self,"leakage_database"):
+            if not database:
+                raise RuntimeError("Please provide leakage database name")
+            self.leakage_database=database
+            
+        df=pd.DataFrame(entry)
+        
+        if not os.path.isfile(self.leakage_database):
+            logging.debug("Leakage database does not exist. Creating one")
+            ## using table format for appending, searching, selecting subsets
+            df.to_hdf(self.leakage_database,key='I_leakage',index=True,format='table',complevel=3)
+            return
+        ## This will only be done if the file already exists
+        existing_df=pd.read_hdf(self.leakage_database,key='I_leakage',columns=['datetime_mjd'])
+        
+        ## remove duplicate datetime entries
+        old_datetimes=existing_df['datetime_mjd']
+        new_datetimes=df['datetime_mjd']
+        times,old_frame_ind, new_frame_ids=np.intersect1d(old_datetimes,new_datetimes, return_indices=True)
+        
+        if new_frame_ids.size==new_datetimes.size:
+            logging.debug("No unique entries found. Exiting")
+            return
+            
+        df.drop(index=new_frame_ids)
+        
+        ## append the new entries to the database
+        ## using table format for appending, searching, selecting subsets
+        df.to_hdf(self.leakage_database,key='I_leakage',mode='a',index=True,complevel=3,format='table')
+        return
+    
+    
+    def determine_stokesI_leakage(self,pol_frac,QU_only=False,polynomial_degree=1):
+        '''
+        This function determines the leakage from Stokes I by fitting a polynomial to
+        the polarisation fraction of each Stokes parameter. This is done on each frequency.
+        :param pol_frac: Polarisation fraction of Q,U and V.
+        :param QU_only: Leakage subtraction will be done only on Stokes V.
+        :return a npy ndarray of polyfit results. Shape: num_stokes x num_freqs x poly degree (numpy polyfit convention)
+        '''
+        num_freqs=pol_frac.shape[1]
+        poly=np.zeros((4,num_freqs,(polynomial_degree+1)))
+        poly[0,...]=0
+        if QU_only:
+            max_pol_ind=2
+        else:
+            max_pol_ind=3
+        #print (pol_frac[1,0,:])
+        for j in range(1,max_pol_ind+1):
+            for i in range(num_freqs):
+                pos=np.where(np.isnan(pol_frac[j,i,:])==False)
+                if pos[0].size!=0:
+                    poly[j,i,:]=np.nan
+                poly[j,i,:]=self.robust_polyfit(pol_frac[j,i,pos],polynomial_degree=polynomial_degree)
+        return poly
+    
+    @staticmethod
+    def robust_polyfit(data,polynomial_degree=1):
+        '''
+        This function implements a robust line fit method. It flags all points outside the 3sigma
+        and then recomputes the fit. It will try this for 5 times. X-axis: number of points
+        Y-axis : data
+        '''
+        
+        num_trials=5
+        data=data.squeeze()
+        num_points=data.size
+        x=np.arange(0,num_points,dtype=float)
+        for i in range(num_trials):
+            pos=np.where(np.isnan(data)==False)[0]
+            if pos.size<3:
+                return np.nan*np.ones((polynomial_degree+1))
+            poly=np.polyfit(x[pos],data[pos],deg=polynomial_degree)
+            del pos
+            res=data-np.poly1d(poly)(x)
+            std=np.std(res)
+            pos=np.where(np.abs(res)>3*std)
+            data[pos]=np.nan
+            x[pos]=np.nan
+            
+        return poly
+
+    def correct_leakage_from_stokesI(self,stokes_data,leakage_fractions=None, \
+                                        polynomial_degree=1, database=None,\
+                                        doplot=False,QU_only=False):
+        '''
+        This function corrects the leakage from Stokes I. 
+        :param stokes_data: The stokes data from the beam.
+        :param QU_only: If True, leakage correction will be done only for Q and U
+        :return stokes_corrected_data. Note the primary_beam effect is still present.
+        '''
+        
+        frac_pol=np.zeros_like(stokes_data)
+        if QU_only:
+            max_pol_ind=2
+        else:
+            max_pol_ind=3
+        
+        for i in range(1,max_pol_ind+1):
+            frac_pol[i,...]=stokes_data[i,:,:]/stokes_data[0,:,:]-self.primary_beam[i,:,:]
+        
+        if not hasattr(self,'leakage_fractions'):
+            poly=self.determine_stokesI_leakage(frac_pol,QU_only=QU_only,\
+                                             polynomial_degree=polynomial_degree)
+            
+            logging.debug("Leakage from Stokes I to other Stokes parameters have been successfully determined.")
+            
+            if database:
+                self.leakage_database=database
+            self.write_to_database(poly) ### this uses the default values in write_database if not 
+                                         ### already available in class 
+            self.determine_leakage_fractions(max_pol_ind)
+            
+            
+        stokes_corrected=np.zeros_like(stokes_data)
+    
+        shape=stokes_data.shape
+        num_freqs=shape[1]
+        num_tims=shape[2]
+        
+        
+        stokes_corrected[1:max_pol_ind+1,:,:]=(frac_pol[1:max_pol_ind+1,:,:]-\
+                                                self.leakage_fractions[1:max_pol_ind+1,:,:]+\
+                                                self.primary_beam[1:max_pol_ind+1,:,:])
+        
+        stokes_corrected[0,...]=stokes_data[0,...]
+        stokes_corrected[1,...]*=stokes_data[0,...]
+        stokes_corrected[2,...]*=stokes_data[0,...]
+        stokes_corrected[3,...]*=stokes_data[0,...] 
+            
+        return stokes_corrected                               
+    
+    def determine_leakage_fractions(self,max_pol_ind):
+        '''
+        This function reads in the leakage database and then uses it to calculate the
+        leakage fraction at all the data times
+        '''
+        shape=self.stokes_data.shape
+        num_freqs=shape[1]
+        num_tims=shape[2]
+        
+        self.leakage_fractions=np.zeros_like(self.stokes_data)
+        
+        with h5py.File(self.leakage_database,'r') as hf:
+            freqs_in_db=np.arange(hf.attrs['low_freq'],hf.attrs['high_freq']+\
+                                    hf.attrs['freq_sep']/2,hf.attrs['freq_sep'],dtype=int)
+        
+        data=pd.read_hdf(self.leakage_database,key='I_leakage',columns=['az','alt'])
+        database_az=np.array(data['az'])
+        database_alt=np.array(data['alt'])
+        
+        az,alt=utils.get_solar_altaz_multiple_times(self.times)
+        
         for i in range(num_freqs):
-            pos=np.where(np.isnan(pol_frac[j,i,:])==False)
-            if pos[0].size!=0:
-                poly[j,i,:]=np.nan
-            poly[j,i,:]=robust_line_fit(pol_frac[j,i,pos])
-    return poly
+            data_freq=self.freqs[i]
+            freq1,freq2=self.choose_freqs_to_load(freqs_in_db,data_freq)
+            
+            if not freq1 or not freq2:
+                self.leakage_fractions[1:,i,:]=np.nan
+                continue
+            for j,pol in zip(range(1,max_pol_ind+1,1),['Q/I','U/I','V/I']):
+                
+                self.leakage_fractions[j,i,:]=self.calculate_leakages_from_database(data_freq,freq1,freq2,\
+                                            pol,az,alt,database_az,database_alt)   
+
+    
+    
+    @staticmethod    
+    def choose_freqs_to_load(freqs_in_db,data_freq):
+        if data_freq<freqs_in_db[0]:
+            return freqs_in_db[0],None
+        if data_freq>freqs_in_db[-1]:
+            return  freqs_in_db[-1], None  
+        
+        indices=np.argsort(np.abs(freqs_in_db-data_freq))
+        
+        return freqs_in_db[indices[0]],freqs_in_db[indices[1]]
+        
+
+    def calculate_leakages_from_database(self,data_freq,freq1,freq2,pol,az,alt,database_az,database_alt):
+        columns=[pol+"_"+str(int(freq1))+"MHz",pol+"_"+str(int(freq2))+"MHz"]
+
+        data=pd.read_hdf(self.leakage_database,key='I_leakage',columns=columns)
+        
+        leak1_database_azalt=np.array(data[columns[0]])
+
+        leak2_database_azalt=np.array(data[columns[1]])
+        
+        leak1_data_azalt=griddata((database_az,database_alt),leak1_database_azalt,(az,alt),method='nearest')
+        leak2_data_azalt=griddata((database_az,database_alt),leak2_database_azalt,(az,alt),method='nearest')
+        
+        leak_data_azalt=(leak2_data_azalt-leak1_data_azalt)/(freq2-freq1)*(data_freq-freq1)+\
+                                         leak1_data_azalt ## fitting line
+        return leak_data_azalt
+        
+        
+        
+        
+        
+        
+        
+        
+        
+            
+        
+        
+            
+    @staticmethod
+    def determine_azel_for_database(az,alt,alt_sep=0.5,az_sep=1, return_indices=False):
+        '''
+        az_sep, alt_sep: Azimuths and altitudes at this separation will be prepared
+        Returns the az, el and the indices (in return_indices=True) in original table
+        '''
+        alt_to_write=[]
+        az_to_write=[]
+        
+        start_alt=0
+        start_az=0
+        indices=[]
+        for j,(alt1,az1) in enumerate(zip(alt,az)):
+            if abs(start_alt-alt1)>alt_sep or abs(start_az-az1)>az_sep:
+                alt_to_write.append(alt1)
+                az_to_write.append(az1)
+                start_alt=alt1
+                start_az=az1
+                indices.append(j)
+        if return_indices:
+            return np.array(az_to_write),np.array(alt_to_write),np.array(indices)
+        else:
+            return np.array(az_to_write),np.array(alt_to_write)
+    
+    def add_database_headers(self):
+        
+        with h5py.File(self.leakage_database,'a') as hf:
+            hf.attrs['freq_sep']=self.leakage_freq_sep
+            hf.attrs['low_freq']=self.low_freq
+            hf.attrs['high_freq']=self.high_freq
+        
+    def write_to_database(self,poly,leakage_alt_sep=1,leakage_az_sep=5):
+        '''
+        :param poly: fitted polynomial. Shape: num_stokes x num_freqs x polynomial degree
+        :param leakage_freq_sep: What is the frequency separation in which data will be written to database
+                                 in MHz
+        While it is guaranteed that the exact frequencies will also be solved, we will take the nearest solved
+        and write it to database
+        Similar meanings for alt_sep and az_sep in degrees
+        Only write to database if you have values for Q,U,V
+        '''
+        
+        stokes_num=4
+        
+
+        if not hasattr(self,'leakage_freq_sep'):
+            self.leakage_freq_sep=2 ##leakage_freq_sep
+            self.low_freq=15
+            self.high_freq=88
+        ### DO NOT CHANGE ABOVE UNLESS YOU WANT TO MAKE A NEW DATABASE
+        
+        if not hasattr(self,'leakage_alt_sep'):
+            self.leakage_alt_sep=leakage_alt_sep
+        
+        if not hasattr(self,'leakage_az_sep'):
+            self.leakage_az_sep=leakage_az_sep
+            
+        az,alt=utils.get_solar_altaz_multiple_times(self.times)
+        freqs_to_write=np.arange(self.low_freq,self.high_freq,self.leakage_freq_sep,dtype=int)
+        
+        az_to_write,alt_to_write,indices=self.determine_azel_for_database(az,alt,\
+                                            self.leakage_alt_sep,self.leakage_az_sep,\
+                                            return_indices=True)
+        
+        entry_to_write={}
+        entry_to_write['datetime_mjd']=self.times.mjd[indices]
+        entry_to_write['alt']=alt_to_write
+        entry_to_write['az']=az_to_write
+        
+        num_freqs=self.freqs.size
+        num_times_to_write=indices.size
+        num_times=self.times.size
+        num_freqs_to_write=freqs_to_write.size
+        
+        times_to_write=np.arange(0,num_times)[indices]
+        leak_vals=np.zeros([stokes_num,num_freqs,num_times_to_write])
+        
+        for s in range(1,stokes_num):
+            for i in range(num_freqs):
+                leak_vals[s,i,:]=np.polyval(np.poly1d(poly[s,i,:]),times_to_write)
+        
+        
+        Q_I_leaks=np.zeros((num_freqs_to_write,num_times_to_write))
+        U_I_leaks=np.zeros((num_freqs_to_write,num_times_to_write))
+        V_I_leaks=np.zeros((num_freqs_to_write,num_times_to_write))
+        
+        for i in range(num_times_to_write):
+            Q_I_leaks[:,i]=np.interp(freqs_to_write,self.freqs,leak_vals[1,:,i])
+            U_I_leaks[:,i]=np.interp(freqs_to_write,self.freqs,leak_vals[2,:,i])
+            V_I_leaks[:,i]=np.interp(freqs_to_write,self.freqs,leak_vals[3,:,i])
+        
+        
+        
+        for j,freq1 in enumerate(freqs_to_write):
+            entry_to_write['Q/I_'+str(freq1)+"MHz"]=Q_I_leaks[j,:]
+            entry_to_write['U/I_'+str(freq1)+"MHz"]=U_I_leaks[j,:]
+            entry_to_write['V/I_'+str(freq1)+"MHz"]=V_I_leaks[j,:]
+        
+            
+        self.add_leakage_entry(entry_to_write)
+        self.add_database_headers()
+        return
+        
+            
+                
+        
+        
+            
+            
+        
+        
+        
+        
             
 def correct_leakage_from_stokesI(stokes_data,primary_beam,freqs=None,polynomial=None,\
                                     outfile='stokesI_leakage.npy',QU_only=False, \
@@ -616,24 +918,5 @@ def correct_leakage_from_stokesI(stokes_data,primary_beam,freqs=None,polynomial=
     logging.debug("Leakage from Stokes I to other Stokes parameters have been successfully corrected.")
     return stokes_corrected
     
-def robust_line_fit(data):
-        '''
-        This function implements a robust line fit method. It flags all points outside the 3sigma
-        and then recomputes the fit. It will try this for 5 times. X-axis: number of points
-        Y-axis : data
-        '''
-        num_trials=5
-        data=data.squeeze()
-        for i in range(num_trials):
-            num_points=data.size
-            if num_points==0:
-                return np.nan*np.ones(2)
-            x=np.arange(0,num_points)
-            poly=np.polyfit(x,data,deg=1)
-            res=data-np.poly1d(poly)(x)
-            std=np.std(res)
-            pos=np.where(np.abs(res)<3*std)
-            data=data[pos]
-            x=x[pos]
-        return poly
+
 
