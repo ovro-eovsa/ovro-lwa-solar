@@ -585,7 +585,7 @@ class beam_polcal():
         if not os.path.isfile(self.leakage_database):
             logging.debug("Leakage database does not exist. Creating one")
             ## using table format for appending, searching, selecting subsets
-            df.to_hdf(self.leakage_database,key='I_leakage',index=True,format='table',complevel=3)
+            df.to_hdf(self.leakage_database,key='I_leakage',index=False,format='table',complevel=3)
             return
         ## This will only be done if the file already exists
         existing_df=pd.read_hdf(self.leakage_database,key='I_leakage',columns=['datetime_mjd'])
@@ -604,7 +604,8 @@ class beam_polcal():
         
         ## append the new entries to the database
         ## using table format for appending, searching, selecting subsets
-        df.to_hdf(self.leakage_database,key='I_leakage',mode='a',index=True,complevel=3,format='table')
+        df.to_hdf(self.leakage_database,key='I_leakage',mode='r+',append=True,\
+                        index=False,complevel=3,format='table')
         return
     
     
@@ -882,7 +883,7 @@ class beam_polcal():
         stokes_num=4
         
         if database:
-            self.database=database
+            self.leakage_database=database
         
 
         if not hasattr(self,'leakage_freq_sep'):
