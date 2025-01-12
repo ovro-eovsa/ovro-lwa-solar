@@ -721,7 +721,7 @@ class beam_polcal():
             if write_to_database:
                 self.write_leakage_frac_to_database() ### this uses the default values in write_database if not 
                                             ### already available in class 
-            self.convert_polyfit_to_beam_leakage_fractions()
+            self.convert_polyfit_to_beam_leakage_fractions(subtract_mean=True)
             
             
         stokes_corrected=np.zeros_like(stokes_data)
@@ -747,7 +747,7 @@ class beam_polcal():
             
         return stokes_corrected      
     
-    def convert_polyfit_to_beam_leakage_fractions(self):
+    def convert_polyfit_to_beam_leakage_fractions(self, subtract_mean=False):
         stokes_num=4
         num_freqs=self.freqs.size
         num_times=self.times.size
@@ -759,7 +759,10 @@ class beam_polcal():
             for i in range(num_freqs):
                 leak_vals[s,i,:]=np.polyval(np.poly1d(self.poly[s,i,:]),times_to_write)
         
-        self.beam_leakage_fractions=leak_vals-np.expand_dims(np.mean(leak_vals,axis=2),axis=2)
+        if subtract_mean:
+            self.beam_leakage_fractions=leak_vals-np.expand_dims(np.mean(leak_vals,axis=2),axis=2)
+        else:
+            self.beam_leakage_fractions=leak_vals
         
     def determine_beam_leakage_fractions_from_db(self,max_pol_ind):
         '''
@@ -914,6 +917,8 @@ class beam_polcal():
         num_times_to_write=indices.size
         num_freqs_to_write=freqs_to_write.size
 
+        self.convert_polyfit_to_beam_leakage_fractions()
+        
         leak_vals=self.beam_leakage_fractions[:,:,indices]
         
         
@@ -940,7 +945,22 @@ class beam_polcal():
         self.add_leakage_entry(entry_to_write)
         self.add_database_headers()
         return
-        
     
-
+def remove_rows_from_leakage_database(database,mjd_to_drop):
+    '''
+    Reads the database file, filters out and then recreates with same name
+    '''
+    data=pd.read_hdf(database,'I_leakage')
+    datetime_mjd=data['datetime_mjd']
+    pos=np.where(abs(datetime_mjd-mjd_to_drop)>=1)[0]
+    
+    keys=data.keys()
+    
+    new_data={}
+    for key in keys:
+        new_data[key]=np.array(data[key])[pos]
+    
+    df=pd.DataFrame(new_data)
+    df.to_hdf(database,key='I_leakage',index=False,format='table',complevel=3)
+    return
 
