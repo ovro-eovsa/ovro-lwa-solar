@@ -126,19 +126,6 @@ def fitsj2000tohelio(in_fits, out_fits=None, reftime="", toK=True,
     hdr = hdul[0].header
     data = hdul[0].data
 
-    # Apply subregion cropping if specified
-    if subregion is not None:
-        xmin, xmax, ymin, ymax = subregion
-        if len(data.shape) == 2:
-            data = data[ymin:ymax, xmin:xmax]
-        elif len(data.shape) == 4:
-            data = data[:, :, ymin:ymax, xmin:xmax]
-        
-        # Update reference pixel in header
-        crpix1 = float(hdr.get('CRPIX1', 1))
-        crpix2 = float(hdr.get('CRPIX2', 1))
-        hdr['CRPIX1'] = crpix1 - xmin
-        hdr['CRPIX2'] = crpix2 - ymin
     
     # Get observation time and solar ephemeris
     obstimestr = reftime if reftime else hdr["DATE-OBS"]
@@ -182,6 +169,22 @@ def fitsj2000tohelio(in_fits, out_fits=None, reftime="", toK=True,
     hpc_y = degrees(crval2) * 3600.0
     crota2 = 0.0  # Since we already rotated the image
     
+    data = rotated_data
+
+    # Apply subregion cropping if specified
+    if subregion is not None:
+        xmin, xmax, ymin, ymax = subregion
+        if len(data.shape) == 2:
+            data = data[ymin:ymax, xmin:xmax]
+        elif len(data.shape) == 4:
+            data = data[:, :, ymin:ymax, xmin:xmax]
+        
+        # Update reference pixel in header
+        crpix1 = float(hdr.get('CRPIX1', 1))
+        crpix2 = float(hdr.get('CRPIX2', 1))
+        hdr['CRPIX1'] = crpix1 - xmin
+        hdr['CRPIX2'] = crpix2 - ymin
+
     # Update header keywords
     header_updates = {
         'CRVAL1': hpc_x,
@@ -217,7 +220,7 @@ def fitsj2000tohelio(in_fits, out_fits=None, reftime="", toK=True,
         hdr.set(keyword, value)
     
     # Update the data
-    hdul[0].data = rotated_data
+    hdul[0].data = data
     
     # Convert from Jy/beam to Kelvin if requested
     if toK:
