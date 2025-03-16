@@ -646,7 +646,7 @@ def compress_fits_to_h5(fits_file, hdf5_file, beam_ratio=3.0, smaller_than_src =
                     dset = f.create_dataset('FITS_pol'+str(pol)+'ch'+str(ch_idx).rjust(4,'0') , data=downsized_data,compression="gzip", compression_opts=9)
                 else:
                     count_avail+=1
-                    downsized_data = zoom(data[0,ch_idx,:,:], 1/downsize_ratio[ch_idx], order=3)
+                    downsized_data = zoom(data[0,ch_idx,:,:], 1/downsize_ratio[ch_idx], order=3,prefilter=False)
                     dset = f.create_dataset('FITS_pol'+str(pol)+'ch'+str(ch_idx).rjust(4,'0') , data=downsized_data,compression="gzip", compression_opts=9)
 
             # Add FITS header info as attributes
@@ -697,7 +697,7 @@ def recover_fits_from_h5(hdf5_file, fits_out=None, return_data=False, return_met
                 if tmp_small.shape[0] == 1:
                     recover_data[pol, ch_idx, :, :] = tmp_small[0, 0]
                 else:
-                    recover_data[pol, ch_idx, :, :] = zoom(tmp_small, datashape[-1] / tmp_small.shape[-1], order=5)
+                    recover_data[pol, ch_idx, :, :] = zoom(tmp_small, datashape[-1] / tmp_small.shape[-1], order=5,prefilter=False)
 
         if return_data:
             return meta, recover_data
