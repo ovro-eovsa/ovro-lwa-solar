@@ -4,7 +4,7 @@ from astropy.io import fits
 from casatools import image, table, msmetadata, quanta, measures
 import numpy as np
 import logging, glob
-from .primary_beam import analytic_beam as beam 
+from .primary_beam import jones_beam as beam 
 from . import generate_calibrator_model
 from astropy.coordinates import get_sun, EarthLocation,SkyCoord, AltAz
 
