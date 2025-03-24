@@ -429,7 +429,8 @@ def correct_primary_beam(msfile, imagename, pol='I', fast_vis=False):
     
     az,elev=get_solar_azel(msfile)
     pb=beam(msfile=msfile)
-    pb.srcjones(az=[az],el=[elev])
+    pb.read_beam_file()
+    pb.srcjones(az=np.array([az]),el=np.array([elev]))
     jones_matrices=pb.get_source_pol_factors(pb.jones_matrices[0,:,:])
     muller_matrix=pb.get_muller_matrix_stokes(pb.jones_matrices[0,:,:])
     

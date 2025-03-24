@@ -121,6 +121,7 @@ class model_generation():
         srcs,az,el=self.get_risen_source_list()                  
 
         pb=beam(msfile=self.vis)
+        pb.read_beam_file()
         pb.srcjones(np.array(az),np.array(el))
         
         self.file_handle = [open(self.filename[i], 'w') for i in range(self.num_pol)]
