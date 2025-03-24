@@ -29,6 +29,9 @@ cl = componentlist()
 msmd = msmetadata()
 
 
+# version info:
+__version__ = '0.1.1'
+
 def correct_ms_bug(msfile):
     """
     Temporary fix for the visibility files produced by the current pipeline.
@@ -255,8 +258,6 @@ def image_ms(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagename='sun
 
 
 
-
-  
 @profile
 def image_ms_quick(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagename='sun_only',
              imsize=1024, cell='1arcmin', logfile='analysis.log', logging_level='info',
@@ -265,7 +266,9 @@ def image_ms_quick(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagenam
              refant='202', niter0=600, niter_incr=200, overwrite=False,
              auto_pix_fov=False, fast_vis=False, fast_vis_image_model_subtraction=False,
              delete_allsky=True, sky_image=None, quiet=True, remove_strong_sources_only=False,
-             src_sb_sol_area=200., src_sb_src_area=200., shape_sun_mask='circ', include_edge_source=-1):
+             src_sb_sol_area=200., src_sb_src_area=200., shape_sun_mask='circ', include_edge_source=-1,
+             rm_flagged=True, rm_10lambda=True, selfcal_flagbackup=True,
+             use_selfcal_img_to_subtract=True):
     """
     Pipeline to calibrate and imaging a solar visibility. 
     This is the version that optimizes the speed with a somewhat reduced image dynamic range.
@@ -300,6 +303,20 @@ def image_ms_quick(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagenam
     time1=timeit.default_timer()
     solar_ms = calibration.do_bandpass_correction(solar_ms, calib_ms=calib_ms, bcal=bcal, \
                         caltable_folder=caltable_folder, freqbin=freqbin, fast_vis=fast_vis)
+
+    
+    if rm_flagged:
+        solar_ms_new = solar_ms[:-3] + "_rm_bad_ants.ms"
+        split(vis=solar_ms, outputvis=solar_ms_new, datacolumn='data', keepflags=False)
+        solar_ms = solar_ms_new
+
+    if rm_10lambda:
+        flagdata(vis=solar_ms, mode='manual', uvrange='<10lambda', flagbackup=False)
+        solar_ms_new = solar_ms[:-3] + "_rm10lambda.ms"
+        split(vis=solar_ms, outputvis=solar_ms_new, datacolumn='data', keepflags=False)
+        solar_ms = solar_ms_new
+
+
     time2=timeit.default_timer()
     logging.debug('Time taken to do the bandpass correction is: {0:.1f} s'.format(time2-time1)) 
     time1=time2
@@ -309,8 +326,9 @@ def image_ms_quick(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagenam
         #                      partial_di_selfcal_rounds=[0, 0], pol=pol, refant=refant, caltable_folder=caltable_folder)
         mstime_str = utils.get_timestr_from_name(solar_ms)
         success = utils.put_keyword(solar_ms, 'di_selfcal_time', mstime_str, return_status=True)
-        success = selfcal.do_selfcal(solar_ms, num_phase_cal=num_phase_cal, num_apcal=num_apcal, logging_level=logging_level, pol=pol,
-            refant=refant, niter0=niter0, niter_incr=niter_incr, caltable_folder=caltable_folder, auto_pix_fov=auto_pix_fov, quiet=quiet)
+        success, imagename = selfcal.do_selfcal(solar_ms, num_phase_cal=num_phase_cal, num_apcal=num_apcal, logging_level=logging_level, pol=pol,
+            refant=refant, niter0=niter0, niter_incr=niter_incr, caltable_folder=caltable_folder, auto_pix_fov=auto_pix_fov, quiet=quiet,
+            flagbackup=selfcal_flagbackup)
         outms_di = solar_ms[:-3] + "_selfcalibrated.ms"
         if do_fluxscaling:
             logging.debug('Doing a flux scaling using background strong sources')
@@ -326,11 +344,17 @@ def image_ms_quick(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagenam
             
         time2=timeit.default_timer()
         logging.debug('Time taken for selfcal and fluxscaling is: {0:.1f} s'.format(time2-time1))
-        print(outms_di)
     else:
         outms_di = solar_ms
 
     # Do non-solar source removal
+
+    if use_selfcal_img_to_subtract:
+        sky_image = imagename 
+        print('Using selfcal image to subtract', sky_image)
+
+
+
     time1=time2
     print('Removing non-solar sources in the sky')
     outms = source_subtraction.remove_nonsolar_sources(outms_di, 

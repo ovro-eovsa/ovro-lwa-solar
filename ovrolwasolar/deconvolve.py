@@ -60,8 +60,8 @@ def run_wsclean(msfile, imagename, size:int =4096, scale='2arcmin', fast_vis=Fal
     logging.debug("Running WSCLEAN")
     
     default_kwargs={
-        'j':'1',                    # number of threads
-        'mem':'2',                 # fraction of memory usage
+        'j':'4',                    # number of threads
+        'mem':'4',                 # fraction of memory usage
         'weight':'uniform',         # weighting scheme
         'no_dirty':'',              # don't save dirty image
         'no_update_model_required':'', # don't update model required
@@ -156,7 +156,7 @@ def run_wsclean(msfile, imagename, size:int =4096, scale='2arcmin', fast_vis=Fal
         if predict:
             logging.debug("Predicting model visibilities from " + imagename + " in " + msfile)
             time1 = timeit.default_timer()
-            os.system("wsclean -j 1 -mem 2 -no-reorder -predict -pol "+default_kwargs['pol']+" "+ "-field all -name " + imagename + " " + msfile)
+            os.system("wsclean -j 2 -mem 2 -no-reorder -predict -pol "+default_kwargs['pol']+" "+ "-field all -name " + imagename + " " + msfile)
             ### if field is not all, model visibilities are predicted only for first field. Does not work with fast vis
             time2 = timeit.default_timer()
             logging.debug('Time taken for predicting the model column is {0:.1f} s'.format(time2-time1))

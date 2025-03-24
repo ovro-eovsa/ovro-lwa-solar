@@ -118,7 +118,7 @@ def get_image_maxmin(imagename, local=True):
 
 
 def check_image_quality(imagename, max1, min1, reorder=True):
-        
+
     if max1[0] == 0:
         if len(max1)==2:
             max1[0], min1[0] = get_image_maxmin(imagename+"-image.fits")
@@ -161,7 +161,7 @@ def check_image_quality(imagename, max1, min1, reorder=True):
                     return False
             if (DR3-DR4)/DR4>0.2:
                 if min1[3]<0:
-                    return False 
+                    return False
     return True
 
 
@@ -274,7 +274,7 @@ def get_obs_time_interval(msfile):
     etime = Time(trange['end']['m0']['value'],format='mjd').isot
     msmd.close()
     return btime+'~'+etime
-    
+
 def convert_to_heliocentric_coords(msname, imagename, helio_imagename=None, reftime=''):
     '''
     The imagename, helio_imagename and reftime all can be a list.
@@ -286,13 +286,13 @@ def convert_to_heliocentric_coords(msname, imagename, helio_imagename=None, reft
     from casatasks import importfits
     msmd = msmetadata()
     qa = quanta()
-    
+
     if type(imagename) is str:
         imagename=[imagename]
     elif type(imagename) is not list or type(imagename[0]) is not str:
         logging.error("Imagename provided should either be a string or a list of strings")
         raise RuntimeError("Imagename provided should either be a string or a list of strings")
-    
+
     if helio_imagename is None:
         helio_imagename = [img.replace('.fits', '.helio.fits') for img in imagename]
     else:
@@ -315,10 +315,10 @@ def convert_to_heliocentric_coords(msname, imagename, helio_imagename=None, reft
     elif len(reftime)!=len(imagename):
         logging.warning("Number of reftimes provided does not match with number of images. Ignoring")
         reftime = [get_obs_time_interval(msname)]*len(imagename)
-        
+
     print('Use this reference time for registration: ', reftime)
     logging.debug('Use this reference time for registration: ', reftime[0])
-    
+
     temp_image_list=[None]*len(imagename)
     for j,img in enumerate(imagename):
         temp_image_list[j]=img
@@ -330,14 +330,14 @@ def convert_to_heliocentric_coords(msname, imagename, helio_imagename=None, reft
     except:
         logging.warning("Could not convert to helicentric coordinates")
         return None
-        
+
 def make_wsclean_compatible(msname):
     tb=table()
-    tb.open(msname+"/DATA_DESCRIPTION",nomodify=False)   
+    tb.open(msname+"/DATA_DESCRIPTION",nomodify=False)
     nrows=tb.nrows()
     if nrows>1:
         tb.removerows([i for i in range(1,nrows)])
-    tb.close()      
+    tb.close()
 
 def get_total_fields(msname):
     msmd=msmetadata()
@@ -345,7 +345,7 @@ def get_total_fields(msname):
     num_field=msmd.nfields()
     msmd.done()
     return num_field
-    
+
 def collect_fast_fits(imagename,pol='I'):
     '''
     collect the fits file names of fast img
@@ -360,7 +360,7 @@ def collect_fast_fits(imagename,pol='I'):
         images=glob.glob(imagename+"-*"+pol_prefix+"-image.fits")
         names.extend(images)
     return names
-    
+
 
 def rename_images(imagename,pol='I',img_prefix=None, intervals_out=1,channels_out=1):
     '''
@@ -385,13 +385,13 @@ def rename_images(imagename,pol='I',img_prefix=None, intervals_out=1,channels_ou
     '''
     pols=pol.split(',')
     num_pols=len(pols)
-    
+
     names=[]
     for pol in pols:
         pol_prefix="-"+pol if num_pols!=1 else ''
-        
+
         images=glob.glob(imagename+"-*"+pol_prefix+"-image.fits")
-        
+
         for img in images:
             head=fits.getheader(img)
             obstime=head['DATE-OBS']
@@ -418,8 +418,8 @@ def check_corrected_data_present(msname):
     finally:
         tb.close()
     return False
-    
-    
+
+
 def correct_primary_beam(msfile, imagename, pol='I', fast_vis=False):
     '''
     Can handle multiple images in a list. However if providing multiple images
@@ -444,7 +444,7 @@ def correct_primary_beam(msfile, imagename, pol='I', fast_vis=False):
                     imagename=[imagename]
                 else:
                     raise RuntimeError("Image supplied is not found")
-                    
+
             for img in imagename:
                 hdu = fits.open(img, mode='update')
                 hdu[0].data /= scale
@@ -605,13 +605,13 @@ def swap_fastms_pols(msname):
     if swap_ok is not None:
         logging.debug("Swap correction done/tried earlier. Returning")
         return
-        
+
     correction_date='2024-02-07T17:30:00'  #### this is the date on which the
-                                            ### changes were propagated to the 
+                                            ### changes were propagated to the
                                             ### X-engine, to solve this issue.
                                             ### DO NOT CHANGE THIS UNLESS YOU
-                                            ### ARE AN EXPERT 
-        
+                                            ### ARE AN EXPERT
+
     correction_time=Time(correction_date)
     msmd=msmetadata()
     try:
@@ -631,7 +631,7 @@ def swap_fastms_pols(msname):
         logging.debug("MS time is after the time when X-engine was updated. Doing nothing.")
         put_keyword(msname,"swap_ok","1")
         return
-    
+
     tb=table()
     tb.open(msname,nomodify=False)
     try:
@@ -647,7 +647,7 @@ def swap_fastms_pols(msname):
         tb.close()
     put_keyword(msname,"swap_ok","1")
     return
-    
+
 def correct_fastms_amplitude_scale(msname):
     '''
     This function corrects for the amplitude correction present in the fast MS data
@@ -666,9 +666,9 @@ def correct_fastms_amplitude_scale(msname):
     if amp_ok is not None:
         logging.debug("Amplitude correction done/tried earlier. Returning")
         return
-    
+
     correction_dates=['2023-12-18T23:00:00','2024-02-15T23:00:00']
-    
+
     correction_time=Time(correction_dates)
     msmd=msmetadata()
     try:
@@ -691,9 +691,9 @@ def correct_fastms_amplitude_scale(msname):
         correction_factor=4
     else:
         correction_factor=16
-    
+
     tb=table()
-    
+
     tb.open(msname,nomodify=False)
     try:
         data=tb.getcol('DATA')
@@ -733,7 +733,7 @@ def compress_fits_to_h5(fits_file, hdf5_file, beam_ratio=3.0, smaller_than_src =
         ch_vals.append(hdul[1].data[ch_val])
     ch_vals = np.array(ch_vals)
 
-    
+
     # to be more robust, if beam smaller than theoretical beam, use theoretical beam
     freqs =  hdul[1].data['cfreqs']
     thresh_arr = np.copy( hdul[1].data['bmin']*3600)
@@ -749,7 +749,7 @@ def compress_fits_to_h5(fits_file, hdf5_file, beam_ratio=3.0, smaller_than_src =
 
     if smaller_than_src:
         downsize_ratio[downsize_ratio < 1] = 1
-    
+
     count_avail=0
     with h5py.File(hdf5_file, 'w') as f:
         # Create a dataset for the FITS data
@@ -761,9 +761,9 @@ def compress_fits_to_h5(fits_file, hdf5_file, beam_ratio=3.0, smaller_than_src =
                     dset = f.create_dataset('FITS_pol'+str(pol)+'ch'+str(ch_idx).rjust(4,'0') , data=downsized_data,compression="gzip", compression_opts=9)
                 else:
                     count_avail+=1
-                    downsized_data = zoom(data[0,ch_idx,:,:], 1/downsize_ratio[ch_idx], order=3)
+                    downsized_data = zoom(data[0,ch_idx,:,:], 1/downsize_ratio[ch_idx], order=3,prefilter=False)
                     dset = f.create_dataset('FITS_pol'+str(pol)+'ch'+str(ch_idx).rjust(4,'0') , data=downsized_data,compression="gzip", compression_opts=9)
-                
+
             # Add FITS header info as attributes
         dset = f.create_dataset('ch_vals', data=ch_vals)
         dset.attrs['arr_name'] = hdul[1].data.dtype.names
@@ -775,13 +775,16 @@ def compress_fits_to_h5(fits_file, hdf5_file, beam_ratio=3.0, smaller_than_src =
         # remove h5 if no data available
         os.system(f'rm -rf {hdf5_file}')
 
-def recover_fits_from_h5(hdf5_file, fits_out=None, return_data=False):
+def recover_fits_from_h5(hdf5_file, fits_out=None, return_data=False, return_meta_only=False):
     """
     Recover a fits file from a compressed hdf5 file
 
     :param hdf5_file: the hdf5 file to be read
     :param fits_out: the fits file to be recovered. If not given, default to '{filename}.fits' in current directory
     :param return_data: if True, return the fits data and header directly without creating the fits file
+    :param return_meta_only: if True, return only the metadata without creating the fits file
+
+    :return: If return_data is True, returns a tuple (header, data). If return_meta_only is True, returns the metadata. Otherwise, returns None.
     """
     import h5py
     from scipy.ndimage import zoom
@@ -790,41 +793,28 @@ def recover_fits_from_h5(hdf5_file, fits_out=None, return_data=False):
         fits_out = './' + os.path.basename(hdf5_file).replace('.hdf', '.fits')
 
     with h5py.File(hdf5_file, 'r') as f:
-        # Read in the ch_vals
-        ch_vals = f['ch_vals'][:]
-        ch_vals_names = f['ch_vals'].attrs['arr_name']
-        ch_vals = {ch_vals_names[i]: ch_vals[i] for i in range(len(ch_vals_names))}
-        attaching_columns = []
-        for key in ch_vals.keys():
-            attaching_columns.append(fits.Column(name=key, format='E', array=ch_vals[key]))
-
-        datashape = f['ch_vals'].attrs['original_shape']
+        header = dict(f['ch_vals'].attrs)
+        datashape = header['original_shape']
+        header.pop('arr_name', None)
+        header.pop('original_shape', None)
+        header = fits.Header(header)
+        ch_vals = {name: f['ch_vals'][i] for i, name in enumerate(f['ch_vals'].attrs['arr_name'])}
+        attaching_columns = [fits.Column(name=key, format='E', array=ch_vals[key]) for key in ch_vals]
+        meta = {'header': header, **{col.name: col.array for col in attaching_columns}}
+        if return_meta_only:
+            return meta
 
         # Read in the compressed data
         recover_data = np.zeros(datashape)
-        for pol in range(0, datashape[0]):
-            for ch_idx in range(0, len(ch_vals['cfreqs'])):
-                tmp_small = f['FITS_pol' + str(pol) + 'ch' + str(ch_idx).rjust(4, '0')][:]
+        for pol in range(datashape[0]):
+            for ch_idx, freq in enumerate(meta['cfreqs']):
+                tmp_small = f[f'FITS_pol{pol}ch{str(ch_idx).rjust(4, "0")}'][:]
                 if tmp_small.shape[0] == 1:
                     recover_data[pol, ch_idx, :, :] = tmp_small[0, 0]
                 else:
-                    recover_data[pol, ch_idx, :, :] = zoom(tmp_small, datashape[-1] / tmp_small.shape[-1], order=5)
-
-        # Read in the header
-        header = {}
-        for key in f['ch_vals'].attrs.keys():
-            header[key] = f['ch_vals'].attrs[key]
-
-        header.pop('arr_name', None)
-        header.pop('original_shape', None)
-
-        # convert header to fits header obj
-        header = fits.Header(header)
+                    recover_data[pol, ch_idx, :, :] = zoom(tmp_small, datashape[-1] / tmp_small.shape[-1], order=5,prefilter=False)
 
         if return_data:
-            meta = {'header':header}
-            for col in attaching_columns:
-                meta[col.name] = col.array
             return meta, recover_data
 
         # Write out the recovered FITS file
@@ -860,9 +850,9 @@ def check_h5_fits_consistency(fits_file, hdf5_file=None, ignore_corrupted=False,
                 logging.warning(f'Key {key} not in the recovered fits header')
                 pass_check = 1
             elif header[key] != header_tmp[key]:
-                logging.warning(f'Key {key} not consistent in the recovered fits header')    
+                logging.warning(f'Key {key} not consistent in the recovered fits header')
                 pass_check = 2
-        
+
         # check data
         data_tmp = hdu_tmp[0].data
         data = hdu[0].data
@@ -886,8 +876,8 @@ def check_h5_fits_consistency(fits_file, hdf5_file=None, ignore_corrupted=False,
     os.system(f'rm -rf {work_dir}tmp.fits')
 
     return pass_check
-    
-        
+
+
 def check_for_file_presence(imagename,pol,suffix='image'):
     present=True
     pols=pol.split(',')
@@ -896,8 +886,8 @@ def check_for_file_presence(imagename,pol,suffix='image'):
         if not os.path.isfile(imagename+pol_prefix+"-"+suffix+".fits"):
             present=False
             break
-    return present 
-    
+    return present
+
 def manual_split_corrected_ms(vis, outputvis, datacolumn='CORRECTED_DATA'):
     tb=table()
     if datacolumn=='CORRECTED_DATA':
@@ -910,10 +900,10 @@ def manual_split_corrected_ms(vis, outputvis, datacolumn='CORRECTED_DATA'):
             logging.debug("Hand split method did not work")
             raise e
         finally:
-            tb.close() 
-    
+            tb.close()
+
     os.system("mv " + vis + " " + outputvis)
-    return outputvis     
+    return outputvis
 
 def get_primary_beam_single_source(alt,az,freq,\
                                     model_beam_file='/lustre/msurajit/beam_model_nivedita/OVRO-LWA_soil_pt.h5'):

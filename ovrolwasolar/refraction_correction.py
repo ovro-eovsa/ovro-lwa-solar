@@ -78,7 +78,7 @@ def find_center_of_thresh(data_this, thresh, meta,
             threshed_img_1st, threshed_img_2nd, threshed_img_3rd, threshed_img_4th]
 
 
-def refraction_fit_param(fname, thresh_freq=45e6, overbright=2.0e6, min_freqfrac=0.3,
+def refraction_fit_param(fname, thresh_freq=45e6, overbright=2.0e6, min_freqfrac=0.3, return_full_data=False,
                           return_record=False, convex_hull=False, background_factor=1/8, data=None, meta=None):
     """
     Take in a multi-frequency fits file and return the refraction fit parameters for:
@@ -154,7 +154,11 @@ def refraction_fit_param(fname, thresh_freq=45e6, overbright=2.0e6, min_freqfrac
     #com_y_fitted = py[0] * 1 / freqs_arr ** 2 + py[1]
     reftime = meta['header']['date-obs'][:19]
 
-    if return_record:
+    if return_full_data:
+        return {'Time':reftime, 'px0':px[0], 'px1':px[1], 'py0':py[0], 'py1':py[1],
+                'freqs':freqs_arr, 'com_x':com_x_tmp, 'com_y':com_y_tmp, 'peak_values':peak_values_tmp,
+                'area_collect':area_collect_tmp}
+    elif return_record:
         return {'Time':reftime, 'px0':px[0], 'px1':px[1], 'py0':py[0], 'py1':py[1]}
     else:
         return px, py
