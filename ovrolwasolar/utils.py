@@ -5,7 +5,6 @@ from casatools import image, table, msmetadata, quanta, measures
 import numpy as np
 import logging, glob
 from .primary_beam import jones_beam as beam 
-from . import generate_calibrator_model
 from astropy.coordinates import get_sun, EarthLocation,SkyCoord, AltAz
 
 def get_sun_pos(msfile, str_output=True):
