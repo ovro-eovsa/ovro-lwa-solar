@@ -5,7 +5,6 @@ from casatools import image, table, msmetadata, quanta, measures
 import numpy as np
 import logging, glob
 from .primary_beam import analytic_beam as beam 
-from .generate_calibrator_model import model_generation
 from . import generate_calibrator_model
 from astropy.coordinates import get_sun, EarthLocation,SkyCoord, AltAz
 
@@ -194,10 +193,10 @@ def get_flagged_solution_num(caltable):
 
 
 def get_strong_source_list():
-    srcs = [{'label': 'CasA', 'position': 'J2000 23h23m24s +58d48m54s', 'flux': '16530', 'alpha': -0.72},
-            {'label': 'CygA', 'position': 'J2000 19h59m28.35663s +40d44m02.0970s', 'flux': '16300', 'alpha': -0.58},
-            {'label': 'TauA', 'position': 'J2000 05h34m31.94s +22d00m52.2s', 'flux': '1770', 'alpha': -0.27},
-            {'label': 'VirA', 'position': 'J2000 12h30m49.42338s +12d23m28.0439s', 'flux': '2400', 'alpha': -0.86}]
+    srcs = [{'label': 'CasA', 'position': 'J2000 23h23m24s +58d48m54s', 'flux': '16530', 'alpha': -0.72, 'ref_freq': 80.0},
+            {'label': 'CygA', 'position': 'J2000 19h59m28.35663s +40d44m02.0970s', 'flux': '16300', 'alpha': -0.58, 'ref_freq': 80.0},
+            {'label': 'TauA', 'position': 'J2000 05h34m31.94s +22d00m52.2s', 'flux': '1770', 'alpha': -0.27, 'ref_freq': 80.0},
+            {'label': 'VirA', 'position': 'J2000 12h30m49.42338s +12d23m28.0439s', 'flux': '2400', 'alpha': -0.86, 'ref_freq': 80.0}]
     return srcs
 
 
@@ -433,11 +432,11 @@ def correct_primary_beam(msfile, imagename, pol='I', fast_vis=False):
     pb=beam(msfile=msfile)
     pb.srcjones(az=[az],el=[elev])
     jones_matrices=pb.get_source_pol_factors(pb.jones_matrices[0,:,:])
-
-    md=generate_calibrator_model.model_generation(vis=msfile)
+    muller_matrix=pb.get_muller_matrix_stokes(pb.jones_matrices[0,:,:])
+    
     if fast_vis==False:
         if pol=='I':
-            scale=md.primary_beam_value(0,jones_matrices)
+            scale=muller_matrix[0,0].real
             logging.info('The Stokes I beam correction factor is ' + str(round(scale, 4)))
             if type(imagename) is str:
                 if os.path.isfile(imagename+"-image.fits"):
@@ -462,10 +461,18 @@ def correct_primary_beam(msfile, imagename, pol='I', fast_vis=False):
                     n=2
                 else:
                     n==3
-                scale=md.primary_beam_value(n,jones_matrices)
+                scale=muller_matrix[n,n].real #### Note that the leakage from Stokes I due to beam is not corrected.
+                leakage_from_I=muller_matrix[n,0].real
                 logging.info('The Stokes '+pola+' beam correction factor is ' + str(round(scale, 4)))
                 if os.path.isfile(imagename+ "-"+pola+"-image.fits"):
+                    Iimage=imagename+ "-I-image.fits"
+                    if os.path.isfile(Iimage):
+                        Idata=fits.getdata(Iimage)
+                    else:
+                        Idata=0
                     hdu = fits.open(imagename+ "-"+pola+"-image.fits", mode='update')
+                    if pola in ['Q','U','V']:
+                        hdu[0].data-=leakage_from_I*Idata
                     hdu[0].data /= scale
                     hdu.flush()
                     hdu.close()
@@ -479,7 +486,7 @@ def correct_primary_beam(msfile, imagename, pol='I', fast_vis=False):
         for name in image_names:
             if os.path.isfile(name[1]):
                 if pol=='I':
-                    scale=md.primary_beam_value(0,jones_matrices)
+                    scale=muller_matrix[0,0].real
                 else:
                     pola=name[1].split('-')[-1]
                     if pola=='I' or pola=='XX' or pola=='YY':
@@ -490,8 +497,16 @@ def correct_primary_beam(msfile, imagename, pol='I', fast_vis=False):
                         n=2
                     else:
                         n==3
-                    scale=md.primary_beam_value(n,jones_matrices)
+                    scale=muller_matrix[n,n].real
+                    leakage_from_I=muller_matrix[n,0].real
+                Iimage=imagename+ "-I-image.fits"
+                if os.path.isfile(Iimage):
+                    Idata=fits.getdata(Iimage)
+                else:
+                    Idata=0
                 hdu = fits.open(name[1], mode='update')
+                if pola in ['Q','U','V']:
+                    hdu[0].data-=leakage_from_I*Idata
                 hdu[0].data /= scale
                 hdu.flush()
                 hdu.close()
@@ -901,3 +916,22 @@ def manual_split_corrected_ms(vis, outputvis, datacolumn='CORRECTED_DATA'):
     os.system("mv " + vis + " " + outputvis)
     return outputvis     
 
+def get_primary_beam_single_source(alt,az,freq,\
+                                    model_beam_file='/lustre/msurajit/beam_model_nivedita/OVRO-LWA_soil_pt.h5'):
+    '''
+    This is a utility function which returns the normalised beam factors for a single source.
+    :param alt: altitude in degrees. float
+    :param az: azimuth in degrees. float 
+    :param freq: Frequency in MHz
+    :param model_beam_file: Location of the primary beam file
+    '''
+    beamfac=beam(freq=freq,beam_file_path=model_beam_file)
+    beamfac.read_beam_file()
+    beamfac.srcjones(az=np.array([az]),el=np.array([alt]))  ### The jones matrices are already normalised
+    factors=np.zeros(4)
+    pol_fac=beamfac.get_muller_matrix_stokes(beamfac.jones_matrices[0,:,:])
+    factors[0]=pol_fac[0,0].real### I primary beam
+    factors[1]=pol_fac[1,0].real ### leakage from I to Q due to primary_beam
+    factors[2]=pol_fac[2,0].real ### leakage from I to U due to primary_beam
+    factors[3]=pol_fac[3,0].real ### leakage from I to V due to primary_beam
+    return factors

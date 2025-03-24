@@ -45,7 +45,6 @@ class model_generation():
         self.polarisations=self.pol.split(',')
         self.num_pol=len(self.polarisations)
         self.filename=filename
-        self.ref_freq=80.0
         self.output_freq=None
         self.includesun=False
         self.solar_flux=16000
@@ -56,6 +55,7 @@ class model_generation():
         self.predict=True
         self.model=model
         self.point_source_model_needed=True
+        self.primary_beam_model='/lustre/msurajit/beam_model_nivedita/OVRO-LWA_soil_pt.h5'
         if (self.separate_pol==True and self.num_pol==1) or \
             (self.separate_pol==False and self.num_pol!=1):
             raise RuntimeError("The two keywords \'separate_pol\' and \'pol\' are inconsistent")
@@ -127,8 +127,9 @@ class model_generation():
         
         s=0    
         for azev,elev in zip(az,el):
-            matrix=pb.get_source_pol_factors(pb.jones_matrices[s,:,:])
-            if matrix[0,0] > self.min_beam_val and matrix[1,1] > self.min_beam_val:
+            #matrix=pb.get_source_pol_factors(pb.jones_matrices[s,:,:])
+            matrix=pb.get_muller_matrix_stokes(pb.jones_matrices[s,:,:])
+            if matrix[0,0] > self.min_beam_val:# and matrix[1,1] > self.min_beam_val:
                 for i in range(self.num_pol):
                     self.write_source_file(i,srcs[s]['label'], matrix, s)
             s+=1
@@ -136,10 +137,10 @@ class model_generation():
         return    
 
     
-    def write_source_file(self,current_pol_index,source_name, jones_matrix, source_num):  #### works only if logarithimicSI is false
+    def write_source_file(self,current_pol_index,source_name, muller_matrix, source_num):  #### works only if logarithimicSI is false
 
         
-        primary_beam_value=self.primary_beam_value(current_pol_index,jones_matrix)
+        primary_beam_value=self.primary_beam_value(current_pol_index,muller_matrix) ### assumes an unpolarised source
         try:
             f1 = open(self.calfilepath + source_name+ ".txt", "r")
             j = 0
@@ -181,14 +182,14 @@ class model_generation():
             f1.close()
 
     @staticmethod
-    def primary_beam_value(current_pol_index,jones_matrix):  
-        XX_factor=np.abs(jones_matrix[0,0])
-        YY_factor=np.abs(jones_matrix[1,1])
-        XY_factor=jones_matrix[0,1]
-        I_factor=0.5*(XX_factor+YY_factor)
-        Q_factor=0.5*(XX_factor-YY_factor)
-        U_factor=np.real(XY_factor)
-        V_factor=np.imag(XY_factor)
+    def primary_beam_value(current_pol_index,muller_matrix):  
+        '''
+        returns elements from the first column of Muller Matrix
+        '''
+        I_factor=muller_matrix[0,0].real
+        Q_factor=muller_matrix[1,0].real
+        U_factor=muller_matrix[2,0].real
+        V_factor=muller_matrix[3,0].real
         if current_pol_index==0:
             return I_factor
         elif current_pol_index==1:
@@ -207,9 +208,9 @@ class model_generation():
         if not self.output_freq:
             self.output_freq=self.avg_freq
     
-    def flux80_47(self,flux_hi, sp,jones_matrix):
+    def predict_flux(self,flux_hi, sp,muller_matrix,ref_freq):
         """
-        Given a flux at 80 MHz and a sp_index, return the flux at 47 MHz.
+        Given a flux at reference frequency in MHz and a sp_index, return the flux other frequenct
 
         :param flux_hi: flux at the reference frequency
         :param sp: spectral index
@@ -218,12 +219,12 @@ class model_generation():
         :return: flux caliculated at the output frequency
         """
         
-        freq_I=flux_hi * 10 ** (sp * math.log(self.output_freq / self.ref_freq, 10))
+        freq_I=flux_hi * 10 ** (sp * np.log10(self.output_freq / ref_freq))
         
-        I_flux=self.primary_beam_value(0,jones_matrix)*freq_I
-        Q_flux=self.primary_beam_value(1,jones_matrix)*freq_I
-        U_flux=self.primary_beam_value(2,jones_matrix)*freq_I
-        V_flux=self.primary_beam_value(3,jones_matrix)*freq_I
+        I_flux=self.primary_beam_value(0,muller_matrix)*freq_I
+        Q_flux=self.primary_beam_value(1,muller_matrix)*freq_I
+        U_flux=self.primary_beam_value(2,muller_matrix)*freq_I
+        V_flux=self.primary_beam_value(3,muller_matrix)*freq_I
         print (I_flux,Q_flux,U_flux,V_flux)    
         return [I_flux,Q_flux, U_flux, V_flux]
     
@@ -288,16 +289,16 @@ class model_generation():
         
         modelcl = self.vis.replace('.ms', '.cl')
         
-        pb=beam(msfile=self.vis)
+        pb=beam(msfile=self.vis,beam_file_path=self.primary_beam_model)
         pb.read_beam_file()
         for s in srcs:
-            print (np.array([s['az']]),np.array([s['el']]))
             pb.srcjones(np.array([s['az']]),np.array([s['el']]))
-            matrix=pb.get_source_pol_factors(pb.jones_matrices[0,:,:])
+            matrix=pb.get_muller_matrix_stokes(pb.jones_matrices[0,:,:])
 
-            if matrix[0,0] > self.min_beam_val and matrix[1,1] > self.min_beam_val:
+            if matrix[0,0] > self.min_beam_val:
                 
-                s['flux'] = self.flux80_47(float(s['flux']), s['alpha'], matrix) 
+                s['flux'] = self.predict_flux(float(s['flux']), s['alpha'], matrix, s['ref_freq']) 
+
                 
                 cl.addcomponent(flux=s['flux'], dir=s['position'], index=s['alpha'], polarization='Stokes', 
                             spectrumtype='spectral index', freq='{0:f}MHz'.format(self.output_freq), label=s['label'])

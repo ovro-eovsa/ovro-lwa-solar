@@ -39,18 +39,22 @@ class beam_polcal():
     
         
     @staticmethod
-    def compute_primary_beam_from_beamfiles(freqs,tims,model_beam_file):
+    def compute_primary_beam_from_beamfiles(freqs,model_beam_file,tims=None, az=None,alt=None):
         '''
         :param freq: list/array of frequencies in MHz
         
         This function returns the I,Q,U,V factors, normalised to their
         corresponding I values. Thus we get 1,Q/I,U/I, V/I. The shape 
-        is (num_freqs,4,num_times)
+        is (num_freqs,4,num_times/num_alt)
         
         Also this will only provide the first column of the fuller Muller
         matrix and hence should only be used when the source is unpolarised.
+        
+        az,alt: In degrees. If not provided, we will assume this is for Sun.
+                Should be a numpy array
         '''
-        az,alt=utils.get_solar_altaz_multiple_times(tims)
+        if not isinstance(az,np.ndarray):
+            az,alt=utils.get_solar_altaz_multiple_times(tims)
 
         num_tims=len(alt)
         num_freqs=freqs.size
@@ -160,8 +164,9 @@ class beam_polcal():
             times_to_compute_beam=np.append(times_to_compute_beam,max_tim)
        
         if not os.path.isfile(outfile) or overwrite:
-            beam=self.compute_primary_beam_from_beamfiles(freqs_to_compute_beam,Time(times_to_compute_beam,\
-                                                        format='mjd',scale='utc'),self.model_beam_file)
+            beam=self.compute_primary_beam_from_beamfiles(freqs_to_compute_beam,self.model_beam_file, \
+                                                            tims=Time(times_to_compute_beam,\
+                                                        format='mjd',scale='utc'))
             logging.debug("Primary beam successfully computed.")
             with h5py.File(outfile,"w") as  hf:
                 hf.create_dataset("freqs_MHz",data=freqs_to_compute_beam)

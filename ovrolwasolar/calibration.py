@@ -180,7 +180,7 @@ def make_fast_caltb_from_slow(calib_ms, solar_ms, caltb, \
     return caltb_fast
     
 def gen_calibration(msfile, modelcl=None, uvrange='>10lambda', bcaltb=None, logging_level='info', caltable_fold='caltables', 
-        refant='202', dobaselineflag=False):
+        refant='202', dobaselineflag=False,primary_beam_model='/lustre/msurajit/beam_model_nivedita/OVRO-LWA_soil_pt.h5'):
     """
     This function is for doing initial self-calibrations using strong sources that are above the horizon
     It is recommended to use a dataset observed at night when the Sun is not in the field of view with the same attenuator settings
@@ -190,6 +190,9 @@ def gen_calibration(msfile, modelcl=None, uvrange='>10lambda', bcaltb=None, logg
     :param bcaltb: name of the output bandpass calibration table
     :param caltable_fold: directory to store the bandpass calibration table
     :param refant: reference antenna to be used
+    :param primary_beam_model: Select the primary beam model to be used. If the path is not valid,
+                                the code will switch to an analytic beam model. In that case, please
+                                check results carefully.
     """
 	
     time1=timeit.default_timer()
@@ -197,8 +200,9 @@ def gen_calibration(msfile, modelcl=None, uvrange='>10lambda', bcaltb=None, logg
         print('Model component list does not exist. Generating one from scratch.')
         logging.debug('Model component list does not exist. Generating one from scratch.')
        
-       
-        md=model_generation(vis=msfile,separate_pol=True) 	    
+        
+        md=model_generation(vis=msfile,separate_pol=True)
+        md.beam_file_path=primary_beam_model
         modelcl, ft_needed = md.gen_model_cl()
     else:
         ft_needed = True
@@ -215,6 +219,8 @@ def gen_calibration(msfile, modelcl=None, uvrange='>10lambda', bcaltb=None, logg
 
     logging.info("Generating bandpass solution")
     bandpass(msfile, caltable=bcaltb, uvrange=uvrange, combine='scan,field,obs', fillgaps=0,refant=refant)
+    ### I am using minsnr=1, since the snr calculation of CASA strictly speaking, is valid only for point source
+    #flagdata(vis=bcaltb,mode='tfcrop') ### flagging the caltable
     logging.debug("Applying the bandpass solutions")
     applycal(vis=msfile, gaintable=bcaltb)
     logging.debug("Doing a rflag run on corrected data")
@@ -224,6 +230,7 @@ def gen_calibration(msfile, modelcl=None, uvrange='>10lambda', bcaltb=None, logg
         flagging.perform_baseline_flagging(msfile, overwrite=True)
     logging.debug("Finding updated and final bandpass table")
     bandpass(msfile, caltable=bcaltb, uvrange=uvrange, combine='scan,field,obs', fillgaps=0,refant=refant)
+    #flagdata(vis=bcaltb,mode='tfcrop')
 
     if logging_level == 'debug':
         utils.get_flagged_solution_num(bcaltb)

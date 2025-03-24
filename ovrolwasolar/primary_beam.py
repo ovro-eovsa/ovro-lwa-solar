@@ -35,9 +35,77 @@ class analytic_beam():
             self.jones_matrices[i,:,:]=np.sqrt(np.sin(el[i]*np.pi/180)**1.6*np.identity(2))
         return 
     
+    def read_beam_file(self):
+        '''
+        dummy function to make the code similar for all classes
+        '''
+        return
+    
+    def get_muller_matrix_XY(self,jones_matrix):                                       
+        '''
+        The muller matrix is in XY coordinate frame
+        So 
+        (XX_obs,XY_obs,YX_obs,YY_obs).T=((M00,M01,M02,M03),\
+                                         (M10,M11, M12, M13),\
+                                         (M20, M21, M22, M23),\
+                                         (M30, M31, M32, M33)) (XX,XY,YX,YY).T
+        Note that this Muller Matrix is not normalised.
+        '''
+        J1=jones_matrix
+        J2=np.conj(J1)
+        
+        XY_muller_matrix=np.zeros((4,4),dtype=complex)
+        
+        XY_muller_matrix[0:2,0:2]=J1[0,0]*J2
+        XY_muller_matrix[0:2,2:4]=J1[0,1]*J2
+        XY_muller_matrix[2:4,0:2]=J1[1,0]*J2
+        XY_muller_matrix[2:4,2:4]=J1[1,1]*J2
+    
     @staticmethod    
     def get_source_pol_factors(jones_matrix):
         return jones_matrix**2
+    
+    def get_muller_matrix_XY(self,jones_matrix):                                       
+        '''
+        The muller matrix is in XY coordinate frame
+        So 
+        (XX_obs,XY_obs,YX_obs,YY_obs).T=((M00,M01,M02,M03),\
+                                         (M10,M11, M12, M13),\
+                                         (M20, M21, M22, M23),\
+                                         (M30, M31, M32, M33)) (XX,XY,YX,YY).T
+        Note that this Muller Matrix is not normalised.
+        '''
+        J1=jones_matrix
+        J2=np.conj(J1)
+        
+        XY_muller_matrix=np.zeros((4,4),dtype=complex)
+        
+        XY_muller_matrix[0:2,0:2]=J1[0,0]*J2
+        XY_muller_matrix[0:2,2:4]=J1[0,1]*J2
+        XY_muller_matrix[2:4,0:2]=J1[1,0]*J2
+        XY_muller_matrix[2:4,2:4]=J1[1,1]*J2
+        
+        
+        return  XY_muller_matrix  
+        
+    def get_muller_matrix_stokes(self,jones_matrix):                                       
+        '''
+        The muller matrix is in Stokes coordinate frame
+        So 
+        (I_obs,Q_obs,U_obs,V_obs).T=((M00,M01,M02,M03),\
+                                         (M10,M11, M12, M13),\
+                                         (M20, M21, M22, M23),\
+                                         (M30, M31, M32, M33)) (I,Q,U,V).T
+        Note that this Muller Matrix is not normalised.
+        '''
+        XY_muller_matrix=self.get_muller_matrix_XY(jones_matrix)
+        T=0.5*np.array([[1,0,0,1],[1,0,0,-1],[0,1,1,0],\
+                                    [0,-1j,1j,0]],dtype=complex)   ### see eq 8 of Hamaker et al. 1996
+        S=np.array([[1,1,0,0],[0,0,1,1j],[0,0,1,-1j],\
+                                    [1,-1,0,0]],dtype=complex)   ### see eq 9 of Hamaker et al. 1996
+        stokes_muller_matrix=np.matmul(np.matmul(T,XY_muller_matrix),S)
+        return  stokes_muller_matrix  
+        
             
 class woody_beam():
     '''
@@ -180,6 +248,47 @@ class woody_beam():
         '''
         
         return  jones_matrix    
+    
+    def get_muller_matrix_XY(self,jones_matrix):                                       
+        '''
+        The muller matrix is in XY coordinate frame
+        So 
+        (XX_obs,XY_obs,YX_obs,YY_obs).T=((M00,M01,M02,M03),\
+                                         (M10,M11, M12, M13),\
+                                         (M20, M21, M22, M23),\
+                                         (M30, M31, M32, M33)) (XX,XY,YX,YY).T
+        Note that this Muller Matrix is not normalised.
+        '''
+        J1=jones_matrix
+        J2=np.conj(J1)
+        
+        XY_muller_matrix=np.zeros((4,4),dtype=complex)
+        
+        XY_muller_matrix[0:2,0:2]=J1[0,0]*J2
+        XY_muller_matrix[0:2,2:4]=J1[0,1]*J2
+        XY_muller_matrix[2:4,0:2]=J1[1,0]*J2
+        XY_muller_matrix[2:4,2:4]=J1[1,1]*J2
+        
+        
+        return  XY_muller_matrix  
+        
+    def get_muller_matrix_stokes(self,jones_matrix):                                       
+        '''
+        The muller matrix is in Stokes coordinate frame
+        So 
+        (I_obs,Q_obs,U_obs,V_obs).T=((M00,M01,M02,M03),\
+                                         (M10,M11, M12, M13),\
+                                         (M20, M21, M22, M23),\
+                                         (M30, M31, M32, M33)) (I,Q,U,V).T
+        Note that this Muller Matrix is not normalised.
+        '''
+        XY_muller_matrix=self.get_muller_matrix_XY(jones_matrix)
+        T=0.5*np.array([[1,0,0,1],[1,0,0,-1],[0,1,1,0],\
+                                    [0,-1j,1j,0]],dtype=complex)   ### see eq 8 of Hamaker et al. 1996
+        S=np.array([[1,1,0,0],[0,0,1,1j],[0,0,1,-1j],\
+                                    [1,-1,0,0]],dtype=complex)   ### see eq 9 of Hamaker et al. 1996
+        stokes_muller_matrix=np.matmul(np.matmul(T,XY_muller_matrix),S)
+        return  stokes_muller_matrix 
                              
         
 class jones_beam:
@@ -247,6 +356,7 @@ class jones_beam:
         Note that while the beamfiles accept in radian units, this function takes
         the alt,azimuth in degrees. The altitude is converted to zenith angle within
         the code.
+        The jones matrices will be normalised with respect to the zenith
         '''
         try:
             with h5py.File(self.beamfile,'r') as hf:
@@ -257,14 +367,18 @@ class jones_beam:
                 self.Xpol_etheta=np.array(hf['X_pol_Efields/etheta']) #N_freq,N_theta,N_phi
                 self.Ypol_ephi=np.array(hf['Y_pol_Efields/ephi']) # N_freq,N_theta,N_phi
                 self.Ypol_etheta=np.array(hf['Y_pol_Efields/etheta']) # N_freq,N_theta,N_phi
-            xpol_phi_max=np.max(np.abs(self.Xpol_ephi),axis=(1,2))
-            xpol_theta_max=np.max(np.abs(self.Xpol_etheta),axis=(1,2))
-            ypol_phi_max=np.max(np.abs(self.Ypol_ephi),axis=(1,2))
-            ypol_theta_max=np.max(np.abs(self.Ypol_etheta),axis=(1,2))
+            ### I will normalize using the values at zenith (az=0, zenith_angle=0)
+            xpol_phi_max=np.abs(self.Xpol_ephi[:,0,0])
+            xpol_theta_max=np.abs(self.Xpol_etheta[:,0,0])
+            ypol_phi_max=np.abs(self.Ypol_ephi[:,0,0])
+            ypol_theta_max=np.abs(self.Ypol_etheta[:,0,0])
             
             self.max_e=np.zeros(self.model_freqs.size)
             for i in range(self.model_freqs.size):
-                self.max_e[i]=max([xpol_phi_max[i],xpol_theta_max[i],ypol_phi_max[i],ypol_theta_max[i]])
+            ### These are the normalising terms. The factor 0.5 comes from the definition
+            ### of I used. I= 0.5*(XX+YY).
+                self.max_e[i]=np.sqrt(0.5*(xpol_phi_max[i]**2+xpol_theta_max[i]**2+\
+                                        ypol_phi_max[i]**2+ypol_theta_max[i]**2))
         except:
             logging.warning("Beam file does not exist in give path."+\
                     "Switching to analytical beam.")
@@ -347,7 +461,7 @@ class jones_beam:
             
             for i in range(self.num_sources):
                 self.jones_matrices[i,:,:]=[[sources_e_theta_x[i],sources_e_phi_x[i]],\
-                                        [sources_e_theta_y[i],sources_e_phi_y[i]]]/max_val_freq  ### approximate normalization
+                                        [sources_e_theta_y[i],sources_e_phi_y[i]]]/max_val_freq  ### zenith normalisation
         else:
             Ifctr=np.sin(el*np.pi/180)**1.6
             for i in range(self.num_sources):
@@ -389,7 +503,7 @@ class jones_beam:
         XY_muller_matrix[2:4,0:2]=J1[1,0]*J2
         XY_muller_matrix[2:4,2:4]=J1[1,1]*J2
         
-        #J3=J3/np.sum(np.abs(J3))*2 #### check normalisation
+        
         return  XY_muller_matrix  
         
     def get_muller_matrix_stokes(self,jones_matrix):                                       
@@ -408,4 +522,6 @@ class jones_beam:
         S=np.array([[1,1,0,0],[0,0,1,1j],[0,0,1,-1j],\
                                     [1,-1,0,0]],dtype=complex)   ### see eq 9 of Hamaker et al. 1996
         stokes_muller_matrix=np.matmul(np.matmul(T,XY_muller_matrix),S)
-        return  stokes_muller_matrix              
+        return  stokes_muller_matrix  
+    
+                 
