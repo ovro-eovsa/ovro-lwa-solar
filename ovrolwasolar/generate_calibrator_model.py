@@ -266,12 +266,12 @@ class model_generation():
             d = me.measure(d0, 'AZEL')
             elev = d['m1']['value']*180/np.pi
             azev=d['m0']['value']*180/np.pi
-
+            
             if azev<0:
                 azev=360+azev
             if elev<0:
                 del srcs[s]
-            elif np.sin(d['m0']['value'])**1.6<self.min_beam_val:
+            elif np.sin(d['m1']['value'])**1.6<self.min_beam_val:
                 del srcs[s]
             else:
                 srcs[s]['el']=elev
