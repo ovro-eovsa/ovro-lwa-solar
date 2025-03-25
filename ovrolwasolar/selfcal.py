@@ -77,7 +77,7 @@ def do_selfcal(msfile, num_phase_cal=2, num_apcal=2, applymode='calflag', loggin
                 else:
                     logging.warning("No caltable found. Setting corrected data to DATA")
                     clearcal(msfile)
-                return good
+                return good,'dummy'
         logging.debug("Finding gain solutions and writing in into " + imagename + ".gcal")
         time1=timeit.default_timer()
         gaincal(vis=msfile, caltable=imagename + ".gcal", uvrange=">10lambda",
@@ -144,7 +144,7 @@ def do_selfcal(msfile, num_phase_cal=2, num_apcal=2, applymode='calflag', loggin
                     else:
                         logging.warning("No caltable found. Setting corrected data to DATA")
                         clearcal(msfile)
-                return good
+                return good,'dummy'
         caltable = imagename + "_ap_over_p.gcal"
 
         
