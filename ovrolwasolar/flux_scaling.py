@@ -12,8 +12,6 @@ import matplotlib.pyplot as plt
 from .  import utils,flagging,calibration,selfcal,source_subtraction
 import logging, glob
 from .file_handler import File_Handler
-from .primary_beam import analytic_beam as beam 
-from . import primary_beam
 from .generate_calibrator_model import model_generation
 from . import generate_calibrator_model
 tb = table()

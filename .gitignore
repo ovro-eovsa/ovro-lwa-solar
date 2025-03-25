@@ -2,6 +2,10 @@
 
 casa*.log
 
+#data files
+*.hdf5
+*.h5
+
 # profiling files
 *.pstats
 
