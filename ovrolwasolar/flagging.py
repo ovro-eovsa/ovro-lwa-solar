@@ -323,7 +323,7 @@ def gen_ant_flags_tst(msfile: str, debug: bool = False) -> str:
         return antflagfile
 
 
-def flag_bad_ants(msfile, antflagfile=None, datacolumn='DATA', thresh_core=1.0, thresh_exp=1.0, clearflags=True):
+def flag_bad_ants(msfile, antflagfile=None, datacolumn='DATA', thresh_core=3.0, thresh_exp=3.0, clearflags=True):
     """
     Read the text file that contains flags for bad antennas, and apply the flags
     
