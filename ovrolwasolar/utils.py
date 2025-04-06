@@ -630,7 +630,9 @@ def compress_fits_to_h5(fits_file, hdf5_file, beam_ratio=3.0, smaller_than_src =
             # if beam not available, use theoretical beam
                 thresh_arr[i] = beam_size_thresh[i]
 
-    downsize_ratio = (thresh_arr)/ beam_ratio / hdul[0].header['CDELT2']
+    from astropy import units as u
+    unit_angle = u.Unit(hdul[0].header['CUNIT2'])
+    downsize_ratio = (thresh_arr) / beam_ratio / (hdul[0].header['CDELT2'] * unit_angle.to(u.arcsec))
 
     if smaller_than_src:
         downsize_ratio[downsize_ratio < 1] = 1

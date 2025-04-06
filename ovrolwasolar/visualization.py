@@ -160,8 +160,14 @@ def slow_pipeline_default_plot(fname,
         if np.min(np.abs(freqs_mhz - freq_plt)) < 2.:
             bd = np.argmin(np.abs(freqs_mhz - freq_plt)) 
             bmaj,bmin,bpa = meta['bmaj'][bd],meta['bmin'][bd],meta['bpa'][bd]
+
+            from ovrolwasolar import coords as ocoords
+            obstimestr = meta['header']["DATE-OBS"]
+            ephemSun = ocoords.getSunEphem(obstimestr)
+            rot_angle = np.degrees(ephemSun['P'])
+
             beam0 = Ellipse((-fov/2*0.75, -fov/2*0.75), bmaj*3600,
-                    bmin*3600, angle=(-(90-bpa)),  fc='None', lw=2, ec='w')
+                    bmin*3600, angle=(-(90-bpa)-rot_angle),  fc='None', lw=2, ec='w')
 
             rmap_plt_ = smap.Map(np.squeeze(rdata[0, bd, :, :]/1e6), meta['header'])
             rmap_plt = pmX.Sunmap(rmap_plt_)
