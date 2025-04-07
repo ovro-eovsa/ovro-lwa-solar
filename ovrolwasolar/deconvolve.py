@@ -10,16 +10,8 @@ import astropy.units as u
 from astropy.wcs import WCS
 from astropy.io import fits
 import matplotlib.pyplot as plt
-from . import utils,flagging,calibration,selfcal,source_subtraction
+from . import utils
 import logging, glob, shlex, subprocess
-
-from . import utils,flagging
-from .file_handler import File_Handler
-from .primary_beam import analytic_beam as beam 
-from . import primary_beam
-from .generate_calibrator_model import model_generation
-from . import generate_calibrator_model
-
 import timeit
 tb = table()
 me = measures()
@@ -136,6 +128,14 @@ def run_wsclean(msfile, imagename, size:int =4096, scale='2arcmin', fast_vis=Fal
         cli_arg = key.replace('_', '-')
         cmd_clean += f" -{cli_arg} {value} " if value != '' else f" -{cli_arg} "
 
+    if ('I' in default_kwargs['pol']) and ('join_polarizations' not in default_kwargs.keys()) and \
+            ('Q' in default_kwargs['pol'] or 'U' in default_kwargs['pol'] \
+            or 'V' in default_kwargs['pol']):                                                      
+          cmd_clean+= " -join-polarizations "                                                        
+    elif (default_kwargs['pol']=='I' or default_kwargs['pol']=='XX' or default_kwargs['pol']=='YY'
+              or default_kwargs['pol']=='XX,YY') and ('no_negative' not in default_kwargs.keys()):  
+          cmd_clean+= " -no-negative "                                                              
+
     cmd_clean += " -name " + imagename + " " + msfile
     
     if not dry_run:
@@ -163,6 +163,170 @@ def run_wsclean(msfile, imagename, size:int =4096, scale='2arcmin', fast_vis=Fal
 
     return cmd_clean
 
+def enforce_threshold_on_model(imagename,thresh=7,pol='I',src_area=100, msfile=None, \
+                                sol_area=400., neg_thresh=1.5, enforce_polarised_beam_thresholding=False):
+    '''
+
+    imagename is the prefix of the image and is same as that supplied to the WSClean call
+    This function will first determine the pixels for which the Stokes I/XX/YY/RR/LL image is less than 
+    than thresh x rms . Then it will go to the polarised models and put all such pixels to
+    be zeros. If these images are not found, this the function will give a warning to log file
+    and exit.
+    
+    :param imagename: Imagename prefix. This is same as that passed to WSclean call
+    :type imagename: str
+    :param thresh: Threshold used to determine low SNR pixels in Stokes I/XX/YY image. This
+                    is in units of rms. Default: 7
+    :type thresh: float
+    :param pol: This is the list of polarisations on which the thresholding is done. Either
+                I,XX,YY,RR,LL is necessary to do this thresholding. Format='I,Q,U,V'
+    :type pol: str
+    :param src_area: Diameter of region around the sources other than source considered for
+                    estimating rms and negatives. Value in arcminutes. Default:100
+    :type src_area: float
+    :param msfile: Name of MS. Is used to determine az-el of sun at the time of image
+    :type msfile: str
+    :param sol_area: Diameter of region around Sun considered for
+                    estimating rms and negatives. Value in arcminutes. Default:400
+    :type sol_area: float
+    :param neg_thresh: Stokes I values which are smaller than neg_thresh x abs(min) are flagged.
+                        Default: 1.5
+    :type neg_thresh: float
+    '''
+    pols=pol.split(',')
+    num_pol=len(pols)
+    print (pol)
+    
+    #### check if either of I,XX,YY,RR,LL is in pols or not
+    if set(['I','XX','YY',"RR","LL"]).isdisjoint(pols):
+        logging.warning("Intensity or pseudo-intensity image not in pols. Threshold could not be done.")
+        return
+    
+    if num_pol==1:
+        Iimage=imagename+"-image.fits"
+    else:
+        for pol1 in ['I','XX','YY','RR','LL']:
+            Iimage=imagename+"-"+pol1+"-image.fits"
+            if os.path.isfile(Iimage):
+                break
+    if not os.path.isfile(Iimage):
+        logging.warning("Intensity or pseudo-intensity image not found. Threshold could not be done.")
+        return
+        
+    Idata=fits.getdata(Iimage)
+    head=fits.getheader(Iimage)
+    
+    freq=head['CRVAL3']*1e-6
+    
+    if msfile is not None:
+        solx, soly = utils.get_solar_loc_pix(msfile, Iimage)
+    else:
+        solx,soly=None, None
+    
+    beam_factors=None
+    
+    
+    
+    if head['cunit1'] == 'deg':
+        dx = np.abs(head['cdelt1'] * 60.)
+    else:
+        print(head['cunit1'] + ' not recognized as "deg". Model could be wrong.')
+    if head['cunit2'] == 'deg':
+        dy = np.abs(head['cdelt2'] * 60.)
+    else:
+        print(head['cunit2'] + ' not recognized as "deg". Model could be wrong.')
+        
+    if solx is not None:
+        sol_area_xpix = int(sol_area / dx)
+        sol_area_ypix = int(sol_area / dy)
+        solar_data=Idata[0, 0, soly - sol_area_ypix // 2:soly + sol_area_ypix // 2 + 1,
+                        solx - sol_area_xpix // 2:solx + sol_area_xpix // 2 + 1]
+        if enforce_polarised_beam_thresholding:
+            beam_factors=np.array([[1.0 , 0.30,-0.0844,-0.0175]])#polcalib.get_beam_factors([solar_el],[solar_az],freq=freq)
+        
+    rms=np.nanstd(Idata)
+    pos=np.where(Idata>10*rms)
+    ### removed outliers, which are actual sources. This will stop them from biasing the rms calculation.
+    Idata[pos]=np.nan
+    
+    rms=np.nanstd(Idata)
+    Idata_copy=np.zeros_like(Idata)
+    Idata_copy[...]=Idata[...]
+    pos2=np.where(Idata>=thresh*rms)
+    
+    for src_y,src_x in zip(pos2[2],pos2[3]):
+        src_area_xpix = src_area / dx
+        src_area_ypix = src_area / dy
+        
+        new_data = Idata[0,0,int(src_y - src_area_ypix // 2): int(src_y + src_area_ypix // 2),\
+                    int(src_x - src_area_xpix // 2): int(src_x + src_area_xpix // 2)]
+        max_data=np.nanmax(new_data)
+        min_data=np.nanmin(new_data)
+        if max_data<neg_thresh*abs(min_data):          
+            Idata_copy[0,0,int(src_y - src_area_ypix // 2): int(src_y + src_area_ypix // 2),\
+                    int(src_x - src_area_xpix // 2): int(src_x + src_area_xpix // 2)]=0.0
+                    
+    if solx is not None:
+        Idata_copy[0, 0, soly - sol_area_ypix // 2:soly + sol_area_ypix // 2 + 1,
+                solx - sol_area_xpix // 2:solx + sol_area_xpix // 2 + 1]=solar_data      
+            
+    pos=np.where(Idata_copy<neg_thresh*rms)
+    
+
+    
+    for pol1 in pols:
+        if num_pol==1:
+            modelname=imagename+"-model.fits"
+
+        else:
+            modelname=imagename+"-"+pol1+"-model.fits"
+        
+        if not os.path.isfile(modelname):
+            continue
+        
+        hdu=fits.open(modelname,mode='update')
+        try:
+            hdu[0].data[pos]=0.00000000
+            if enforce_polarised_beam_thresholding and beam_factors is not None \
+                    and pol1 not in ['XX','YY','RR','LL','I']:
+                enforce_polarised_beam_threshold(hdu[0].data,Idata_copy,beam_factors, pol1)
+                
+            hdu.flush()
+        finally:
+            hdu.close()
+    return
+    
+def enforce_polarised_beam_threshold(stokes_data, Idata, beam_factors, stokes,thresh=1.5):
+    '''
+    :param_stokes_data: Stokes data. Modified inplace
+    :type stokes_data: numpy ndarray
+    :param Idata: Stokes I data
+    :type Idata: numpy ndarray
+    :param beam_factors: Primary beam values for different stokes parameters, normalised to I value
+    :type beam_factors: numpy ndarray
+    :param stokes: Stokes parameter of stokes data
+    :type stokes: str
+    :param thresh: Values above thresh x primary_beam_value x I model is not zeroed.
+    :type thresh: float 
+    '''
+    if stokes=='Q':
+        factor=beam_factors[1]
+    elif stokes=='U':
+        factor=beam_factors[2]
+    elif stokes=='V':
+        factor=beam_factors[3]
+    elif stokes in ['I','XX','YY','RR','LL']:
+        factor=0.0  ### do nothing for Stokes I data
+    else:
+
+        logging.warning("Only Q,U,V supported.")
+        return
+    
+    threshold=Idata*factor
+    
+    stokes_data[abs(stokes_data)<abs(threshold*thresh)]=0.0
+    stokes_data[abs(stokes_data)>abs(threshold*thresh)]-=threshold
+    return
 
 def find_smallest_fftw_sz_number(n):
     """
