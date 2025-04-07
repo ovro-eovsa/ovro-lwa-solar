@@ -4,10 +4,8 @@ from astropy.io import fits
 from casatools import image, table, msmetadata, quanta, measures
 import numpy as np
 import logging, glob
-from . import primary_beam
-from .primary_beam import analytic_beam as beam
-from .generate_calibrator_model import model_generation
-from . import generate_calibrator_model
+from .primary_beam import jones_beam as beam 
+from astropy.coordinates import get_sun, EarthLocation,SkyCoord, AltAz
 
 def get_sun_pos(msfile, str_output=True):
     """
@@ -34,7 +32,47 @@ def get_sun_pos(msfile, str_output=True):
         return d0_j2000_str
     return d0_j2000
 
+def get_solar_altaz_multiple_times(times):
+    '''
+    :param times: A astropy Time object. Can have multiple times
+    returns az,el in degrees for OVRO
+    '''
+    observing_location=EarthLocation.of_site('ovro')
+    solar_loc=get_sun(times)
+    frame = AltAz(location=observing_location, obstime=times)
+    azel=solar_loc.transform_to(frame)
+    az=azel.az.value
+    alt=azel.alt.value
+    return az,alt
 
+
+def get_solar_azel(msfile):
+    '''
+    Returns az ,el of sun in degrees.
+    
+    :param msfile: Name of MS 
+    :type msfile: str
+    
+    :return: az,el in degrees
+    '''
+    me=measures()
+    m = get_sun_pos(msfile, str_output=False)
+    logging.debug('Solar ra: ' + str(m['m0']['value']))
+    logging.debug('Solar dec: ' + str(m['m1']['value']))
+    tb=table()
+    tb.open(msfile)
+    t0 = tb.getcell('TIME', 0)
+    tb.close()
+    ovro = me.observatory('OVRO_MMA')
+    timeutc = me.epoch('UTC', '%fs' % t0)
+    me.doframe(ovro)
+    me.doframe(timeutc)
+    d = me.measure(m, 'AZEL')
+    logging.debug('Solar azimuth: ' + str(d['m0']['value']))
+    logging.debug('Solar elevation: ' + str(d['m1']['value']))
+    elev = d['m1']['value']*180/np.pi
+    az=d['m0']['value']*180/np.pi
+    return az,elev
 def get_msinfo(msfile):
     """
     Return some basic information of an OVRO-LWA measurement set
@@ -154,10 +192,10 @@ def get_flagged_solution_num(caltable):
 
 
 def get_strong_source_list():
-    srcs = [{'label': 'CasA', 'position': 'J2000 23h23m24s +58d48m54s', 'flux': '16530', 'alpha': -0.72},
-            {'label': 'CygA', 'position': 'J2000 19h59m28.35663s +40d44m02.0970s', 'flux': '16300', 'alpha': -0.58},
-            {'label': 'TauA', 'position': 'J2000 05h34m31.94s +22d00m52.2s', 'flux': '1770', 'alpha': -0.27},
-            {'label': 'VirA', 'position': 'J2000 12h30m49.42338s +12d23m28.0439s', 'flux': '2400', 'alpha': -0.86}]
+    srcs = [{'label': 'CasA', 'position': 'J2000 23h23m24s +58d48m54s', 'flux': '16530', 'alpha': -0.72, 'ref_freq': 80.0},
+            {'label': 'CygA', 'position': 'J2000 19h59m28.35663s +40d44m02.0970s', 'flux': '16300', 'alpha': -0.58, 'ref_freq': 80.0},
+            {'label': 'TauA', 'position': 'J2000 05h34m31.94s +22d00m52.2s', 'flux': '1770', 'alpha': -0.27, 'ref_freq': 80.0},
+            {'label': 'VirA', 'position': 'J2000 12h30m49.42338s +12d23m28.0439s', 'flux': '2400', 'alpha': -0.86, 'ref_freq': 80.0}]
     return srcs
 
 
@@ -388,31 +426,17 @@ def correct_primary_beam(msfile, imagename, pol='I', fast_vis=False):
     provide full name of files. No addition to filename is done.
     If single file is provided, we can add '.image.fits' to it. 
     '''
-    me=measures()
-    m = get_sun_pos(msfile, str_output=False)
-    logging.debug('Solar ra: ' + str(m['m0']['value']))
-    logging.debug('Solar dec: ' + str(m['m1']['value']))
-    tb=table()
-    tb.open(msfile)
-    t0 = tb.getcell('TIME', 0)
-    tb.close()
-    ovro = me.observatory('OVRO_MMA')
-    timeutc = me.epoch('UTC', '%fs' % t0)
-    me.doframe(ovro)
-    me.doframe(timeutc)
-    d = me.measure(m, 'AZEL')
-    logging.debug('Solar azimuth: ' + str(d['m0']['value']))
-    logging.debug('Solar elevation: ' + str(d['m1']['value']))
-    elev = d['m1']['value']*180/np.pi
-    az=d['m0']['value']*180/np.pi
+    
+    az,elev=get_solar_azel(msfile)
     pb=beam(msfile=msfile)
-    pb.srcjones(az=[az],el=[elev])
+    pb.read_beam_file()
+    pb.srcjones(az=np.array([az]),el=np.array([elev]))
     jones_matrices=pb.get_source_pol_factors(pb.jones_matrices[0,:,:])
-
-    md=generate_calibrator_model.model_generation(vis=msfile)
+    muller_matrix=pb.get_muller_matrix_stokes(pb.jones_matrices[0,:,:])
+    
     if fast_vis==False:
         if pol=='I':
-            scale=md.primary_beam_value(0,jones_matrices)
+            scale=muller_matrix[0,0].real
             logging.info('The Stokes I beam correction factor is ' + str(round(scale, 4)))
             if type(imagename) is str:
                 if os.path.isfile(imagename+"-image.fits"):
@@ -437,10 +461,18 @@ def correct_primary_beam(msfile, imagename, pol='I', fast_vis=False):
                     n=2
                 else:
                     n==3
-                scale=md.primary_beam_value(n,jones_matrices)
+                scale=muller_matrix[n,n].real #### Note that the leakage from Stokes I due to beam is not corrected.
+                leakage_from_I=muller_matrix[n,0].real
                 logging.info('The Stokes '+pola+' beam correction factor is ' + str(round(scale, 4)))
                 if os.path.isfile(imagename+ "-"+pola+"-image.fits"):
+                    Iimage=imagename+ "-I-image.fits"
+                    if os.path.isfile(Iimage):
+                        Idata=fits.getdata(Iimage)
+                    else:
+                        Idata=0
                     hdu = fits.open(imagename+ "-"+pola+"-image.fits", mode='update')
+                    if pola in ['Q','U','V']:
+                        hdu[0].data-=leakage_from_I*Idata
                     hdu[0].data /= scale
                     hdu.flush()
                     hdu.close()
@@ -454,7 +486,7 @@ def correct_primary_beam(msfile, imagename, pol='I', fast_vis=False):
         for name in image_names:
             if os.path.isfile(name[1]):
                 if pol=='I':
-                    scale=md.primary_beam_value(0,jones_matrices)
+                    scale=muller_matrix[0,0].real
                 else:
                     pola=name[1].split('-')[-1]
                     if pola=='I' or pola=='XX' or pola=='YY':
@@ -465,18 +497,102 @@ def correct_primary_beam(msfile, imagename, pol='I', fast_vis=False):
                         n=2
                     else:
                         n==3
-                    scale=md.primary_beam_value(n,jones_matrices)
+                    scale=muller_matrix[n,n].real
+                    leakage_from_I=muller_matrix[n,0].real
+                Iimage=imagename+ "-I-image.fits"
+                if os.path.isfile(Iimage):
+                    Idata=fits.getdata(Iimage)
+                else:
+                    Idata=0
                 hdu = fits.open(name[1], mode='update')
+                if pola in ['Q','U','V']:
+                    hdu[0].data-=leakage_from_I*Idata
                 hdu[0].data /= scale
                 hdu.flush()
                 hdu.close()
     return
 
+def get_solar_loc_pix(msfile, image="allsky"):
+    """
+    Get the x, y pixel location of the Sun from an all-sky image
+
+    :param msfile: path to CASA measurement set
+    :param image: all sky image made from the measurement set
+    :return: pixel value in X and Y for solar disk center
+    """
+    from astropy.wcs.utils import skycoord_to_pixel
+    from astropy.coordinates import SkyCoord
+    import astropy.units as u
+    from astropy.wcs import WCS
+    
+    m = get_sun_pos(msfile, str_output=False)
+    ra = m['m0']['value']
+    dec = m['m1']['value']
+    coord = SkyCoord(ra * u.rad, dec * u.rad, frame='icrs')
+    logging.debug('RA, Dec of Sun is ' + str(ra) + ", " + str(dec) + ' rad')
+    head=fits.getheader(image)
+    w = WCS(head)
+    pix = skycoord_to_pixel(coord, w)
+    if np.isnan(pix[0]):
+        logging.warning('Sun is not in the image')
+        return None, None
+    x = int(pix[0])
+    y = int(pix[1])
+    logging.debug('Pixel location of Sun is ' + str(x) + " " + str(y) + " in imagename " + image)
+    return x, y
+
+
+def get_rms(data,thresh=7):
+    '''
+    This function returns the rms of the data. As a first cut, it calculates
+    the std. Then it calculates the std again, by only considering pixels which
+    are lower than the thresh*rms
+    
+    :param data: image data
+    :type data: numpy ndarray
+    :param thresh: threshold above rms to remove true sources in rms caluclation.
+                    Default: 7
+    :type thresh: float
+    :return: rms
+    :rtype: float
+    '''
+    rms=np.nanstd(data)
+    pos=np.where(abs(data)<thresh*rms)
+    rms=np.nanstd(data[pos])
+    return rms
+
+
+def blank_all_pixels(imagename):
+    hdu=fits.open(imagename,mode='update')
+    try:
+        hdu[0].data*=0.0
+        hdu.flush()
+    finally:
+        hdu.close()
+    return
+
+
+def get_uvlambda_from_uvdist(u,v,msname=None, freqs=None):
+    msmd = msmetadata()
+    msmd.open(msname)
+    chan_freqs = msmd.chanfreqs(0)
+    msmd.done()
+    
+    wavelengths=299792458/chan_freqs
+    
+    u=np.expand_dims(u,1)
+    u=np.repeat(u,len(chan_freqs),axis=1)
+    ulambda=(u/wavelengths).T
+    
+    v=np.expand_dims(v,1)
+    v=np.repeat(u,len(chan_freqs),axis=1)
+    vlambda=(v/wavelengths).T
+    return ulambda,vlambda
 
 def swap_fastms_pols(msname):
     '''
     This function corrects for the polarisation swap present in the fast MS data
-    correction_date provides the date on which the swap was corrected in the 
+     the date on which the swap was corrected in the 
     X engine itself. Details of this isse has been discussed in 
     https://github.com/ovro-lwa/lwa-issues/issues/486
     
@@ -792,3 +908,22 @@ def manual_split_corrected_ms(vis, outputvis, datacolumn='CORRECTED_DATA'):
     os.system("mv " + vis + " " + outputvis)
     return outputvis
 
+def get_primary_beam_single_source(alt,az,freq,\
+                                    model_beam_file='/lustre/msurajit/beam_model_nivedita/OVRO-LWA_soil_pt.h5'):
+    '''
+    This is a utility function which returns the normalised beam factors for a single source.
+    :param alt: altitude in degrees. float
+    :param az: azimuth in degrees. float 
+    :param freq: Frequency in MHz
+    :param model_beam_file: Location of the primary beam file
+    '''
+    beamfac=beam(freq=freq,beam_file_path=model_beam_file)
+    beamfac.read_beam_file()
+    beamfac.srcjones(az=np.array([az]),el=np.array([alt]))  ### The jones matrices are already normalised
+    factors=np.zeros(4)
+    pol_fac=beamfac.get_muller_matrix_stokes(beamfac.jones_matrices[0,:,:])
+    factors[0]=pol_fac[0,0].real### I primary beam
+    factors[1]=pol_fac[1,0].real ### leakage from I to Q due to primary_beam
+    factors[2]=pol_fac[2,0].real ### leakage from I to U due to primary_beam
+    factors[3]=pol_fac[3,0].real ### leakage from I to V due to primary_beam
+    return factors
