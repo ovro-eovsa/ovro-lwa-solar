@@ -185,6 +185,14 @@ def fitsj2000tohelio(in_fits, out_fits=None, reftime="", toK=True,
         hdr['CRPIX1'] = crpix1 - xmin
         hdr['CRPIX2'] = crpix2 - ymin
 
+    # update beam angle 
+    if 'BPA' in hdr:
+        bpa = hdr['BPA']
+        if verbose:
+            print(f'Updating beam position angle: {bpa}')
+        bpa = (bpa - P_deg) % 360.0
+        hdr['BPA'] = bpa
+
     # Update header keywords
     header_updates = {
         'CRVAL1': hpc_x,
