@@ -21,6 +21,7 @@ As MS files, fastvis can be imaged with WSCLEAN or CASA.
 The following is an example of imaging with WSCLEAN.
 
 .. code:: bash
+    
     wsclean -name fastvis -size 512 512 -scale 15asec -niter 2000 \
         -auto-threshold 1.0 -auto-mask 3.0 -mgain 0.85 -data-column DATA \
         -mem 85 -no-update-model-required -no-dirty -no-reorder -no-fit-beam \
