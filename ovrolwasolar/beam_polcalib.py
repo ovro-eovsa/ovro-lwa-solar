@@ -84,7 +84,7 @@ def combine_crosshand_theta_on_caltable(caltable,crosshand_theta,freqs_crosshand
         num_chan=shape[1]
         num_ant=shape[2]
         for i in range(num_chan):
-            data[0,i,:]*=np.exp(1j*crosshand_theta[i])
+            data[0,i,:]*=np.exp(1j*crosshand_caltable[i])
         tb.putcol('CPARAM',data)
         tb.flush()
         logging.debug("Crosshand phase has been applied successfully")
@@ -1017,6 +1017,7 @@ class image_polcal_astronomical_source():
         self.model_beam_file='/lustre/msurajit/beam_model_nivedita/OVRO-LWA_soil_pt.h5'
         self.record_crosshand_phase=False
         self.alt_bin=alt_bin
+        self.fit_UV=True
         if type(sky_coord)==SkyCoord:
             self.sky_coord=sky_coord
         else:
@@ -1028,7 +1029,7 @@ class image_polcal_astronomical_source():
                 raise e
     
     @staticmethod
-    def rotate_UV(params,U,V,Umodel=None,Vmodel=None,return_corrected=False):
+    def rotate_UV(params,U,V,Umodel=None,Vmodel=None,fit_UV=True,return_corrected=False):
         '''
         This function rotates the Stokes vector in the UV plane by an angle theta. Theta, whe positive,
         implies rotation is in counterclockwise direction.
@@ -1064,11 +1065,17 @@ class image_polcal_astronomical_source():
             return Ucor,Vcor
         
         if isinstance(params,np.ndarray) or isinstance(params,list) or isinstance(params,float):
-            sum1=np.nansum((Ucor-Umodel)**2+(Vcor-Vmodel)**2)  ### This difference is coming from the way
+            if fit_UV:
+                sum1=np.nansum((Ucor-Umodel)**2+(Vcor-Vmodel)**2)  ### This difference is coming from the way
                                                           ### lmfit uses the minimising function and 
        #                                                   ### how the scipy.minimize uses it.
+            else:
+                sum1=np.nansum((Vcor-Vmodel)**2)
         else:
-            sum1=np.abs(Ucor-Umodel)+np.abs(Vcor-Vmodel)
+            if fit_UV:
+                sum1=np.abs(Ucor-Umodel)+np.abs(Vcor-Vmodel)
+            else:
+                sum1=np.abs(Vcor-Vmodel)
         return (sum1)
         
     def crosshand_phase_solver(self):        
@@ -1088,7 +1095,7 @@ class image_polcal_astronomical_source():
             red_chi=1000
             
             res1=minimize(self.rotate_UV,0,args=(DI_corrected_DS_frac[2,i,:],DI_corrected_DS_frac[3,i,:],\
-                            Umodel,Vmodel),method='Nelder-Mead',\
+                            Umodel,Vmodel,self.fit_UV),method='Nelder-Mead',\
                             bounds=[[-3.14159,3.14159]])
             if res1.success:
                 self.crosshand_theta[i]=res1.x
