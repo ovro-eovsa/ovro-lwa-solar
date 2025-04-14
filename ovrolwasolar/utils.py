@@ -420,17 +420,33 @@ def check_corrected_data_present(msname):
     return False
 
 
-def correct_primary_beam(msfile, imagename, pol='I', fast_vis=False):
+
+def correct_primary_beam(imagename, pol='I',fast_vis=False):
     '''
     Can handle multiple images in a list. However if providing multiple images
     provide full name of files. No addition to filename is done.
     If single file is provided, we can add '.image.fits' to it. 
+    Can only handle IQUV or I images. If IQUV image, first combine the IQUV images 
+    using combine_IQUV_images function in utils.py
     '''
     
-    az,elev=get_solar_azel(msfile)
-    pb=beam(msfile=msfile)
+    
+    if type(imagename) is str:
+        if os.path.isfile(imagename+"-image.fits"):
+            imagename=[imagename+"-image.fits"]
+        elif os.path.isfile(imagename):
+            imagename=[imagename]
+        else:
+            raise RuntimeError("Image supplied is not found")
+    
+    head=fits.getheader(imagename[0])
+    obstime=Time(head['DATE-OBS'])
+    az,alt=get_solar_altaz_multiple_times(obstime)
+    freq=head['CRVAL3']*1e-6
+    pb=beam(freq=freq)
+    
     pb.read_beam_file()
-    pb.srcjones(az=np.array([az]),el=np.array([elev]))
+    pb.srcjones(az=np.array([az]),el=np.array([alt]))
     jones_matrices=pb.get_source_pol_factors(pb.jones_matrices[0,:,:])
     muller_matrix=pb.get_muller_matrix_stokes(pb.jones_matrices[0,:,:])
     
@@ -438,13 +454,7 @@ def correct_primary_beam(msfile, imagename, pol='I', fast_vis=False):
         if pol=='I':
             scale=muller_matrix[0,0].real
             logging.info('The Stokes I beam correction factor is ' + str(round(scale, 4)))
-            if type(imagename) is str:
-                if os.path.isfile(imagename+"-image.fits"):
-                    imagename=[imagename+"-image.fits"]
-                elif os.path.isfile(imagename):
-                    imagename=[imagename]
-                else:
-                    raise RuntimeError("Image supplied is not found")
+            
 
             for img in imagename:
                 hdu = fits.open(img, mode='update')
@@ -452,35 +462,27 @@ def correct_primary_beam(msfile, imagename, pol='I', fast_vis=False):
                 hdu.flush()
                 hdu.close()
         else:
-            for pola in ['I','Q','U','V','XX','YY']:
-                if pola=='I' or pola=='XX' or pola=='YY':
-                    n=0
-                elif pola=='Q':
-                    n=1
-                elif pola=='U':
-                    n=2
-                else:
-                    n==3
-                scale=muller_matrix[n,n].real #### Note that the leakage from Stokes I due to beam is not corrected.
-                leakage_from_I=muller_matrix[n,0].real
-                logging.info('The Stokes '+pola+' beam correction factor is ' + str(round(scale, 4)))
-                if os.path.isfile(imagename+ "-"+pola+"-image.fits"):
-                    Iimage=imagename+ "-I-image.fits"
-                    if os.path.isfile(Iimage):
-                        Idata=fits.getdata(Iimage)
-                    else:
-                        Idata=0
-                    hdu = fits.open(imagename+ "-"+pola+"-image.fits", mode='update')
-                    if pola in ['Q','U','V']:
-                        hdu[0].data-=leakage_from_I*Idata
-                    hdu[0].data /= scale
+            muller_matrix_order={'I':0,'Q':1,'U':2,'V':3}
+            Iscale=muller_matrix[0,0].real
+            for img in imagename:
+                with fits.open(img,mode='update'):
+                    head=hdu[0].header
+                    hdu[0].data[0,...]/=Iscale
+                    Idata=hdu[0].data[0,...]  ### I is now primary beam corrected
+                    stokes_order=head['polorder']
+                    pols=stokes_order.split(',')
+                    for j,pol in enumerate(pols):
+                        if pol!='I':
+                            muller_matrix_index=muller_matrix_order[pol]
+                            scale=muller_matrix[muller_matrix_index,muller_matrix_index].real                                     
+                            leakage_from_I=muller_matrix[muller_matrix_index,0].real
+                            logging.info('The Stokes '+pola+' leakage correction factor is ' + str(round(leakage_from_I, 4)))
+                            logging.info('The Stokes '+pola+' beam correction factor is ' + str(round(scale, 4)))
+                            hdu[0].data[j,...]=(hdu[0].data[j,...]-leakage_from_I*Idata)/scale
+                     
                     hdu.flush()
                     hdu.close()
-                elif pola=='I' and os.path.isfile(imagename+"-image.fits"):
-                    hdu = fits.open(imagename+"-image.fits", mode='update')
-                    hdu[0].data /= scale
-                    hdu.flush()
-                    hdu.close()
+                
     else:
         image_names=collect_fast_fits(imagename,pol)
         for name in image_names:
@@ -758,13 +760,14 @@ def compress_fits_to_h5(fits_file, hdf5_file, beam_ratio=3.0, smaller_than_src =
         # Create a dataset for the FITS data
         for pol in range(0, data.shape[0]):
             for ch_idx in range(0, len(downsize_ratio)):
-                if purge_corrupted and (-np.min(data[pol,ch_idx,:,:])*purge_thresh > np.max(data[pol,ch_idx,:,:])):
+                #### puge condition is checked only for Stokes I. Stokes I is present in the first axis.
+                if purge_corrupted and (-np.min(data[0,ch_idx,:,:])*purge_thresh > np.max(data[0,ch_idx,:,:])):
                     logging.warning(f'Pol {pol} Ch {ch_idx} is corrupted, skipped')
                     downsized_data = np.zeros((1,1))
                     dset = f.create_dataset('FITS_pol'+str(pol)+'ch'+str(ch_idx).rjust(4,'0') , data=downsized_data,compression="gzip", compression_opts=9)
                 else:
                     count_avail+=1
-                    downsized_data = zoom(data[0,ch_idx,:,:], 1/downsize_ratio[ch_idx], order=3,prefilter=False)
+                    downsized_data = zoom(data[pol,ch_idx,:,:], 1/downsize_ratio[ch_idx], order=3,prefilter=False)
                     dset = f.create_dataset('FITS_pol'+str(pol)+'ch'+str(ch_idx).rjust(4,'0') , data=downsized_data,compression="gzip", compression_opts=9)
 
             # Add FITS header info as attributes
@@ -862,7 +865,7 @@ def check_h5_fits_consistency(fits_file, hdf5_file=None, ignore_corrupted=False,
         checked_items = 0
         for pol in range(0, data.shape[0]):
             for ch_idx in range(0, data.shape[1]):
-                if ignore_corrupted and (-np.min(data[pol,ch_idx,:,:])*ignore_ratio > np.max(data[pol,ch_idx,:,:])):
+                if ignore_corrupted and (-np.min(data[0,ch_idx,:,:])*ignore_ratio > np.max(data[0,ch_idx,:,:])):
                     continue
                 else:
                     checked_items += 1
@@ -927,3 +930,73 @@ def get_primary_beam_single_source(alt,az,freq,\
     factors[2]=pol_fac[2,0].real ### leakage from I to U due to primary_beam
     factors[3]=pol_fac[3,0].real ### leakage from I to V due to primary_beam
     return factors
+    
+def fix_polarised_beam_effect_on_gains(caltable):
+    '''
+    This function will replace both the X and Y antenna gains
+    by their mean. The mean is taken over X and Y. 
+    '''
+    tb=table()
+    success=False
+    tb.open(caltable,nomodify=False)
+    try:
+        data=tb.getcol('CPARAM')
+        flag=tb.getcol('FLAG')
+        pos=np.where(flag==True)
+        data[pos]=np.nan
+        data1=np.mean(data,axis=0)
+        data[0,...]=data1
+        data[1,...]=data1
+        pos=np.where(np.isnan(data)==True)
+        flag[pos]=True
+        tb.putcol('CPARAM',data)
+        tb.putcol('FLAG',flag)
+        tb.flush()
+        logging.debug("X and Y gains have been replaced by their mean gains")
+        success=True
+    finally:
+        tb.close()
+    
+    return success
+
+def combine_IQUV_images(image_list,outfits=None,\
+                        stokes_order='I,Q,U,V',\
+                        overwrite=False):
+    num_images=len(image_list)
+    #### for ensuring that the first image along stokes in I
+    order=[None]*num_images
+    images=[None]*num_images
+    pols=stokes_order.split(',')
+    try:
+        Iindex=pols.index('I')
+    except Exception as e:
+        logging.error("Please provide I image")
+        raise e
+    order[0]='I'
+    images[0]=image_list[Iindex]
+    del image_list[Iindex]
+    del pols[Iindex]
+    for j,pol in enumerate(pols):
+        images[j+1]=image_list[j]
+        order[j+1]=pols[j]
+        
+    for j,img in enumerate(images):
+        data=fits.getdata(img)
+        if j==0:
+            shape=data.shape
+            head=fits.getheader(img)
+            combined_data=np.zeros((num_images,shape[1],shape[2],shape[3]))
+        combined_data[j,...]=data[0,...]
+
+    head['NAXIS4']=num_images
+    head['polorder']=','.join(order)
+    
+    
+    if not outfits:
+        temp=img.split('-')
+        outfits='-'.join(temp[:-2])+'-fullpol-'+temp[-1]
+    fits.writeto(outfits,combined_data,header=head,overwrite=overwrite)
+    return outfits
+        
+        
+        

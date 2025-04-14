@@ -514,7 +514,7 @@ class jones_beam:
                                          (M10,M11, M12, M13),\
                                          (M20, M21, M22, M23),\
                                          (M30, M31, M32, M33)) (I,Q,U,V).T
-        Note that this Muller Matrix is not normalised.
+        Note that this Muller Matrix is normalised with respect to I.
         '''
         XY_muller_matrix=self.get_muller_matrix_XY(jones_matrix)
         T=0.5*np.array([[1,0,0,1],[1,0,0,-1],[0,1,1,0],\
