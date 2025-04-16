@@ -7,6 +7,7 @@ from suncasa.io import ndfits
 import numpy as np
 from . import utils
 import os,logging,h5py
+from scipy.interpolate import griddata
 
 class leakage_database():
     def __init__(self,database):
@@ -153,20 +154,19 @@ class leakage_database():
         
         for i in range(num_freqs):
             data_freq=freqs[i]
-            freq1,freq2=self.choose_freqs_to_load(freqs_in_db,data_freq)
-            print (data_freq,freqs_in_db,freq1,freq2)
+            freq1,freq2=self.choose_freqs_to_load(freqs_in_db,data_freq,self.leakage_freq_sep)
+
             
-            if not freq1 or not freq2:
+            if not freq1 and not freq2:
                 leakage_fractions[1:,i]=np.nan
                 continue
             for j,pol in zip(range(1,4),['Q/I','U/I','V/I']):
-                
                 leakage_fractions[j,i]=self.calculate_leakages_from_database(data_freq,freq1,freq2,\
                                             pol,az,alt,database_az,database_alt)  
         return leakage_fractions
     
     @staticmethod    
-    def choose_freqs_to_load(freqs_in_db,data_freq):
+    def choose_freqs_to_load(freqs_in_db,data_freq,freq_sep):
         '''
         This function provides the 2 nearest frequencies (greater and smaller) to the
         current frequency for which the leakages are needed. This is done to reduce
@@ -177,35 +177,52 @@ class leakage_database():
         :param data_freq: The current frequency in MHz for which leakages are required
         :type data_freq: float
         '''
-        if data_freq<freqs_in_db[0]:
-            return freqs_in_db[0],None
-        if data_freq>freqs_in_db[-1]:
-            return  freqs_in_db[-1], None  
+
+        if data_freq<freqs_in_db[0]-freq_sep/2:
+            return None,None
+        if data_freq>freqs_in_db[-1]+freq_sep/2:
+            return  None, None  
         
         indices=np.argsort(np.abs(freqs_in_db-data_freq))
         
         return freqs_in_db[indices[0]],freqs_in_db[indices[1]]    
 
     def calculate_leakages_from_database(self,data_freq,freq1,freq2,pol,az,alt,database_az,database_alt):
-        columns=[pol+"_"+str(int(freq1))+"MHz",pol+"_"+str(int(freq2))+"MHz"]
+    
+        if freq1:
+            columns=[pol+"_"+str(int(freq1))+"MHz"]
+            try:
+                data=pd.read_hdf(self.leakage_database,key='I_leakage',columns=columns)
+                leak1_database_azalt=np.array(data[columns[0]])
+                leak1_data_azalt=griddata((database_az,database_alt),leak1_database_azalt,(az,alt),method='nearest')  
+            except KeyError:
+                logging.warning("Expected Frequency does not exist:%s ",str(int(freq1))+"MHz")
+                freq1=None
+        
+        if freq2:
+            columns=[pol+"_"+str(int(freq2))+"MHz"]
+            try:
+                data=pd.read_hdf(self.leakage_database,key='I_leakage',columns=columns)
+                leak2_database_azalt=np.array(data[columns[0]])
+                leak2_data_azalt=griddata((database_az,database_alt),leak2_database_azalt,(az,alt),method='nearest')  
+            except KeyError:
+                logging.warning("Expected Frequency does not exist:%s ",str(int(freq2))+"MHz")
+                freq2=None
 
-        data=pd.read_hdf(self.leakage_database,key='I_leakage',columns=columns)
         
-        leak1_database_azalt=np.array(data[columns[0]])
-        leak1_data_azalt=griddata((database_az,database_alt),leak1_database_azalt,(az,alt),method='nearest')
         
-        leak2_database_azalt=np.array(data[columns[1]])
-        leak2_data_azalt=griddata((database_az,database_alt),leak2_database_azalt,(az,alt),method='nearest')
         
-        leak_data_azalt=(leak2_data_azalt-leak1_data_azalt)/(freq2-freq1)*(data_freq-freq1)+\
+        if freq1 and freq2:
+            leak_data_azalt=(leak2_data_azalt-leak1_data_azalt)/(freq2-freq1)*(data_freq-freq1)+\
                                          leak1_data_azalt ## fitting line
-        
-        if abs(freq2-freq1)<=self.freq_sep: ### I am putting a small tolerance here.
             return leak_data_azalt
-        if abs(freq2-freq)>self.freq_sep:
-            return leak2_data_azalt
-        if abs(freq1-freq)>self.freq_sep:
+            
+        if freq1:
             return leak1_data_azalt
+        
+        if freq2:
+            return leak2_data_azalt
+        
         return np.nan
 
 def find_robust_median(data,thresh=5):
@@ -216,9 +233,34 @@ def find_robust_median(data,thresh=5):
         data[pos]=np.nan
         median=np.nanmedian(data)
     return median
+    
+def plot_stokes_images(stokes_data,leak_frac,stokes_order):
+    import matplotlib.pyplot as plt
+    for j,pol in enumerate(stokes_order):
+        if pol=='I':
+            Idata=stokes_data[j]
+            
+    shape=Idata.shape
+    x=np.arange(0,shape[0],1)
+    X,Y=np.meshgrid(x,x)
+    contour_levels=np.array([0.05,0.2,0.4,0.6])*np.nanmax(Idata)
+    
+    fig,ax=plt.subplots(nrows=2,ncols=2,figsize=[10,8])
+    ax=ax.flatten()
+            
+    for j,ax1 in enumerate(ax):
+        im=ax1.imshow(stokes_data[j]-leak_frac[j]*Idata,origin='lower') 
+        plt.colorbar(im,ax=ax1)
+        ax1.set_title(stokes_order[j])
+        ax1.contour(X,Y,Idata,levels=contour_levels,colors='r')
+        ax1.set_xlim([75,170])
+        ax1.set_ylim([75,170])
+    return fig
+           
 
 def determine_leakage_single_freq(stokes_data,frequency, background_factor, \
-                                    min_size, overbright, stokes_order, min_pix=100):
+                                    min_size, overbright, stokes_order, min_pix=100,\
+                                    doplot=False):
     
     Iind=stokes_order.index('I')
     Idata=stokes_data[Iind,:,:]
@@ -232,6 +274,11 @@ def determine_leakage_single_freq(stokes_data,frequency, background_factor, \
         if stokes!='I':
             leak=find_robust_median(stokes_data[j][pos]/Idata[pos])
             leak_frac[j]=leak
+    
+    if doplot:
+        fig1=plot_stokes_images(stokes_data,[0,0,0,0],stokes_order)
+        fig2=plot_stokes_images(stokes_data,leak_frac,stokes_order)
+        plt.show()
     return True,leak_frac
     
         
@@ -266,14 +313,23 @@ def determine_multifreq_leakage(fname,overbright=1.0e6,background_factor=1/8,\
     leak_frac=np.zeros((num_freqs,4))
     
     stokes_order=meta_header['polorder'].split(',')
+
     
     arranging_order={'I':0,'Q':1,'U':2,'V':3}
+    
+    obstime=Time(meta_header['DATE-OBS'])
+    az,alt=utils.get_solar_altaz_multiple_times(obstime)
+    
+    sinc_beam_val=np.sin(alt*np.pi/180)**1.6
     
     for freq_ind in range(num_freqs):
         frequency=meta['ref_cfreqs'][freq_ind]
         min_size = min_size_50/(meta_header['CDELT1']/60.)**2./(frequency/50e6)**2.
-        success,leak=determine_leakage_single_freq(data[:,freq_ind,:],frequency,\
+        success,leak=determine_leakage_single_freq(data[:,freq_ind,:]/sinc_beam_val,frequency,\
                                             background_factor, min_size, overbright, stokes_order)
+        #### leak is a fractional. So dividing all Stokes by same value does not change the leakage fraction
+        #### The only time absolute values are used is when determining the quiet Sun, and there a simple
+        #### sin beam is fine.
         if success:
             for j,stokes in enumerate(stokes_order):
                 leak_frac[freq_ind,arranging_order[stokes]]=leak[j]
@@ -282,7 +338,7 @@ def determine_multifreq_leakage(fname,overbright=1.0e6,background_factor=1/8,\
                                                                ### that this could not be determined
     return leak_frac
 
-def write_to_database(fname,leak_frac,outfile):
+def write_to_database(fname,leak_frac,database):
     meta, data = ndfits.read(fname)    
     meta_header=meta['header']
     freqs=meta['ref_cfreqs']*1e-6
@@ -290,7 +346,7 @@ def write_to_database(fname,leak_frac,outfile):
     datetime=Time(meta_header['DATE-OBS'])
     az,alt=utils.get_solar_altaz_multiple_times(datetime)
     
-    db=leakage_database(outfile)
+    db=leakage_database(database)
     pos=np.where(leak_frac>-10)[0] ## searching for dummy number. Dummy number is -1000
     if pos.size!=0:
         db.write_leakage_frac_to_database(datetime.mjd,alt,az,freqs[pos],leak_frac[pos])
@@ -316,7 +372,7 @@ def do_leakage_correction(image_cube,primary_beam_database,outfile=None):
     
     db=leakage_database(primary_beam_database)
     leak_frac=db.determine_leakage_fractions_from_db(alt,az,freq_MHz)
-    print (leak_frac)
+
     arrange_order={'I':0,'Q':1,'U':2,'V':3}
     
     I_ind=stokes_order.index('I')

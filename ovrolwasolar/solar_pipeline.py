@@ -223,7 +223,7 @@ def image_ms(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagename='sun
                                    size=imsize , scale=cell, pol=pol, fast_vis=fast_vis, 
                                    field=','.join([str(i) for i in range(num_fields)]))
         if apply_primary_beam:
-            utils.correct_primary_beam(imagename, pol=pol, fast_vis=fast_vis)
+            utils.correct_primary_beam_self_terms(imagename, pol=pol, fast_vis=fast_vis)
         if not fast_vis:
             image_list=[]
             for n,pola in enumerate(['I','Q','U','V','XX','YY']):
@@ -377,7 +377,7 @@ def image_ms_quick(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagenam
         deconvolve.run_wsclean(outms, imagename=imagename, auto_mask=5, minuv_l='0', predict=False, 
                                size=imsize, scale=cell, pol=pol)
         logging.debug('Correcting for the primary beam at the location of Sun')
-        utils.correct_primary_beam(imagename, pol=pol)
+        utils.correct_primary_beam_self_terms(imagename, pol=pol)
         for n,pola in enumerate(['I','Q','U','V','XX','YY']):
             if os.path.isfile(imagename+ "-"+pola+"-image.fits"):
                 helio_image = utils.convert_to_heliocentric_coords(outms, imagename+ "-"+pola+"-image.fits")

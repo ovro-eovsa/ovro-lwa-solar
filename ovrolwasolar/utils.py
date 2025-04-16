@@ -419,15 +419,92 @@ def check_corrected_data_present(msname):
         tb.close()
     return False
 
+def correct_primary_beam_leakage_from_I(imagename,pol='I,Q,U,V',\
+                                            beam_file_path='/lustre/msurajit/beam_model_nivedita/OVRO-LWA_soil_pt.h5'):
+    '''
+    This function corrects the instrumental polarization due to the I.
+    It implements the following correction:
+    M00 [[1          0       0        0],
+         [M10/M00    M11/M00 0        0],
+         [M20/M00     0      M22/M00  0],
+         [M30/M00     0      0    M33/M00] [Is,Qs,Us,Vs]=[Io,Qo,Uo,Vo]
+    Is,Qs,Us, Vs are the source Stokes parameters.
+    Io,Qo,Uo,Vo are the pbserved Stokes parameters.
+    
+    Hence,
+    
+    Io = M00 Is
+    M11 Qs = Qo - (M10/M00) M00 Is= Qo - M10/M00 Io
+    Similarly for other Stokes parameters.
+    The function below implements the right hand side of the above
+    equations for Q,U and V. It does not change Io in any way.
+    To determine the "true" Stokes parameters of the source, you would
+    need to run correct_primary_beam_self_terms as well.
+    
+    Can handle multiple images in a list. However if providing multiple images
+    provide full name of files. No addition to filename is done.
+    If single file is provided, we can add '.image.fits' to it.
+    
+    '''
+    if type(imagename) is str:
+        if os.path.isfile(imagename+"-image.fits"):
+            imagename=[imagename+"-image.fits"]
+        elif os.path.isfile(imagename):
+            imagename=[imagename]
+        else:
+            raise RuntimeError("Image supplied is not found")
+    
+    head=fits.getheader(imagename[0])
+    obstime=Time(head['DATE-OBS'])
+    az,alt=get_solar_altaz_multiple_times(obstime)
+    freq=head['CRVAL3']*1e-6
+    pb=beam(freq=freq,beam_file_path=beam_file_path)
+    pb.read_beam_file()
+    pb.srcjones(az=np.array([az]),el=np.array([alt]))
+    jones_matrices=pb.get_source_pol_factors(pb.jones_matrices[0,:,:])
+    muller_matrix=pb.get_muller_matrix_stokes(pb.jones_matrices[0,:,:])
+    
+    Iscale=muller_matrix[0,0].real
+    
+    muller_matrix_order={'I':0,'Q':1,'U':2,'V':3}
+    
+    for img in imagename:
+        with fits.open(img,mode='update') as hdu:
+            head=hdu[0].header
+            
+            stokes_order=head['polorder']
+            pols=stokes_order.split(',')
+            for j,pol in enumerate(pols):
+                if pol!='I':
+                    muller_matrix_index=muller_matrix_order[pol]                                
+                    leakage_frac_from_I=muller_matrix[muller_matrix_index,0].real/Iscale
+                    logging.info('The Stokes '+pol+' leakage correction factor is ' + str(round(leakage_frac_from_I, 4)))
+                    hdu[0].data[j,...]=hdu[0].data[j,...]-leakage_frac_from_I*hdu[0].data[0,...]
+             
+            hdu.flush()
+    
 
 
-def correct_primary_beam(imagename, pol='I',fast_vis=False):
+def correct_primary_beam_self_terms(imagename, pol='I',fast_vis=False):
     '''
     Can handle multiple images in a list. However if providing multiple images
     provide full name of files. No addition to filename is done.
     If single file is provided, we can add '.image.fits' to it. 
     Can only handle IQUV or I images. If IQUV image, first combine the IQUV images 
     using combine_IQUV_images function in utils.py
+    
+    This function only corrects for the self-terms of the Muller Matrix.
+    
+    [[M00     0       0   0],
+     [M10    M11      0   0],
+     [M20     0      M22  0],
+     [M30     0      0    M33] [Is,Qs,Us,Vs]=[Io,Qo,Uo,Vo]
+    Is,Qs,Us, Vs are the source Stokes parameters.
+    Io,Qo,Uo,Vo are the pbserved Stokes parameters.
+    This function corrects only for M00, M11, M22 and M33.
+    
+    If fast_vis is true, then things need to be changed. Fast vis is not tested after 
+    major modifications done on April 15, 2025
     '''
     
     
@@ -465,7 +542,7 @@ def correct_primary_beam(imagename, pol='I',fast_vis=False):
             muller_matrix_order={'I':0,'Q':1,'U':2,'V':3}
             Iscale=muller_matrix[0,0].real
             for img in imagename:
-                with fits.open(img,mode='update'):
+                with fits.open(img,mode='update') as hdu:
                     head=hdu[0].header
                     hdu[0].data[0,...]/=Iscale
                     Idata=hdu[0].data[0,...]  ### I is now primary beam corrected
@@ -475,13 +552,10 @@ def correct_primary_beam(imagename, pol='I',fast_vis=False):
                         if pol!='I':
                             muller_matrix_index=muller_matrix_order[pol]
                             scale=muller_matrix[muller_matrix_index,muller_matrix_index].real                                     
-                            leakage_from_I=muller_matrix[muller_matrix_index,0].real
-                            logging.info('The Stokes '+pola+' leakage correction factor is ' + str(round(leakage_from_I, 4)))
-                            logging.info('The Stokes '+pola+' beam correction factor is ' + str(round(scale, 4)))
-                            hdu[0].data[j,...]=(hdu[0].data[j,...]-leakage_from_I*Idata)/scale
-                     
+                            logging.info('The Stokes '+pol+' beam correction factor is ' + str(round(scale, 4)))
+                            hdu[0].data[j,...]=hdu[0].data[j,...]/scale
                     hdu.flush()
-                    hdu.close()
+                    
                 
     else:
         image_names=collect_fast_fits(imagename,pol)
