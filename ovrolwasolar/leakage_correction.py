@@ -7,15 +7,15 @@ from suncasa.io import ndfits
 import numpy as np
 from . import utils
 import os,logging,h5py
-from scipy.interpolate import griddata
+from scipy.interpolate import griddata,interp1d
 
 class leakage_database():
     def __init__(self,database):
         self.stokes_num=4
         self.leakage_database=database
-        self.leakage_freq_sep=5
-        self.low_freq=17.5
-        self.high_freq=90.5
+        self.leakage_freq_sep=1
+        self.low_freq=30
+        self.high_freq=90
         
     
     def add_database_headers(self):
@@ -145,6 +145,7 @@ class leakage_database():
         with h5py.File(self.leakage_database,'r') as hf:
             freqs_in_db=np.arange(hf.attrs['low_freq'],hf.attrs['high_freq'],hf.attrs['freq_sep'],dtype=int)
         
+        
         data=pd.read_hdf(self.leakage_database,key='I_leakage',columns=['az','alt'])
         database_az=np.array(data['az'])
         database_alt=np.array(data['alt'])
@@ -194,7 +195,8 @@ class leakage_database():
             try:
                 data=pd.read_hdf(self.leakage_database,key='I_leakage',columns=columns)
                 leak1_database_azalt=np.array(data[columns[0]])
-                leak1_data_azalt=griddata((database_az,database_alt),leak1_database_azalt,(az,alt),method='nearest')  
+                pos=np.where(leak1_database_azalt>-10)  ###-1000 is used as dummy leakage
+                leak1_data_azalt=griddata((database_az[pos],database_alt[pos]),leak1_database_azalt[pos],(az,alt),method='nearest')  
             except KeyError:
                 logging.warning("Expected Frequency does not exist:%s ",str(int(freq1))+"MHz")
                 freq1=None
@@ -204,7 +206,8 @@ class leakage_database():
             try:
                 data=pd.read_hdf(self.leakage_database,key='I_leakage',columns=columns)
                 leak2_database_azalt=np.array(data[columns[0]])
-                leak2_data_azalt=griddata((database_az,database_alt),leak2_database_azalt,(az,alt),method='nearest')  
+                pos=np.where(leak2_database_azalt>-10)  ###-1000 is used as dummy leakage
+                leak2_data_azalt=griddata((database_az[pos],database_alt[pos]),leak2_database_azalt[pos],(az,alt),method='nearest')  
             except KeyError:
                 logging.warning("Expected Frequency does not exist:%s ",str(int(freq2))+"MHz")
                 freq2=None
@@ -338,7 +341,7 @@ def determine_multifreq_leakage(fname,overbright=1.0e6,background_factor=1/8,\
                                                                ### that this could not be determined
     return leak_frac
 
-def write_to_database(fname,leak_frac,database):
+def write_to_database(fname,leak_frac,database,low_freq=30,high_freq=90,freq_sep=1):
     meta, data = ndfits.read(fname)    
     meta_header=meta['header']
     freqs=meta['ref_cfreqs']*1e-6
@@ -347,9 +350,28 @@ def write_to_database(fname,leak_frac,database):
     az,alt=utils.get_solar_altaz_multiple_times(datetime)
     
     db=leakage_database(database)
-    pos=np.where(leak_frac>-10)[0] ## searching for dummy number. Dummy number is -1000
-    if pos.size!=0:
-        db.write_leakage_frac_to_database(datetime.mjd,alt,az,freqs[pos],leak_frac[pos])
+    db.low_freq=low_freq
+    db.high_freq=high_freq
+    db.leakage_freq_sep=freq_sep
+    
+    
+    
+    
+    database_freqs=np.arange(low_freq,high_freq,freq_sep,dtype=int)
+    shape=leak_frac.shape
+    num_pol=shape[1]
+    leak_frac_database=np.zeros((database_freqs.size,num_pol))
+    for i in range(num_pol):
+        leak_frac_pol=leak_frac[:,i]
+        pos=np.where(leak_frac_pol>-10)[0] ## searching for dummy number. Dummy number is -1000
+        if pos.size>0:
+            leak_frac_func=interp1d(freqs[pos],leak_frac_pol[pos],bounds_error=False,fill_value=np.nan) ###out of bounds gives nan
+            leak_frac_database[:,i]=leak_frac_func(database_freqs)
+        else:
+            leak_frac_database[:,i]=np.nan
+        pos=np.where(np.isnan(leak_frac_database)==True)
+        leak_frac_database[pos]=-1000
+        db.write_leakage_frac_to_database(datetime.mjd,alt,az,database_freqs,leak_frac_database)
     return
     
 def do_leakage_correction(image_cube,primary_beam_database,outfile=None):
