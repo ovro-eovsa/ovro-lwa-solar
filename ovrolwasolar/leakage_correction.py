@@ -313,7 +313,7 @@ def determine_multifreq_leakage(fname,overbright=1.0e6,background_factor=1/8,\
     num_stokes=shape[0]
     num_freqs=shape[1]
     
-    leak_frac=np.zeros((num_freqs,4))
+    leak_frac=np.ones((num_freqs,4))*(-1000) #### -1000 is being used as a dummy number
     
     stokes_order=meta_header['polorder'].split(',')
 
@@ -336,9 +336,7 @@ def determine_multifreq_leakage(fname,overbright=1.0e6,background_factor=1/8,\
         if success:
             for j,stokes in enumerate(stokes_order):
                 leak_frac[freq_ind,arranging_order[stokes]]=leak[j]
-        else:
-            leak_frac[freq_ind,:]=-1000 ### dummy number to show 
-                                                               ### that this could not be determined
+        
     return leak_frac
 
 def write_to_database(fname,leak_frac,database,low_freq=30,high_freq=90,freq_sep=1):
