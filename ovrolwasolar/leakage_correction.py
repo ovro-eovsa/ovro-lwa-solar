@@ -196,7 +196,10 @@ class leakage_database():
                 data=pd.read_hdf(self.leakage_database,key='I_leakage',columns=columns)
                 leak1_database_azalt=np.array(data[columns[0]])
                 pos=np.where(leak1_database_azalt>-10)  ###-1000 is used as dummy leakage
-                leak1_data_azalt=griddata((database_az[pos],database_alt[pos]),leak1_database_azalt[pos],(az,alt),method='nearest')  
+                if pos[0].size!=0:
+                    leak1_data_azalt=griddata((database_az[pos],database_alt[pos]),leak1_database_azalt[pos],(az,alt),method='nearest')  
+                else:
+                    freq1=None
             except KeyError:
                 logging.warning("Expected Frequency does not exist:%s ",str(int(freq1))+"MHz")
                 freq1=None
@@ -207,7 +210,10 @@ class leakage_database():
                 data=pd.read_hdf(self.leakage_database,key='I_leakage',columns=columns)
                 leak2_database_azalt=np.array(data[columns[0]])
                 pos=np.where(leak2_database_azalt>-10)  ###-1000 is used as dummy leakage
-                leak2_data_azalt=griddata((database_az[pos],database_alt[pos]),leak2_database_azalt[pos],(az,alt),method='nearest')  
+                if pos[0].size!=0:
+                    leak2_data_azalt=griddata((database_az[pos],database_alt[pos]),leak2_database_azalt[pos],(az,alt),method='nearest')  
+                else:
+                    freq2=None
             except KeyError:
                 logging.warning("Expected Frequency does not exist:%s ",str(int(freq2))+"MHz")
                 freq2=None
@@ -369,7 +375,8 @@ def write_to_database(fname,leak_frac,database,low_freq=30,high_freq=90,freq_sep
             leak_frac_database[:,i]=np.nan
         pos=np.where(np.isnan(leak_frac_database)==True)
         leak_frac_database[pos]=-1000
-        db.write_leakage_frac_to_database(datetime.mjd,alt,az,database_freqs,leak_frac_database)
+    leak_frac_database[:,0]=0
+    db.write_leakage_frac_to_database(datetime.mjd,alt,az,database_freqs,leak_frac_database)
     return
     
 def do_leakage_correction(image_cube,primary_beam_database,outfile=None):
@@ -379,6 +386,8 @@ def do_leakage_correction(image_cube,primary_beam_database,outfile=None):
         
     copyfile(image_cube, outfile)
     meta, data = ndfits.read(image_cube)
+    
+    
     
     shape=data.shape
     num_stokes=shape[0]
@@ -414,8 +423,8 @@ def do_leakage_correction(image_cube,primary_beam_database,outfile=None):
                     ## see https://docs.astropy.org/en/stable/io/fits/usage/table.html#column-creation
         cols.append(fitscol)
     header={}
-    header['leakage_corrected']=True
-    header['dummy_leakage']=-1000
+    header['leakcor']=True
+    header['dumyleak']=-1000
     ndfits.update(outfile,new_data=data,new_columns=cols, new_header_entries=header)
     return outfile
     
