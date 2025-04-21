@@ -524,7 +524,7 @@ def correct_primary_beam_self_terms(imagename, pol='I',fast_vis=False):
     
     pb.read_beam_file()
     pb.srcjones(az=np.array([az]),el=np.array([alt]))
-    jones_matrices=pb.get_source_pol_factors(pb.jones_matrices[0,:,:])
+    #jones_matrices=pb.get_source_pol_factors(pb.jones_matrices[0,:,:])
     muller_matrix=pb.get_muller_matrix_stokes(pb.jones_matrices[0,:,:])
     
     if fast_vis==False:
