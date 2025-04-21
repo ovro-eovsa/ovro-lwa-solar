@@ -461,7 +461,7 @@ def correct_primary_beam_leakage_from_I(imagename,pol='I,Q,U,V',\
     pb=beam(freq=freq,beam_file_path=beam_file_path)
     pb.read_beam_file()
     pb.srcjones(az=np.array([az]),el=np.array([alt]))
-    jones_matrices=pb.get_source_pol_factors(pb.jones_matrices[0,:,:])
+#    jones_matrices=pb.get_source_pol_factors(pb.jones_matrices[0,:,:])
     muller_matrix=pb.get_muller_matrix_stokes(pb.jones_matrices[0,:,:])
     
     Iscale=muller_matrix[0,0].real
