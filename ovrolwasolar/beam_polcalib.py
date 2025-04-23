@@ -1018,6 +1018,7 @@ class image_polcal_astronomical_source():
         self.record_crosshand_phase=False
         self.alt_bin=alt_bin
         self.fit_UV=True
+        self.subtract_leakage=True
         if type(sky_coord)==SkyCoord:
             self.sky_coord=sky_coord
         else:
@@ -1136,6 +1137,10 @@ class image_polcal_astronomical_source():
         
         
     def determine_DI_leakage(self):
+        num_freqs=self.freqs.size
+        self.leakage=np.zeros((4,num_freqs))
+        if not self.subtract_leakage:
+            return
         normalised_DS=self.dynamic_spectrum/np.expand_dims(self.dynamic_spectrum[0,:,:],axis=0)
         min_alt=np.min(self.alt)
         max_alt=np.max(self.alt)
@@ -1165,16 +1170,16 @@ class image_polcal_astronomical_source():
         min_UV_norm_diff_ind=np.argmin(UV_norm_diff,axis=0) ### minimum is being found over alt bins
         
         
-        num_freqs=self.freqs.size
-        self.leakage=np.zeros((4,num_freqs))
-        alt_bin_start=np.array(alt_bin_start)
         
-        #self.min_alt=[]
-        for i in range(num_freqs):
-            self.leakage[1,i],self.leakage[2,i],self.leakage[3,i]=\
-                                self.determine_DI_leak_alt_bin(alt_bin_start[min_UV_norm_diff_ind[i]],\
-                                normalised_DS[:,i:i+1,:])
-            #self.min_alt.append(alt_bin_start[min_UV_norm_diff_ind[i]])
+        if self.subtract_leakage:
+            alt_bin_start=np.array(alt_bin_start)
+            
+            #self.min_alt=[]
+            for i in range(num_freqs):
+                self.leakage[1,i],self.leakage[2,i],self.leakage[3,i]=\
+                                    self.determine_DI_leak_alt_bin(alt_bin_start[min_UV_norm_diff_ind[i]],\
+                                    normalised_DS[:,i:i+1,:])
+                #self.min_alt.append(alt_bin_start[min_UV_norm_diff_ind[i]])
         
     def align_theta_with_freq(self):
         '''
