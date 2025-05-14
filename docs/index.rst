@@ -14,9 +14,11 @@ Pages:
    `fastvis <fastvis.html>`__
 
 .. toctree::
-   :maxdepth: 2
    :caption: Contents:
+   :maxdepth: 2
    
+   guide
+   fastvis
    autoapi/index
 
 
