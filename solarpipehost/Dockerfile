@@ -1,46 +1,32 @@
-FROM ubuntu:22.04
-
+FROM astronrd/linc:latest
 
 ARG DEBIAN_FRONTEND=noninteractive
-# get essential dependencies
-RUN apt update -y && \
-     apt install python3 python3-dev python3-pip python3-pyqt5 \
-        bison \
-        build-essential \
-        cmake \
-        flex \
-        gfortran \
-        git \
-        libblas-dev \
-        libboost-date-time-dev \
-        libboost-filesystem-dev \
-        libboost-numpy-dev \
-        libboost-program-options-dev \
-        libboost-python-dev \
-        libboost-system-dev \
-        libboost-test-dev \
-        libcfitsio-dev \
-        libfftw3-dev  \
-        libfftw3-double3 \
-        libfftw3-single3 \
-        libglibmm-2.4-1v5 \
-        libgomp1 \
-        libgtkmm-3.0-1v5 \
-        libhdf5-103 \
-        libhdf5-cpp-103 \
-        liblapack3 \
-        liblua5.3-0 \
-        libpangomm-1.4-1v5 \
-        libpng16-16 \
-        libsigc++-2.0-0v5 \
-        libstdc++6 \
-        wsclean-dev  -y
+
+# Install Python and virtualenv support
+RUN apt-get update && apt-get install -y \
+    python3 \
+    python3-pip \
+    python3-venv
+
+# Create and activate virtual environment
+RUN python3 -m venv /venv
+ENV PATH="/venv/bin:$PATH"
+
+# Upgrade pip + install packages in virtualenv
+RUN pip install --upgrade pip setuptools packaging
 
 RUN update-alternatives --install /usr/bin/python python /usr/bin/python3 1
-RUN python -m pip install packaging
 
 # install modular casa and suncasa
-RUN python -m pip install casatools==6.6.0.20 casatasks==6.6.0.20 matplotlib==3.5.2 \
-    ipython==8.17.2 jupyter notebook jupyterlab==4.0.9
-RUN python -m pip install suncasa
+RUN python -m pip install casatools casatasks
 
+RUN python -m pip install git+https://github.com/peijin94/ovro-lwa-solar.git && \
+    python -m pip install git+https://github.com/peijin94/suncasa-src.git
+
+# Create a non-root user 'lwauser' and set permissions
+#RUN useradd -ms /bin/bash lwauser
+#USER lwauser
+
+
+# Set working directory
+#WORKDIR /home/lwauser
