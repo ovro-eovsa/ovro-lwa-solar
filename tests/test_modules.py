@@ -6,7 +6,6 @@ os.makedirs(os.path.expanduser('~/.casa/data/'), exist_ok=True)
 from ovrolwasolar import solar_pipeline as lwasp
 import pytest
 import os, sys, glob
-import wget
 
 
 @pytest.fixture
@@ -16,7 +15,7 @@ def prepare_data():
     # create a tmp directory
     os.makedirs(dir_tmp, exist_ok=True)
     os.chdir(dir_tmp)
-    wget.download(url_data)
+    os.system('wget ' + url_data)
     os.system('tar -xvf testdata.tar')
     yield dir_tmp
 
