@@ -1,4 +1,7 @@
 # pytest test_modules.py
+# if ~/.casa/data/ is not a directory, create it
+import os
+os.makedirs(os.path.expanduser('~/.casa/data/'), exist_ok=True)
 
 from ovrolwasolar import solar_pipeline as lwasp
 import pytest
