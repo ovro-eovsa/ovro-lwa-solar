@@ -223,7 +223,7 @@ def image_ms(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagename='sun
                                    size=imsize , scale=cell, pol=pol, fast_vis=fast_vis, 
                                    field=','.join([str(i) for i in range(num_fields)]))
         if apply_primary_beam:
-            utils.correct_primary_beam(outms, imagename, pol=pol, fast_vis=fast_vis)
+            utils.correct_primary_beam_self_terms(imagename, pol=pol, fast_vis=fast_vis)
         if not fast_vis:
             image_list=[]
             for n,pola in enumerate(['I','Q','U','V','XX','YY']):
@@ -268,7 +268,7 @@ def image_ms_quick(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagenam
              delete_allsky=True, sky_image=None, quiet=True, remove_strong_sources_only=False,
              src_sb_sol_area=200., src_sb_src_area=200., shape_sun_mask='circ', include_edge_source=-1,
              rm_flagged=True, rm_10lambda=True, selfcal_flagbackup=True,
-             use_selfcal_img_to_subtract=True):
+             use_selfcal_img_to_subtract=False):
     """
     Pipeline to calibrate and imaging a solar visibility. 
     This is the version that optimizes the speed with a somewhat reduced image dynamic range.
@@ -306,13 +306,13 @@ def image_ms_quick(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagenam
 
     
     if rm_flagged:
-        solar_ms_new = solar_ms[:-3] + "_rm_bad_ants.ms"
+        solar_ms_new = solar_ms.replace('.ms',"_rm_bad_ants.ms")
         split(vis=solar_ms, outputvis=solar_ms_new, datacolumn='data', keepflags=False)
         solar_ms = solar_ms_new
 
     if rm_10lambda:
         flagdata(vis=solar_ms, mode='manual', uvrange='<10lambda', flagbackup=False)
-        solar_ms_new = solar_ms[:-3] + "_rm10lambda.ms"
+        solar_ms_new = solar_ms.replace(".ms","_rm10lambda.ms")
         split(vis=solar_ms, outputvis=solar_ms_new, datacolumn='data', keepflags=False)
         solar_ms = solar_ms_new
 
@@ -326,10 +326,10 @@ def image_ms_quick(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagenam
         #                      partial_di_selfcal_rounds=[0, 0], pol=pol, refant=refant, caltable_folder=caltable_folder)
         mstime_str = utils.get_timestr_from_name(solar_ms)
         success = utils.put_keyword(solar_ms, 'di_selfcal_time', mstime_str, return_status=True)
-        success, imagename = selfcal.do_selfcal(solar_ms, num_phase_cal=num_phase_cal, num_apcal=num_apcal, logging_level=logging_level, pol=pol,
+        success, imagename = selfcal.do_selfcal(solar_ms, num_phase_cal=num_phase_cal, num_apcal=num_apcal, logging_level=logging_level, pol='I',
             refant=refant, niter0=niter0, niter_incr=niter_incr, caltable_folder=caltable_folder, auto_pix_fov=auto_pix_fov, quiet=quiet,
             flagbackup=selfcal_flagbackup)
-        outms_di = solar_ms[:-3] + "_selfcalibrated.ms"
+        outms_di = solar_ms.replace(".ms","_selfcalibrated.ms")
         if do_fluxscaling:
             logging.debug('Doing a flux scaling using background strong sources')
             fc=flux_scaling.flux_scaling(vis=solar_ms, min_beam_val=0.1, pol=pol)
@@ -377,7 +377,7 @@ def image_ms_quick(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagenam
         deconvolve.run_wsclean(outms, imagename=imagename, auto_mask=5, minuv_l='0', predict=False, 
                                size=imsize, scale=cell, pol=pol)
         logging.debug('Correcting for the primary beam at the location of Sun')
-        utils.correct_primary_beam(outms, imagename, pol=pol)
+        utils.correct_primary_beam_self_terms(imagename, pol=pol)
         for n,pola in enumerate(['I','Q','U','V','XX','YY']):
             if os.path.isfile(imagename+ "-"+pola+"-image.fits"):
                 helio_image = utils.convert_to_heliocentric_coords(outms, imagename+ "-"+pola+"-image.fits")
@@ -489,5 +489,5 @@ def apply_solutions_and_image(msname, bcal, imagename):
     change_phasecenter(outms)
     deconvolve.run_wsclean(outms, imagename=imagename, auto_mask=5, minuv_l='0', predict=False, 
                            size=1024, scale='1arcmin')
-    utils.correct_primary_beam(outms, imagename + "-image.fits")
+    utils.correct_primary_beam(imagename + "-image.fits")
     logging.info('Imaging completed for ' + msname)
