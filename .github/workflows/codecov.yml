@@ -29,7 +29,7 @@ jobs:
           pip install pytest pytest-cov asdf numpy astropy
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
           pip install -e . # Install project as a package to resolve imports
-          sudo apt get install wsclean 
+          sudo apt install wsclean 
 
       - name: Run tests with coverage
         run: |
