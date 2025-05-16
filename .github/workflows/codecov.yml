@@ -16,29 +16,61 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # Ensure full Git history for Codecov
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.8' # Matches Python 3.8.18 from error output
+          python-version: '3.8'
 
-      - name: Install dependencies
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            cmake \
+            libcfitsio-dev \
+            libfftw3-dev \
+            libgsl-dev \
+            libpng-dev \
+            wcslib-dev \
+            casacore-dev \
+            libboost-all-dev
+
+      - name: Install wsclean with recursive clone
+        run: |
+          git clone --recurse-submodules https://gitlab.com/aroffringa/wsclean.git
+          cd wsclean
+          git checkout v3.4
+          mkdir build
+          cd build
+          cmake .. -DCMAKE_BUILD_TYPE=Release
+          make -j$(nproc)
+          sudo make install
+          sudo ldconfig
+          wsclean --version || { echo "wsclean installation failed"; exit 1; }
+        env:
+          PATH: /usr/local/bin:$PATH
+          LD_LIBRARY_PATH: /usr/local/lib:$LD_LIBRARY_PATH
+
+      - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
           pip install pytest pytest-cov asdf numpy astropy
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-          pip install -e . # Install project as a package to resolve imports
-          sudo apt install wsclean
-          wsclean --version 
+          pip install -e .
 
       - name: Run tests with coverage
         run: |
           pytest tests/ --cov=ovrolwasolar --cov-report=xml
+        env:
+          PATH: /usr/local/bin:$PATH
+          LD_LIBRARY_PATH: /usr/local/lib:$LD_LIBRARY_PATH
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
         with:
-          token: ${{ secrets.CODECOV_TOKEN }} # Optional if repo is public
+          token: ${{ secrets.CODECOV_TOKEN }}
           files: ./coverage.xml
-          fail_ci_if_error: true # Fail CI if Codecov upload fails
+          fail_ci_if_error: true
+```
