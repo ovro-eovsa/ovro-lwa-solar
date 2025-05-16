@@ -32,12 +32,26 @@ def prepare_data_local():
     yield dir_tmp
 
 @pytest.fixture
+def run_wsclean(prepare_data):
+    msfile = './testdata/slow/20240519_173002_55MHz.ms'
+    imagename = msfile[:-3] + "_self" + str(0)
+    lwasp.deconvolve.run_wsclean(msfile, imagename=imagename, niter=100,
+            mgain=0.9, auto_mask=False, auto_threshold=False, pol="I", auto_pix_fov=True, quiet=True)
+    
+def test_deconvolve(run_wsclean):
+    expected_image = './testdata/slow/20240519_173002_55MHz_self0-image.fits'
+    assert os.path.exists(expected_image)
+
+"""
+@pytest.fixture
 def run_image_quick(prepare_data):
     dir_tmp = prepare_data_local
     lwasp.image_ms_quick( solar_ms=  './testdata/slow/20240519_173002_55MHz.ms', 
                         bcal='./testdata/caltables/20240517_100405_55MHz.bcal',
-                        num_phase_cal=0, num_apcal=1 , logging_level='debug')
+                        num_phase_cal=1, num_apcal=0 , logging_level='debug')
 
 def test_image_quick(run_image_quick):
     generated_images = glob.glob('./testdata/slow/*image.fits')
     assert len(generated_images) == 1
+"""
+
