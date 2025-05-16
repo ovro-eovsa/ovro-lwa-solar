@@ -32,7 +32,7 @@ def prepare_data_local():
     yield dir_tmp
 
 @pytest.fixture
-def run_wsclean(prepare_data_local):
+def run_wsclean(prepare_data):
     msfile = './testdata/slow/20240519_173002_55MHz.ms'
     imagename = msfile[:-3] + "_self" + str(0)
     a = lwasp.deconvolve.run_wsclean(msfile, imagename=imagename, niter=100,
