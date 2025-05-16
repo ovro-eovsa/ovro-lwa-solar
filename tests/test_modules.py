@@ -39,5 +39,5 @@ def run_image_quick(prepare_data):
                         num_phase_cal=0, num_apcal=1 , logging_level='debug')
 
 def test_image_quick(run_image_quick):
-    generated_images = glob.glob('./testdata/*image.fits')
+    generated_images = glob.glob('./testdata/slow/*image.fits')
     assert len(generated_images) == 1
