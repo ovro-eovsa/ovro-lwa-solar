@@ -43,7 +43,7 @@ def test_deconvolve(run_wsclean):
     expected_image = './testdata/slow/20240519_173002_55MHz_self0-image.fits'
     assert os.path.exists(expected_image)
 
-"""
+
 @pytest.fixture
 def run_image_quick(prepare_data):
     dir_tmp = prepare_data_local
@@ -54,5 +54,5 @@ def run_image_quick(prepare_data):
 def test_image_quick(run_image_quick):
     generated_images = glob.glob('./testdata/slow/*image.fits')
     assert len(generated_images) == 1
-"""
+
 
