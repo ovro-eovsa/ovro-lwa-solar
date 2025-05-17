@@ -10,7 +10,7 @@ from .primary_beam import jones_beam as beam
 import h5py,os
 from scipy.interpolate import interpn
 import matplotlib.colors as colors
-#import lmfit
+import lmfit
 import logging
 import pandas as pd
 from scipy.interpolate import griddata
