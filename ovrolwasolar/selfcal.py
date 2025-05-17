@@ -82,6 +82,8 @@ def do_selfcal(msfile, num_phase_cal=2, num_apcal=2, applymode='calflag', loggin
         time1=timeit.default_timer()
         gaincal(vis=msfile, caltable=imagename + ".gcal", uvrange=">10lambda",
                 calmode='p', solmode='L1R', rmsthresh=[10, 8, 6], refant=refant)
+        #### Here I am not enforcing the same gains for X and Y, because the phases are significantly
+        #### affected by the induced polarization of the primary beam
         time2=timeit.default_timer()
         logging.debug('Solving for selfcal gain solutions took {0:.1f} s'.format(time2-time1))
         utils.put_keyword(imagename + ".gcal", ms_keyword, utils.get_keyword(msfile, ms_keyword))
@@ -116,7 +118,6 @@ def do_selfcal(msfile, num_phase_cal=2, num_apcal=2, applymode='calflag', loggin
             
             good = utils.check_image_quality(imagename, max1, min1, reorder=False)
             
-            print(good)
             if not good:
                 logging.debug('Flagging could not solve the issue. Restoring flags, applying last good solutions.')
                 utils.restore_flag(msfile)
@@ -151,6 +152,10 @@ def do_selfcal(msfile, num_phase_cal=2, num_apcal=2, applymode='calflag', loggin
         gaincal(vis=msfile, caltable=caltable, uvrange=">10lambda",
                 calmode='ap', solnorm=True, normtype='median', solmode='L1R',
                 rmsthresh=[10, 8, 6], gaintable=final_phase_caltable, refant=refant)
+        if pol=='I':
+            replaced=utils.fix_polarised_beam_effect_on_gains(caltable)
+            if not replaced:
+                logging.warning("Failed to fix effect of polarised beam. Treat polarised images, particularly Q with care.")
         utils.put_keyword(caltable, ms_keyword, utils.get_keyword(msfile, ms_keyword))
         if logging_level == 'debug' or logging_level == 'DEBUG':
             utils.get_flagged_solution_num(imagename + "_ap_over_p.gcal")
