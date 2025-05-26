@@ -1004,6 +1004,15 @@ def get_primary_beam_single_source(alt,az,freq,\
     factors[2]=pol_fac[2,0].real ### leakage from I to U due to primary_beam
     factors[3]=pol_fac[3,0].real ### leakage from I to V due to primary_beam
     return factors
+
+def get_caltable_freq(caltable):
+    tb=table()
+    tb.open(os.path.join(caltable,"SPECTRAL_WINDOW"))
+    try:
+        chan_freq=tb.getcol('CHAN_FREQ').flatten()
+    finally:
+        tb.close()
+    return chan_freq
     
 def fix_polarised_beam_effect_on_gains(caltable):
     '''
