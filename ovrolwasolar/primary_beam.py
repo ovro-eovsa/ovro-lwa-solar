@@ -379,7 +379,7 @@ class jones_beam:
             ### of I used. I= 0.5*(XX+YY).
                 self.max_e[i]=np.sqrt(0.5*(xpol_phi_max[i]**2+xpol_theta_max[i]**2+\
                                         ypol_phi_max[i]**2+ypol_theta_max[i]**2))
-        except:
+        except Exception as e:
             logging.warning("Beam file does not exist in give path."+\
                     "Switching to analytical beam.")
             self._beamfile=None

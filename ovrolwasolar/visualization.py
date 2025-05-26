@@ -15,7 +15,7 @@ from matplotlib.patches import Ellipse
 import base64
 import io
 import matplotlib.image as mpimg
-
+from . import utils
 
 # the functions to plot the data
 
@@ -78,7 +78,7 @@ def slow_pipeline_default_plot(fname,
             freqs_plt = [34.1, 38.7, 43.2, 47.8, 52.4, 57.0, 61.6, 66.2, 70.8, 75.4, 80.0, 84.5],
             fov = 7998, add_logo=True, apply_refraction_param=False, 
             spec_fits=None, spec_dur=600., spec_cmap='viridis', spec_vmin=None, spec_vmax=None, spec_norm='log',
-            spec_frange=[30., 88.]):
+            spec_frange=[30., 88.], apply_fiducial_primary_beam=False):
     """
     Function to plot the default pipeline output
 
@@ -94,6 +94,11 @@ def slow_pipeline_default_plot(fname,
     from suncasa.io import ndfits
     from suncasa.dspec import dspec
     meta, rdata = ndfits.read(fname)
+    
+    if not apply_fiducial_primary_beam:
+        obstime=Time(meta['header']['DATE-OBS'])
+        az,alt=utils.get_solar_altaz_multiple_times(obstime)
+        rdata[0,...]/=np.sin(alt*np.pi/180)**1.6 ### applying a sin beam
     t_img = Time(meta['header']['date-obs'])
     if 'rfrcor' in meta['header']:
         rfrcor = meta['header']
