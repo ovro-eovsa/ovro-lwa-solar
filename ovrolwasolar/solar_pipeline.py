@@ -282,7 +282,8 @@ def image_ms_quick(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagenam
     
     if logging_level.lower() == 'info':
         logging.basicConfig(filename=logfile,
-            format='%(asctime)s %(levelname)-8s %(message)s',
+            #format='%(asctime)s %(levelname)-8s %(message)s',qq            
+            format='%(asctime)s %(levelname)-8s %(pathname)s:%(lineno)d %(message)s',
             level=logging.INFO,
             datefmt='%Y-%m-%d %H:%M:%S')
         
