@@ -29,6 +29,23 @@ def thresh_func(freq):  # freq in Hz
     """
 
     return 1.1e6 * (1 - 1.8e4 * freq ** (-0.6))
+    
+def find_quite_sun_region(data,thresh,min_size,convex_hull=False):
+    threshed_img = (data > thresh)
+    threshed_img_1st = remove_small_objects(threshed_img, min_size=min_size, connectivity=1)
+    # perform erosion to remove the small features
+    threshed_img_2nd = binary_erosion(threshed_img_1st, iterations=3)
+
+    # keep only the largest connected component
+    threshed_img_3rd = remove_small_objects(threshed_img_2nd, min_size=min_size, connectivity=1)
+
+    # dialate the image back to the original size
+    threshed_img_4th = binary_dilation(threshed_img_3rd, iterations=3)
+
+    if convex_hull:
+        threshed_img_4th = convex_hull_image(threshed_img_4th)
+    
+    return threshed_img_4th
 
 
 def find_center_of_thresh(data_this, thresh, meta, 
@@ -44,20 +61,9 @@ def find_center_of_thresh(data_this, thresh, meta,
     
     """
     meta_header=meta['header']
-    threshed_img = (data_this > thresh)
+    
     min_size = min_size_50/(meta_header['CDELT1']/60.)**2./(meta['ref_cfreqs'][index]/50e6)**2.
-    threshed_img_1st = remove_small_objects(threshed_img, min_size=min_size, connectivity=1)
-    # perform erosion to remove the small features
-    threshed_img_2nd = binary_erosion(threshed_img_1st, iterations=3)
-
-    # keep only the largest connected component
-    threshed_img_3rd = remove_small_objects(threshed_img_2nd, min_size=min_size, connectivity=1)
-
-    # dialate the image back to the original size
-    threshed_img_4th = binary_dilation(threshed_img_3rd, iterations=3)
-
-    if convex_hull:
-        threshed_img_4th = convex_hull_image(threshed_img_4th)
+    threshed_img_4th = find_quite_sun_region(data_this,thresh,min_size,convex_hull=convex_hull)
 
     # find the centroid of threshed_img_1st, coords in x_arr, y_arr
     com = center_of_mass(threshed_img_4th)
@@ -74,8 +80,7 @@ def find_center_of_thresh(data_this, thresh, meta,
     x_arr_new = x_arr - com_x_arcsec
     y_arr_new = y_arr - com_y_arcsec
 
-    return [com_x_arcsec, com_y_arcsec, com, x_arr_new, y_arr_new, threshed_img,
-            threshed_img_1st, threshed_img_2nd, threshed_img_3rd, threshed_img_4th]
+    return [com_x_arcsec, com_y_arcsec, com, x_arr_new, y_arr_new, threshed_img_4th]
 
 
 def refraction_fit_param(fname, thresh_freq=45e6, overbright=2.0e6, min_freqfrac=0.3, return_full_data=False,
@@ -108,8 +113,7 @@ def refraction_fit_param(fname, thresh_freq=45e6, overbright=2.0e6, min_freqfrac
     for idx_this, idx_img in enumerate(range(0, freqs_arr.shape[0])):
         thresh = thresh_func(freqs_arr[idx_img]) * background_factor
         data_this = np.squeeze(data[0, idx_img, :, :])
-        (com_x_arcsec, com_y_arcsec, com, x_arr_new, y_arr_new, threshed_img,
-         threshed_img_1st, threshed_img_2nd, threshed_img_3rd, threshed_img_4th
+        (com_x_arcsec, com_y_arcsec, com, x_arr_new, y_arr_new, threshed_img_4th
          ) = find_center_of_thresh(data_this, thresh, meta, idx_img, convex_hull=convex_hull)
         peak_values_tmp.append(np.nanmax(data_this))
         com_x_arr.append(com_x_arcsec)
