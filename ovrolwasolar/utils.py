@@ -422,6 +422,9 @@ def check_corrected_data_present(msname):
 def correct_primary_beam_leakage_from_I(imagename,pol='I,Q,U,V',\
                                             beam_file_path='/lustre/msurajit/beam_model_nivedita/OVRO-LWA_soil_pt.h5'):
     '''
+    
+    NOTE THE VERY BAD FIX DONE IN EMMERGENCY ON JUNE 19, 2025 REGARDING M00 CORRECTION
+    
     This function corrects the instrumental polarization due to the I.
     It implements the following correction:
     M00 [[1          0       0        0],
@@ -480,7 +483,8 @@ def correct_primary_beam_leakage_from_I(imagename,pol='I,Q,U,V',\
                     leakage_frac_from_I=muller_matrix[muller_matrix_index,0].real/Iscale
                     logging.info('The Stokes '+pol+' leakage correction factor is ' + str(round(leakage_frac_from_I, 4)))
                     hdu[0].data[j,...]=hdu[0].data[j,...]-leakage_frac_from_I*hdu[0].data[0,...]
-             
+                else:
+                    hdu[0].data[0,...]/=Iscale 
             hdu.flush()
     
 
