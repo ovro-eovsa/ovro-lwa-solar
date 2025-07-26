@@ -309,12 +309,20 @@ def image_ms_quick(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagenam
     if rm_flagged:
         solar_ms_new = solar_ms.replace('.ms',"_rm_bad_ants.ms")
         split(vis=solar_ms, outputvis=solar_ms_new, datacolumn='data', keepflags=False)
+        # remove old MS folder
+        if os.path.isdir(solar_ms):
+            os.system("rm -rf " + solar_ms)
+        # rename the new MS folder
         solar_ms = solar_ms_new
 
     if rm_10lambda:
         flagdata(vis=solar_ms, mode='manual', uvrange='<10lambda', flagbackup=False)
         solar_ms_new = solar_ms.replace(".ms","_rm10lambda.ms")
         split(vis=solar_ms, outputvis=solar_ms_new, datacolumn='data', keepflags=False)
+        # remove old MS folder
+        if os.path.isdir(solar_ms):
+            os.system("rm -rf " + solar_ms)
+        # rename the new MS folder
         solar_ms = solar_ms_new
 
 
