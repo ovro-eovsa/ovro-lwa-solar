@@ -16,7 +16,7 @@ import pandas as pd
 from scipy.interpolate import griddata
 
 
-def compute_primary_beam_from_beamfiles(freqs,model_beam_file,tims=None, az=None,alt=None):
+def compute_primary_beam_from_beamfiles(freqs,model_beam_file,tims=None, az=None,alt=None, normalise_wrt_I=True):
     '''
     :param freq: list/array of frequencies in MHz
     
@@ -55,8 +55,10 @@ def compute_primary_beam_from_beamfiles(freqs,model_beam_file,tims=None, az=None
             factors[j,i,5]=pol_fac[2,2].real ### U primary_beam
             factors[j,i,6]=pol_fac[3,3].real ### V primary_beam
             
-            
-    return np.swapaxes(factors/np.expand_dims(factors[:,:,0],axis=2),1,2) ## all factors are in respect to I value
+    if  normalise_wrt_I:       
+        return np.swapaxes(factors/np.expand_dims(factors[:,:,0],axis=2),1,2) ## all factors are in respect to I value
+    else:
+        return np.swapaxes(factors,1,2)
 
 def get_altaz_multiple_times(times,sky_coord):
     '''
@@ -167,7 +169,7 @@ class beam_polcal():
         return (sum1)
         
 
-    def get_primary_beam(self,freq_sep=1,tim_sep=300,outfile="primary_beam.hdf5",overwrite=False):
+    def get_primary_beam(self,freq_sep=1,tim_sep=300,outfile="primary_beam.hdf5",overwrite=False, normalise_wrt_I=True):
         '''
         This function is responsible for producing the primary beam for all times and frequencies the user
         needs. However since this can be quite compute intensive, this function computes the I,Q,U,V beam
@@ -204,7 +206,8 @@ class beam_polcal():
         if not os.path.isfile(outfile) or overwrite:
             beam=compute_primary_beam_from_beamfiles(freqs_to_compute_beam,self.model_beam_file, \
                                                             tims=Time(times_to_compute_beam,\
-                                                        format='mjd',scale='utc'))
+                                                        format='mjd',scale='utc'),\
+                                                        normalise_wrt_I= normalise_wrt_I)
             logging.debug("Primary beam successfully computed.")
             with h5py.File(outfile,"w") as  hf:
                 hf.create_dataset("freqs_MHz",data=freqs_to_compute_beam)
@@ -233,7 +236,10 @@ class beam_polcal():
             interpolated_beam[i]=interpn(points,beam[:,i,:],compute_points,bounds_error=False,fill_value=np.nan)
             if i==1:
                 shape=interpolated_beam[i].shape
-                interpolated_beam[0]=np.ones(shape)
+                if normalise_wrt_I:
+                    interpolated_beam[0]=np.ones(shape)
+                else:
+                    interpolated_beam[0]=interpn(points,beam[:,0,:],compute_points,bounds_error=False,fill_value=np.nan)
         self.primary_beam=np.array(interpolated_beam)
         return
 
@@ -244,7 +250,7 @@ class beam_polcal():
         stokes=['I','Q','U','V']
         for j,pol in enumerate(stokes):
             ds=dspec.Dspec()
-            ds.read([self.filename],source='lwa',timebin=self.time_avg,freqbin=self.freq_avg,stokes=pol)
+            ds.read(self.filename,source='lwa',timebin=self.time_avg,freqbin=self.freq_avg,stokes=pol)
             data=np.squeeze(ds.data)
             if j==0:
                 self.freqs=ds.freq_axis  ###  in Hz
