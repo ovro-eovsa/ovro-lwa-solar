@@ -250,7 +250,7 @@ class beam_polcal():
         stokes=['I','Q','U','V']
         for j,pol in enumerate(stokes):
             ds=dspec.Dspec()
-            ds.read(self.filename,source='lwa',timebin=self.time_avg,freqbin=self.freq_avg,stokes=pol)
+            ds.read([self.filename],source='lwa',timebin=self.time_avg,freqbin=self.freq_avg,stokes=pol)
             data=np.squeeze(ds.data)
             if j==0:
                 self.freqs=ds.freq_axis  ###  in Hz
