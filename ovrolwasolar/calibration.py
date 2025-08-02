@@ -357,6 +357,11 @@ def do_bandpass_correction(solar_ms, calib_ms=None, bcal=None, caltable_folder='
     print (bcal)
     apply_calibration(solar_ms, gaintable=bcal, doantflag=doantflag, doflag=True, do_solar_imaging=False)
     split(vis=solar_ms, outputvis=solar_ms[:-3] + "_calibrated.ms", width=int(freqbin))
+
+    # remove the original MS folder (to reduce mem footprint)
+    if os.path.isdir(solar_ms):
+        os.system('rm -rf ' + solar_ms)
+
     logging.debug('Splitted the input solar MS into a file named ' + solar_ms[:-3] + "_calibrated.ms")
     solar_ms = solar_ms[:-3] + "_calibrated.ms"
     return solar_ms

@@ -892,7 +892,7 @@ def recover_fits_from_h5(hdf5_file, fits_out=None, return_data=False, return_met
                 if tmp_small.shape[0] == 1:
                     recover_data[pol, ch_idx, :, :] = tmp_small[0, 0]
                 else:
-                    recover_data[pol, ch_idx, :, :] = zoom(tmp_small, datashape[-1] / tmp_small.shape[-1], order=5,prefilter=False)
+                    recover_data[pol, ch_idx, :, :] = zoom(tmp_small, datashape[-1] / tmp_small.shape[-1], order=3,prefilter=False)
 
         if return_data:
             return meta, recover_data
@@ -903,7 +903,7 @@ def recover_fits_from_h5(hdf5_file, fits_out=None, return_data=False, return_met
 
 
 def check_h5_fits_consistency(fits_file, hdf5_file=None, ignore_corrupted=False, work_dir='./',
-                              tolerance=1e-3, ignore_ratio=2):
+                              tolerance=1e-3, ignore_ratio=2, auto_tol=True):
     """
     Check the consistency between a fits file and a hdf5 file,
     if there is a hdf5 file, then compare the two files
@@ -916,7 +916,7 @@ def check_h5_fits_consistency(fits_file, hdf5_file=None, ignore_corrupted=False,
     import h5py
     hdf5_file = hdf5_file if hdf5_file is not None else fits_file.replace('.fits', '.hdf')
 
-    pass_check = True
+    pass_check = 0
     try:
         recover_fits_from_h5(hdf5_file, fits_out=work_dir+'tmp.fits')
         hdu_tmp = fits.open(work_dir+'tmp.fits')
@@ -943,13 +943,21 @@ def check_h5_fits_consistency(fits_file, hdf5_file=None, ignore_corrupted=False,
                     continue
                 else:
                     checked_items += 1
+                    if auto_tol:
+                        # relative max negative value in the data
+                        tolerance = -np.min(data[0,ch_idx,:,:]) / np.max(np.abs(data[0,ch_idx,:,:])) / 3
+                        # 1/3 of SNR
                     if np.mean(np.abs(data[pol,ch_idx,:,:] - data_tmp[pol,ch_idx,:,:])
                                )/np.max(np.abs(data[pol,ch_idx,:,:])) > tolerance:
-                        logging.warning(f'Pol {pol} Ch {ch_idx} not consistent')
-                        pass_check = 3
+                        logging.warning(f'Pol {pol} Ch {ch_idx} not consistent'+'. Difference: ' +
+                                        str(np.mean(np.abs(data[pol,ch_idx,:,:] - data_tmp[pol,ch_idx,:,:])
+                                        )/np.max(np.abs(data[pol,ch_idx,:,:])))+" for Tol: " + str(tolerance))
+                        pass_check = 4
                         break
         logging.info(f'Checked {checked_items} items in the fits file')
     except:
+        pass_check = -1
+        logging.error(f'Error in checking the consistency between {fits_file} and {hdf5_file}')
         pass
 
     # clean up
@@ -975,12 +983,11 @@ def manual_split_corrected_ms(vis, outputvis, datacolumn='CORRECTED_DATA'):
         try:
             corrected_data = tb.getcol('CORRECTED_DATA')
             tb.putcol('DATA', corrected_data)
-            tb.flush()
+            #tb.flush()  # tb.close automatically invokes flush
+            tb.close()
         except Exception as e:
             logging.debug("Hand split method did not work")
             raise e
-        finally:
-            tb.close()
 
     os.system("mv " + vis + " " + outputvis)
     return outputvis
