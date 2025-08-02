@@ -103,7 +103,7 @@ class beam_polcal():
         if database:
             self.crosshand_database=database
         self.crosshand_theta=None  ### if supplied later, must be an ndarray
-        self.model_beam_file='/home/surajit/ovro-lwa-solar/defaults/OVRO-LWA_soil_pt.h5'
+        self.model_beam_file='/home/surajit/ovro-lwa-solar/defaults/OVRO-LWA_MROsoil_updatedheight.h5'
         self.record_crosshand_phase=False
     
     @property
@@ -1020,7 +1020,7 @@ class image_polcal_astronomical_source():
         self.times=Time(tim_mjds,format='mjd',scale='utc')
         if database:
             self.crosshand_database=database
-        self.model_beam_file='/lustre/msurajit/beam_model_nivedita/OVRO-LWA_soil_pt.h5'
+        self.model_beam_file='/lustre/msurajit/beam_model_nivedita/OVRO-LWA_MROsoil_updatedheight.h5'
         self.record_crosshand_phase=False
         self.alt_bin=alt_bin
         self.fit_UV=True
@@ -1036,7 +1036,7 @@ class image_polcal_astronomical_source():
                 raise e
     
     @staticmethod
-    def rotate_UV(params,U,V,Umodel=None,Vmodel=None,fit_UV=True,return_corrected=False):
+    def rotate_UV(params,U,V,Umodel=None,Vmodel=None,fit_UV=False,return_corrected=False):
         '''
         This function rotates the Stokes vector in the UV plane by an angle theta. Theta, whe positive,
         implies rotation is in counterclockwise direction.
