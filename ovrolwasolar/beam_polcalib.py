@@ -779,7 +779,7 @@ class beam_polcal():
         num_freqs=shape[1]
         num_tims=shape[2]
         
-        mean_leak=np.expand_dims(np.mean(frac_pol,axis=2),axis=2)
+        mean_leak=np.expand_dims(np.nanmean(frac_pol,axis=2),axis=2)
         stokes_corrected[1:max_pol_ind+1,:,:]=(frac_pol[1:max_pol_ind+1,:,:]-\
                                                 mean_leak[1:max_pol_ind+1,:,:]-\
                                                 self.beam_leakage_fractions[1:max_pol_ind+1,:,:]+\
