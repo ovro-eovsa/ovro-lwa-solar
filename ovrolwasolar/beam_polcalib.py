@@ -773,7 +773,7 @@ class beam_polcal():
         num_freqs=shape[1]
         num_tims=shape[2]
         
-        mean_leak=np.expand_dims(np.mean(frac_pol,axis=2),axis=2)
+        mean_leak=np.expand_dims(np.nanmean(frac_pol,axis=2),axis=2)
         stokes_corrected[1:max_pol_ind+1,:,:]=(frac_pol[1:max_pol_ind+1,:,:]-\
                                                 mean_leak[1:max_pol_ind+1,:,:]-\
                                                 self.beam_leakage_fractions[1:max_pol_ind+1,:,:]+\
@@ -803,7 +803,7 @@ class beam_polcal():
                 leak_vals[s,i,:]=np.polyval(np.poly1d(self.poly[s,i,:]),times_to_write)
         
         if subtract_mean:
-            self.beam_leakage_fractions=leak_vals-np.expand_dims(np.mean(leak_vals,axis=2),axis=2)
+            self.beam_leakage_fractions=leak_vals-np.expand_dims(np.nanmean(leak_vals,axis=2),axis=2)
         else:
             self.beam_leakage_fractions=leak_vals
         
@@ -980,9 +980,9 @@ class beam_polcal():
             entry_to_write['Q/I_'+str(freq1)+"MHz"]=Q_I_leaks[j,:]
             entry_to_write['U/I_'+str(freq1)+"MHz"]=U_I_leaks[j,:]
             entry_to_write['V/I_'+str(freq1)+"MHz"]=V_I_leaks[j,:]
-            entry_to_write['Q/I_'+str(freq1)+"MHz_mean_sub"]=Q_I_leaks[j,:]-np.mean(Q_I_leaks[j,:])
-            entry_to_write['U/I_'+str(freq1)+"MHz_mean_sub"]=U_I_leaks[j,:]-np.mean(U_I_leaks[j,:])
-            entry_to_write['V/I_'+str(freq1)+"MHz_mean_sub"]=V_I_leaks[j,:]-np.mean(V_I_leaks[j,:])
+            entry_to_write['Q/I_'+str(freq1)+"MHz_mean_sub"]=Q_I_leaks[j,:]-np.nanmean(Q_I_leaks[j,:])
+            entry_to_write['U/I_'+str(freq1)+"MHz_mean_sub"]=U_I_leaks[j,:]-np.nanmean(U_I_leaks[j,:])
+            entry_to_write['V/I_'+str(freq1)+"MHz_mean_sub"]=V_I_leaks[j,:]-np.nanmean(V_I_leaks[j,:])
         
             
         self.add_leakage_entry(entry_to_write)
@@ -1083,7 +1083,7 @@ class image_polcal_astronomical_source():
         self.az,self.alt=get_altaz_multiple_times(self.times,self.sky_coord)
         primary_beam=compute_primary_beam_from_beamfiles(self.freqs,model_beam_file=self.model_beam_file,\
                                                         az=self.az,alt=self.alt)
-        self.UV_norm=np.mean(np.sqrt(primary_beam[:,2,:]**2+primary_beam[:,3,:]**2),axis=1)
+        self.UV_norm=np.nanmean(np.sqrt(primary_beam[:,2,:]**2+primary_beam[:,3,:]**2),axis=1)
         self.determine_DI_leakage()
         DI_corrected_DS_frac=self.correct_DI_leakage()
         num_freqs=self.freqs.size
