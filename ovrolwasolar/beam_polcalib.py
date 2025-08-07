@@ -708,7 +708,7 @@ class beam_polcal():
             
         return poly
     
-    def get_leakage_from_database(self,database=None):
+    def get_leakage_from_database(self,mean_subtracted=False,database=None):
         '''
         This reads the database and produces the leakage fractions for all
         stokes by doing a nearest neighbour interpolation in alt-az and linear
@@ -716,7 +716,7 @@ class beam_polcal():
         '''
         if database:
             self.leakage_database=database
-        self.determine_beam_leakage_fractions_from_db(max_pol_ind=3)
+        self.determine_beam_leakage_fractions_from_db(mean_subtracted=mean_subtracted,max_pol_ind=3)
         
     
         
@@ -725,7 +725,8 @@ class beam_polcal():
                                         polynomial_degree=1, \
                                         database=None,\
                                         QU_only=False,
-                                        write_to_database=False):
+                                        write_to_database=False,\
+                                        mean_subtracted=False):
         '''
         This function corrects the leakage from Stokes I. 
         :param stokes_data: The stokes data from the beam.
@@ -770,7 +771,7 @@ class beam_polcal():
             if write_to_database:
                 self.write_leakage_frac_to_database() ### this uses the default values in write_database if not 
                                             ### already available in class 
-            self.convert_polyfit_to_beam_leakage_fractions(subtract_mean=True)
+            self.convert_polyfit_to_beam_leakage_fractions(subtract_mean=mean_subtracted)
             
             
         stokes_corrected=np.zeros_like(stokes_data)
@@ -780,10 +781,12 @@ class beam_polcal():
         num_tims=shape[2]
         
         mean_leak=np.expand_dims(np.nanmean(frac_pol,axis=2),axis=2)
+        
         stokes_corrected[1:max_pol_ind+1,:,:]=(frac_pol[1:max_pol_ind+1,:,:]-\
-                                                mean_leak[1:max_pol_ind+1,:,:]-\
                                                 self.beam_leakage_fractions[1:max_pol_ind+1,:,:]+\
                                                 self.primary_beam[1:max_pol_ind+1,:,:])
+        if mean_subtracted:
+            stokes_corrected[1:max_pol_ind+1,:,:]-=mean_leak[1:max_pol_ind+1,:,:]
         
         stokes_corrected[0,...]=stokes_data[0,...]
         stokes_corrected[1,...]*=stokes_data[0,...]
@@ -809,11 +812,11 @@ class beam_polcal():
                 leak_vals[s,i,:]=np.polyval(np.poly1d(self.poly[s,i,:]),times_to_write)
         
         if subtract_mean:
-            self.beam_leakage_fractions=leak_vals-np.expand_dims(np.mean(leak_vals,axis=2),axis=2)
+            self.beam_leakage_fractions=leak_vals-np.expand_dims(np.nanmean(leak_vals,axis=2),axis=2)
         else:
             self.beam_leakage_fractions=leak_vals
         
-    def determine_beam_leakage_fractions_from_db(self,max_pol_ind):
+    def determine_beam_leakage_fractions_from_db(self,max_pol_ind,mean_subtracted=False):
         '''
         This function reads in the leakage database and then uses it to calculate the
         leakage fraction at all the data times
@@ -847,7 +850,7 @@ class beam_polcal():
             for j,pol in zip(range(1,max_pol_ind+1,1),['Q/I','U/I','V/I']):
                 
                 self.beam_leakage_fractions[j,i,:]=self.calculate_leakages_from_database(data_freq,freq1,freq2,\
-                                            pol,az,alt,database_az,database_alt)   
+                                            pol,az,alt,database_az,database_alt,mean_subtracted=mean_subtracted)   
 
     
     
@@ -873,8 +876,11 @@ class beam_polcal():
         return freqs_in_db[indices[0]],freqs_in_db[indices[1]]
         
 
-    def calculate_leakages_from_database(self,data_freq,freq1,freq2,pol,az,alt,database_az,database_alt):
-        columns=[pol+"_"+str(int(freq1))+"MHz_mean_sub",pol+"_"+str(int(freq2))+"MHz_mean_sub"]
+    def calculate_leakages_from_database(self,data_freq,freq1,freq2,pol,az,alt,database_az,database_alt,mean_subtracted=False):
+        if not mean_subtracted:
+            columns=[pol+"_"+str(int(freq1))+"MHz",pol+"_"+str(int(freq2))+"MHz"]
+        else:
+            columns=[pol+"_"+str(int(freq1))+"MHz_mean_sub",pol+"_"+str(int(freq2))+"MHz_mean_sub"]
 
         data=pd.read_hdf(self.leakage_database,key='I_leakage',columns=columns)
         
@@ -986,9 +992,9 @@ class beam_polcal():
             entry_to_write['Q/I_'+str(freq1)+"MHz"]=Q_I_leaks[j,:]
             entry_to_write['U/I_'+str(freq1)+"MHz"]=U_I_leaks[j,:]
             entry_to_write['V/I_'+str(freq1)+"MHz"]=V_I_leaks[j,:]
-            entry_to_write['Q/I_'+str(freq1)+"MHz_mean_sub"]=Q_I_leaks[j,:]-np.mean(Q_I_leaks[j,:])
-            entry_to_write['U/I_'+str(freq1)+"MHz_mean_sub"]=U_I_leaks[j,:]-np.mean(U_I_leaks[j,:])
-            entry_to_write['V/I_'+str(freq1)+"MHz_mean_sub"]=V_I_leaks[j,:]-np.mean(V_I_leaks[j,:])
+            entry_to_write['Q/I_'+str(freq1)+"MHz_mean_sub"]=Q_I_leaks[j,:]-np.nanmean(Q_I_leaks[j,:])
+            entry_to_write['U/I_'+str(freq1)+"MHz_mean_sub"]=U_I_leaks[j,:]-np.nanmean(U_I_leaks[j,:])
+            entry_to_write['V/I_'+str(freq1)+"MHz_mean_sub"]=V_I_leaks[j,:]-np.nanmean(V_I_leaks[j,:])
         
             
         self.add_leakage_entry(entry_to_write)
