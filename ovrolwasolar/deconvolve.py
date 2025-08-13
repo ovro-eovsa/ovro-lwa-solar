@@ -60,8 +60,8 @@ def run_wsclean(msfile, imagename, size:int =4096, scale='2arcmin', fast_vis=Fal
     logging.debug("Running WSCLEAN")
     
     default_kwargs={
-        'j':'4',                    # number of threads
-        'mem':'4',                 # fraction of memory usage
+        'j':'8',                    # number of threads
+        'mem':'2',                 # fraction of memory usage
         'weight':'uniform',         # weighting scheme
         'no_dirty':'',              # don't save dirty image
         'no_update_model_required':'', # don't update model required

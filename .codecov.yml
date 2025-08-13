@@ -1,0 +1,31 @@
+# Codecov configuration file
+codecov:
+  require_ci_to_pass: true # Ensures CI must pass before coverage is processed
+
+coverage:
+  precision: 2 # Number of decimal places for coverage percentage
+  round: down # Round coverage numbers down
+  range: "70...100" # Coverage range for status checks (70% to 100%)
+
+  status:
+    project:
+      default:
+        target: auto # Compares coverage against the previous commit
+        threshold: 1% # Allow 1% coverage drop before failing
+        base: auto # Compare against the base branch
+    patch:
+      default:
+        target: 80% # Minimum coverage for new code in a PR
+        threshold: 1% # Allow 1% drop in patch coverage
+    changes: false # Disable status checks for changed files
+
+comment:
+  layout: "reach, diff, flags, files" # Structure of the Codecov comment on PRs
+  behavior: default # Post a new comment on each PR update
+  require_changes: true # Only comment if coverage changes
+  require_base: false # Don't require a base commit for comparison
+  require_head: true # Require a head commit for comparison
+
+ignore:
+  - "tests/*" # Ignore test files in coverage reports
+  - "*/__init__.py" # Ignore __init__.py files

@@ -759,7 +759,7 @@ class beam_polcal():
         num_tims=shape[2]
         
         mean_leak=np.expand_dims(np.nanmean(frac_pol,axis=2),axis=2)
-        
+
         stokes_corrected[1:max_pol_ind+1,:,:]=(frac_pol[1:max_pol_ind+1,:,:]-\
                                                 self.beam_leakage_fractions[1:max_pol_ind+1,:,:]+\
                                                 self.primary_beam[1:max_pol_ind+1,:,:])
@@ -1073,7 +1073,7 @@ class image_polcal_astronomical_source():
         self.az,self.alt=get_altaz_multiple_times(self.times,self.sky_coord)
         primary_beam=compute_primary_beam_from_beamfiles(self.freqs,model_beam_file=self.model_beam_file,\
                                                         az=self.az,alt=self.alt)
-        self.UV_norm=np.mean(np.sqrt(primary_beam[:,2,:]**2+primary_beam[:,3,:]**2),axis=1)
+        self.UV_norm=np.nanmean(np.sqrt(primary_beam[:,2,:]**2+primary_beam[:,3,:]**2),axis=1)
         self.determine_DI_leakage()
         DI_corrected_DS_frac=self.correct_DI_leakage()
         num_freqs=self.freqs.size
