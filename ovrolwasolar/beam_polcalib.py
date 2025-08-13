@@ -290,7 +290,6 @@ class beam_polcal():
         max_nfev=1000
         
         for i in range(num_freqs):
-              
             Umodel=self.primary_beam[2,i,:]*self.stokes_data[0,i,:]
             Vmodel=self.primary_beam[3,i,:]*self.stokes_data[0,i,:]
             
@@ -305,7 +304,7 @@ class beam_polcal():
                 solved_theta=res1.x
             red_chi=res1.fun/(Umodel.size-1)
 
-            if red_chi>0.001:
+            if red_chi>0.001 or not res1.success:
                 red_chi=1000
             else:
                 red_chi=1e-5
@@ -313,19 +312,20 @@ class beam_polcal():
             red_chi=1e-2
             
             if red_chi>1e-4:
-                print ("Using basinhopping")
                 red_chi=1000
-                res1 = basinhopping(self.rotate_UV, 0, minimizer_kwargs={'method': 'L-BFGS-B', 'bounds': bounds,\
+                res1 = basinhopping(self.rotate_UV, x0=[0], minimizer_kwargs={'method': 'Nelder-Mead', 'bounds': bounds,\
                                 "args":(self.stokes_data[2,i,:],self.stokes_data[3,i,:],\
-                            self.stokes_data[0,i,:],Umodel,True)},niter=max_nfev)
+                            self.stokes_data[0,i,:],Umodel,True),'tol':0.01},niter=max_nfev)
                 if res1.success:
                     solved_theta=res1.x
+                
                 red_chi=res1.fun/(Umodel.size-1)
 
-                if red_chi>0.001:
+                if red_chi>0.001 or not res1.success:
                     red_chi=1000
                 else:
                     red_chi=1e-5
+                
                     
             
             
@@ -334,6 +334,7 @@ class beam_polcal():
             max_iter=3
             iter_num=0
             methods=['Nelder','basinhopping','basinhopping','basinhopping','basinhopping']
+
             while iter_num<max_iter and red_chi>1e-4 and lmfit_not_found:
                 method=methods[iter_num]
             
@@ -356,7 +357,7 @@ class beam_polcal():
             
                 res1 = mini.minimize(method=method, **fit_kws)
                 red_chi=res1.redchi
-                if res1.nfev<10 or abs(res1.params['theta'].value-res1.init_vals[0])<1e-6:
+                if res1.nfev<10 or abs(res1.params['theta'].value-res1.init_vals[0])<1e-6 or not res1.success:
                     red_chi=1000
                 iter_num+=1
 
@@ -364,9 +365,9 @@ class beam_polcal():
                 #print (lmfit.fit_report(res1, show_correl=True))
             
             #
-           
-            iter_num=0
             
+            iter_num=0
+            print (i,res1.success, iter_num, red_chi)
             while iter_num<max_iter and red_chi>1e-4 and lmfit_not_found:
                 method=methods[iter_num]
             
@@ -390,10 +391,11 @@ class beam_polcal():
             
                 res2 = mini.minimize(method=method, **fit_kws)
                 red_chi=res2.redchi
-                if res2.nfev<10 or abs(res2.params['theta'].value-res2.init_vals[0])<1e-6:
+                if res2.nfev<10 or abs(res2.params['theta'].value-res2.init_vals[0])<1e-6 or not res2.success:
                     red_chi=1000
                 iter_num+=1
                 del fit_params
+                
             
             if res1.success and iter_num==0: ### iter_num was reinitialised to zero before the second round. It did not enter res2 mnimization
                 res=res1
