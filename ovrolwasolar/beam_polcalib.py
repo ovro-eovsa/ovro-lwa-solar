@@ -1,6 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from scipy.optimize import minimize
+from scipy.optimize import minimize,basinhopping
 from functools import partial
 from suncasa import dspec
 from . import utils
@@ -10,7 +10,6 @@ from .primary_beam import jones_beam as beam
 import h5py,os
 from scipy.interpolate import interpn
 import matplotlib.colors as colors
-import lmfit
 import logging
 import pandas as pd
 from scipy.interpolate import griddata
@@ -277,6 +276,12 @@ class beam_polcal():
         :param freqs: Frequencies in MHz corresponding to the data
         :return crosshand_phase for each frequency. 
         '''
+        try:
+            import lmfit
+            lmfit_not_found=False
+        except:
+            lmfit_not_found=True
+        
         shape=self.stokes_data.shape
         num_freqs=shape[1]
         
@@ -291,9 +296,11 @@ class beam_polcal():
             
             red_chi=1000
             
+            bounds=[[-3.14159,3.14159]]
+            
             res1=minimize(self.rotate_UV,0,args=(self.stokes_data[2,i,:],self.stokes_data[3,i,:],\
                             self.stokes_data[0,i,:],Umodel,True),method='Nelder-Mead',\
-                            bounds=[[-3.14159,3.14159]])
+                            bounds=bounds)
             if res1.success:
                 solved_theta=res1.x
             red_chi=res1.fun/(Umodel.size-1)
@@ -303,12 +310,31 @@ class beam_polcal():
             else:
                 red_chi=1e-5
             
+            red_chi=1e-2
+            
+            if red_chi>1e-4:
+                print ("Using basinhopping")
+                red_chi=1000
+                res1 = basinhopping(self.rotate_UV, 0, minimizer_kwargs={'method': 'L-BFGS-B', 'bounds': bounds,\
+                                "args":(self.stokes_data[2,i,:],self.stokes_data[3,i,:],\
+                            self.stokes_data[0,i,:],Umodel,True)},niter=max_nfev)
+                if res1.success:
+                    solved_theta=res1.x
+                red_chi=res1.fun/(Umodel.size-1)
+
+                if red_chi>0.001:
+                    red_chi=1000
+                else:
+                    red_chi=1e-5
+                    
+            
+            
             
             
             max_iter=3
             iter_num=0
             methods=['Nelder','basinhopping','basinhopping','basinhopping','basinhopping']
-            while iter_num<max_iter and red_chi>1e-4:
+            while iter_num<max_iter and red_chi>1e-4 and lmfit_not_found:
                 method=methods[iter_num]
             
                 fit_params = lmfit.Parameters()
@@ -341,7 +367,7 @@ class beam_polcal():
            
             iter_num=0
             
-            while iter_num<max_iter and red_chi>1e-4:
+            while iter_num<max_iter and red_chi>1e-4 and lmfit_not_found:
                 method=methods[iter_num]
             
                 fit_params = lmfit.Parameters()
