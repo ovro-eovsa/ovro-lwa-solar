@@ -276,11 +276,7 @@ class beam_polcal():
         :param freqs: Frequencies in MHz corresponding to the data
         :return crosshand_phase for each frequency. 
         '''
-        try:
-            import lmfit
-            lmfit_not_found=False
-        except:
-            lmfit_not_found=True
+        
         
         shape=self.stokes_data.shape
         num_freqs=shape[1]
@@ -290,6 +286,7 @@ class beam_polcal():
         max_nfev=1000
         
         for i in range(num_freqs):
+            print (i)
             Umodel=self.primary_beam[2,i,:]*self.stokes_data[0,i,:]
             Vmodel=self.primary_beam[3,i,:]*self.stokes_data[0,i,:]
             
@@ -297,23 +294,20 @@ class beam_polcal():
             
             bounds=[[-3.14159,3.14159]]
             
-            res1=minimize(self.rotate_UV,0,args=(self.stokes_data[2,i,:],self.stokes_data[3,i,:],\
+            max_iter=5
+            iter_num=0
+            methods=['Nelder','basinhopping','basinhopping','basinhopping','basinhopping']
+            
+            while iter_num<max_iter and red_chi>1e-4:
+                method=methods[iter_num]
+                
+                if method=='Nelder':
+                    res1=minimize(self.rotate_UV,0,args=(self.stokes_data[2,i,:],self.stokes_data[3,i,:],\
                             self.stokes_data[0,i,:],Umodel,True),method='Nelder-Mead',\
                             bounds=bounds)
-            if res1.success:
-                solved_theta=res1.x
-            red_chi=res1.fun/(Umodel.size-1)
-
-            if red_chi>0.001 or not res1.success:
-                red_chi=1000
-            else:
-                red_chi=1e-5
-            
-            red_chi=1e-2
-            
-            if red_chi>1e-4:
-                red_chi=1000
-                res1 = basinhopping(self.rotate_UV, x0=[0], minimizer_kwargs={'method': 'Nelder-Mead', 'bounds': bounds,\
+                    
+                else:
+                    res1 = basinhopping(self.rotate_UV, x0=[0], minimizer_kwargs={'method': 'Nelder-Mead', 'bounds': bounds,\
                                 "args":(self.stokes_data[2,i,:],self.stokes_data[3,i,:],\
                             self.stokes_data[0,i,:],Umodel,True),'tol':0.01},niter=max_nfev)
                 if res1.success:
@@ -325,91 +319,47 @@ class beam_polcal():
                     red_chi=1000
                 else:
                     red_chi=1e-5
+                iter_num+=1
+            
+            iter_num=0
+            
+            while iter_num<max_iter and red_chi>1e-4:
+                method=methods[iter_num]
                 
+                if method=='Nelder':
+                    res2=minimize(self.rotate_UV,0,args=(self.stokes_data[2,i,:],self.stokes_data[3,i,:],\
+                            self.stokes_data[0,i,:],Umodel,False),method='Nelder-Mead',\
+                            bounds=bounds)
                     
-            
-            
-            
-            
-            max_iter=3
-            iter_num=0
-            methods=['Nelder','basinhopping','basinhopping','basinhopping','basinhopping']
-
-            while iter_num<max_iter and red_chi>1e-4 and lmfit_not_found:
-                method=methods[iter_num]
-            
-                fit_params = lmfit.Parameters()
-                fit_params.add_many(('theta',0, True, -3.14159, 3.14159, None, None))
-                
-                if method=='Nelder':
-	                fit_kws = {'max_nfev': max_nfev, 'tol': 0.01}
-	                mini = lmfit.Minimizer(self.rotate_UV,\
-			                fit_params, fcn_args=(self.stokes_data[2,i,:],self.stokes_data[3,i,:]),\
-                            fcn_kws={'I': self.stokes_data[0,i,:],'Umodel': Umodel},\
-                            nan_policy='omit',max_nfev=max_nfev)
                 else:
-	                fit_kws={'niter':50,'T':90.0, 'stepsize':0.8+iter_num*0.2, 'interval':25,\
-	                             'minimizer_kwargs':{'method':'Nelder-Mead'}}
-	                mini = lmfit.Minimizer(self.rotate_UV,\
-			                fit_params, fcn_args=(self.stokes_data[2,i,:],self.stokes_data[3,i,:]),\
-                            fcn_kws={'I': self.stokes_data[0,i,:],'Umodel': Umodel},\
-                            nan_policy='omit')
-            
-                res1 = mini.minimize(method=method, **fit_kws)
-                red_chi=res1.redchi
-                if res1.nfev<10 or abs(res1.params['theta'].value-res1.init_vals[0])<1e-6 or not res1.success:
-                    red_chi=1000
-                iter_num+=1
+                    res2 = basinhopping(self.rotate_UV, x0=[0], minimizer_kwargs={'method': 'Nelder-Mead', 'bounds': bounds,\
+                                "args":(self.stokes_data[2,i,:],self.stokes_data[3,i,:],\
+                            self.stokes_data[0,i,:],Umodel,False),'tol':0.01},niter=max_nfev)
+                if res2.success:
+                    solved_theta=res2.x
+                
+                red_chi=res2.fun/(Umodel.size-1)
 
-                del fit_params
-                #print (lmfit.fit_report(res1, show_correl=True))
-            
-            #
-            
-            iter_num=0
-            print (i,res1.success, iter_num, red_chi)
-            while iter_num<max_iter and red_chi>1e-4 and lmfit_not_found:
-                method=methods[iter_num]
-            
-                fit_params = lmfit.Parameters()
-                fit_params.add_many(('theta',0, True, -3.14159, 3.14159, None, None))
-                
-                if method=='Nelder':
-	                fit_kws = {'max_nfev': max_nfev, 'tol': 0.01}
-	                mini = lmfit.Minimizer(self.rotate_UV,\
-			                fit_params, fcn_args=(self.stokes_data[2,i,:],self.stokes_data[3,i,:]),\
-                            fcn_kws={'I': self.stokes_data[0,i,:],'Umodel': Umodel, \
-                            'subtract_mean_leak':False},\
-                            nan_policy='omit',max_nfev=max_nfev)
-                else:
-	                fit_kws={'niter':50,'T':90.0, 'stepsize':0.8+iter_num*0.2, 'interval':25, 'minimizer_kwargs':{'method':'Nelder-Mead'}}
-	                mini = lmfit.Minimizer(self.rotate_UV,\
-			                fit_params, fcn_args=(self.stokes_data[2,i,:],self.stokes_data[3,i,:]),\
-                            fcn_kws={'I': self.stokes_data[0,i,:],'Umodel': Umodel, \
-                            'subtract_mean_leak':False},\
-                            nan_policy='omit')
-            
-                res2 = mini.minimize(method=method, **fit_kws)
-                red_chi=res2.redchi
-                if res2.nfev<10 or abs(res2.params['theta'].value-res2.init_vals[0])<1e-6 or not res2.success:
+                if red_chi>0.001 or not res2.success:
                     red_chi=1000
+                else:
+                    red_chi=1e-5
                 iter_num+=1
-                del fit_params
                 
-            
+                
             if res1.success and iter_num==0: ### iter_num was reinitialised to zero before the second round. It did not enter res2 mnimization
                 res=res1
             elif not res1.success and res2.success:
                 res=res2
             else:
-                Udata_corrected1,Vdata_corrected1=self.rotate_UV(res1.params['theta'].value,\
+                Udata_corrected1,Vdata_corrected1=self.rotate_UV(res1.x,\
                                                                 self.stokes_data[2,i,:],self.stokes_data[3,i,:],\
                                                                 self.stokes_data[0,i,:],Umodel,return_corrected=True)
                 mean_leak=np.nanmean((Udata_corrected1-Umodel)/self.stokes_data[0,i,:])
                 resU=Udata_corrected1-mean_leak*self.stokes_data[0,i,:]-Umodel
                 corr1=abs(np.corrcoef(resU,Vdata_corrected1)[0,1])
                     
-                Udata_corrected2,Vdata_corrected2=self.rotate_UV(res2.params['theta'].value,\
+                Udata_corrected2,Vdata_corrected2=self.rotate_UV(res2.x,\
                                                                 self.stokes_data[2,i,:],self.stokes_data[3,i,:],\
                                                                 self.stokes_data[0,i,:],Umodel,return_corrected=True)
                 mean_leak=np.nanmean((Udata_corrected2-Umodel)/self.stokes_data[0,i,:])
@@ -421,7 +371,7 @@ class beam_polcal():
 
                 else:
                     res=res1
-                solved_theta=res.params['theta'].value
+                solved_theta=res.x
                     
             solutions=np.zeros(2)
             residual=np.zeros(2)
