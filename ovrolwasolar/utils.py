@@ -420,7 +420,7 @@ def check_corrected_data_present(msname):
     return False
 
 def correct_primary_beam_leakage_from_I(imagename,pol='I,Q,U,V',\
-                                            beam_file_path='/lustre/msurajit/beam_model_nivedita/OVRO-LWA_soil_pt.h5'):
+                                            beam_file_path='/lustre/msurajit/beam_model_nivedita/OVRO-LWA_MROsoil_updatedheight.h5'):
     '''
     This function corrects the instrumental polarization due to the I.
     It implements the following correction:
@@ -993,7 +993,7 @@ def manual_split_corrected_ms(vis, outputvis, datacolumn='CORRECTED_DATA'):
     return outputvis
 
 def get_primary_beam_single_source(alt,az,freq,\
-                                    model_beam_file='/lustre/msurajit/beam_model_nivedita/OVRO-LWA_soil_pt.h5'):
+                                    model_beam_file='/lustre/msurajit/beam_model_nivedita/OVRO-LWA_MROsoil_updatedheight.h5'):
     '''
     This is a utility function which returns the normalised beam factors for a single source.
     :param alt: altitude in degrees. float

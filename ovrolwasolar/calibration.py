@@ -180,7 +180,7 @@ def make_fast_caltb_from_slow(calib_ms, solar_ms, caltb, \
     return caltb_fast
     
 def gen_calibration(msfile, modelcl=None, uvrange='>10lambda', bcaltb=None, logging_level='info', caltable_fold='caltables', 
-        refant='202', dobaselineflag=False,primary_beam_model='/lustre/msurajit/beam_model_nivedita/OVRO-LWA_soil_pt.h5'):
+        refant='202', dobaselineflag=False,primary_beam_model='/lustre/msurajit/beam_model_nivedita/OVRO-LWA_MROsoil_updatedheight.h5'):
     """
     This function is for doing initial self-calibrations using strong sources that are above the horizon
     It is recommended to use a dataset observed at night when the Sun is not in the field of view with the same attenuator settings
