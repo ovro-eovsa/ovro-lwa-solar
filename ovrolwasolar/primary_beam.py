@@ -301,7 +301,7 @@ class jones_beam:
     frequency corresponding to the msfile.
     """
     
-    def __init__(self,beam_file_path='/lustre/msurajit/beam_model_nivedita/OVRO-LWA_soil_pt.h5',\
+    def __init__(self,beam_file_path='/lustre/msurajit/beam_model_nivedita/OVRO-LWA_MROsoil_updatedheight.h5',\
                     msfile=None,freq=None):
         self.beamfile=beam_file_path
         self.freq=freq

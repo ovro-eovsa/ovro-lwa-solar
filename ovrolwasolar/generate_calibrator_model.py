@@ -55,7 +55,7 @@ class model_generation():
         self.predict=True
         self.model=model
         self.point_source_model_needed=True
-        self.primary_beam_model='/lustre/msurajit/beam_model_nivedita/OVRO-LWA_soil_pt.h5'
+        self.primary_beam_model='/lustre/msurajit/beam_model_nivedita/OVRO-LWA_MROsoil_updatedheight.h5'
         if (self.separate_pol==True and self.num_pol==1) or \
             (self.separate_pol==False and self.num_pol!=1):
             raise RuntimeError("The two keywords \'separate_pol\' and \'pol\' are inconsistent")

@@ -1,6 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from scipy.optimize import minimize
+from scipy.optimize import minimize,basinhopping
 from functools import partial
 from suncasa import dspec
 from . import utils
@@ -10,13 +10,12 @@ from .primary_beam import jones_beam as beam
 import h5py,os
 from scipy.interpolate import interpn
 import matplotlib.colors as colors
-import lmfit
 import logging
 import pandas as pd
 from scipy.interpolate import griddata
 
 
-def compute_primary_beam_from_beamfiles(freqs,model_beam_file,tims=None, az=None,alt=None):
+def compute_primary_beam_from_beamfiles(freqs,model_beam_file,tims=None, az=None,alt=None, normalise_wrt_I=True):
     '''
     :param freq: list/array of frequencies in MHz
     
@@ -55,8 +54,10 @@ def compute_primary_beam_from_beamfiles(freqs,model_beam_file,tims=None, az=None
             factors[j,i,5]=pol_fac[2,2].real ### U primary_beam
             factors[j,i,6]=pol_fac[3,3].real ### V primary_beam
             
-            
-    return np.swapaxes(factors/np.expand_dims(factors[:,:,0],axis=2),1,2) ## all factors are in respect to I value
+    if  normalise_wrt_I:       
+        return np.swapaxes(factors/np.expand_dims(factors[:,:,0],axis=2),1,2) ## all factors are in respect to I value
+    else:
+        return np.swapaxes(factors,1,2)
 
 def get_altaz_multiple_times(times,sky_coord):
     '''
@@ -101,7 +102,7 @@ class beam_polcal():
         if database:
             self.crosshand_database=database
         self.crosshand_theta=None  ### if supplied later, must be an ndarray
-        self.model_beam_file='/home/surajit/ovro-lwa-solar/defaults/OVRO-LWA_soil_pt.h5'
+        self.model_beam_file='/home/surajit/ovro-lwa-solar/defaults/OVRO-LWA_MROsoil_updatedheight.h5'
         self.record_crosshand_phase=False
     
     @property
@@ -167,7 +168,7 @@ class beam_polcal():
         return (sum1)
         
 
-    def get_primary_beam(self,freq_sep=1,tim_sep=300,outfile="primary_beam.hdf5",overwrite=False):
+    def get_primary_beam(self,freq_sep=1,tim_sep=300,outfile="primary_beam.hdf5",overwrite=False, normalise_wrt_I=True):
         '''
         This function is responsible for producing the primary beam for all times and frequencies the user
         needs. However since this can be quite compute intensive, this function computes the I,Q,U,V beam
@@ -204,7 +205,8 @@ class beam_polcal():
         if not os.path.isfile(outfile) or overwrite:
             beam=compute_primary_beam_from_beamfiles(freqs_to_compute_beam,self.model_beam_file, \
                                                             tims=Time(times_to_compute_beam,\
-                                                        format='mjd',scale='utc'))
+                                                        format='mjd',scale='utc'),\
+                                                        normalise_wrt_I= normalise_wrt_I)
             logging.debug("Primary beam successfully computed.")
             with h5py.File(outfile,"w") as  hf:
                 hf.create_dataset("freqs_MHz",data=freqs_to_compute_beam)
@@ -233,7 +235,10 @@ class beam_polcal():
             interpolated_beam[i]=interpn(points,beam[:,i,:],compute_points,bounds_error=False,fill_value=np.nan)
             if i==1:
                 shape=interpolated_beam[i].shape
-                interpolated_beam[0]=np.ones(shape)
+                if normalise_wrt_I:
+                    interpolated_beam[0]=np.ones(shape)
+                else:
+                    interpolated_beam[0]=interpn(points,beam[:,0,:],compute_points,bounds_error=False,fill_value=np.nan)
         self.primary_beam=np.array(interpolated_beam)
         return
 
@@ -271,6 +276,8 @@ class beam_polcal():
         :param freqs: Frequencies in MHz corresponding to the data
         :return crosshand_phase for each frequency. 
         '''
+        
+        
         shape=self.stokes_data.shape
         num_freqs=shape[1]
         
@@ -279,103 +286,80 @@ class beam_polcal():
         max_nfev=1000
         
         for i in range(num_freqs):
-              
+            print (i)
             Umodel=self.primary_beam[2,i,:]*self.stokes_data[0,i,:]
             Vmodel=self.primary_beam[3,i,:]*self.stokes_data[0,i,:]
             
             red_chi=1000
             
-            res1=minimize(self.rotate_UV,0,args=(self.stokes_data[2,i,:],self.stokes_data[3,i,:],\
-                            self.stokes_data[0,i,:],Umodel,True),method='Nelder-Mead',\
-                            bounds=[[-3.14159,3.14159]])
-            if res1.success:
-                solved_theta=res1.x
-            red_chi=res1.fun/(Umodel.size-1)
-
-            if red_chi>0.001:
-                red_chi=1000
-            else:
-                red_chi=1e-5
+            bounds=[[-3.14159,3.14159]]
             
-            
-            
-            max_iter=3
+            max_iter=5
             iter_num=0
             methods=['Nelder','basinhopping','basinhopping','basinhopping','basinhopping']
+            
             while iter_num<max_iter and red_chi>1e-4:
                 method=methods[iter_num]
-            
-                fit_params = lmfit.Parameters()
-                fit_params.add_many(('theta',0, True, -3.14159, 3.14159, None, None))
                 
                 if method=='Nelder':
-	                fit_kws = {'max_nfev': max_nfev, 'tol': 0.01}
-	                mini = lmfit.Minimizer(self.rotate_UV,\
-			                fit_params, fcn_args=(self.stokes_data[2,i,:],self.stokes_data[3,i,:]),\
-                            fcn_kws={'I': self.stokes_data[0,i,:],'Umodel': Umodel},\
-                            nan_policy='omit',max_nfev=max_nfev)
+                    res1=minimize(self.rotate_UV,0,args=(self.stokes_data[2,i,:],self.stokes_data[3,i,:],\
+                            self.stokes_data[0,i,:],Umodel,True),method='Nelder-Mead',\
+                            bounds=bounds)
+                    
                 else:
-	                fit_kws={'niter':50,'T':90.0, 'stepsize':0.8+iter_num*0.2, 'interval':25,\
-	                             'minimizer_kwargs':{'method':'Nelder-Mead'}}
-	                mini = lmfit.Minimizer(self.rotate_UV,\
-			                fit_params, fcn_args=(self.stokes_data[2,i,:],self.stokes_data[3,i,:]),\
-                            fcn_kws={'I': self.stokes_data[0,i,:],'Umodel': Umodel},\
-                            nan_policy='omit')
-            
-                res1 = mini.minimize(method=method, **fit_kws)
-                red_chi=res1.redchi
-                if res1.nfev<10 or abs(res1.params['theta'].value-res1.init_vals[0])<1e-6:
-                    red_chi=1000
-                iter_num+=1
+                    res1 = basinhopping(self.rotate_UV, x0=[0], minimizer_kwargs={'method': 'Nelder-Mead', 'bounds': bounds,\
+                                "args":(self.stokes_data[2,i,:],self.stokes_data[3,i,:],\
+                            self.stokes_data[0,i,:],Umodel,True),'tol':0.01},niter=max_nfev)
+                if res1.success:
+                    solved_theta=res1.x
+                
+                red_chi=res1.fun/(Umodel.size-1)
 
-                del fit_params
-                #print (lmfit.fit_report(res1, show_correl=True))
+                if red_chi>0.001 or not res1.success:
+                    red_chi=1000
+                else:
+                    red_chi=1e-5
+                iter_num+=1
             
-            #
-           
             iter_num=0
             
             while iter_num<max_iter and red_chi>1e-4:
                 method=methods[iter_num]
-            
-                fit_params = lmfit.Parameters()
-                fit_params.add_many(('theta',0, True, -3.14159, 3.14159, None, None))
                 
                 if method=='Nelder':
-	                fit_kws = {'max_nfev': max_nfev, 'tol': 0.01}
-	                mini = lmfit.Minimizer(self.rotate_UV,\
-			                fit_params, fcn_args=(self.stokes_data[2,i,:],self.stokes_data[3,i,:]),\
-                            fcn_kws={'I': self.stokes_data[0,i,:],'Umodel': Umodel, \
-                            'subtract_mean_leak':False},\
-                            nan_policy='omit',max_nfev=max_nfev)
+                    res2=minimize(self.rotate_UV,0,args=(self.stokes_data[2,i,:],self.stokes_data[3,i,:],\
+                            self.stokes_data[0,i,:],Umodel,False),method='Nelder-Mead',\
+                            bounds=bounds)
+                    
                 else:
-	                fit_kws={'niter':50,'T':90.0, 'stepsize':0.8+iter_num*0.2, 'interval':25, 'minimizer_kwargs':{'method':'Nelder-Mead'}}
-	                mini = lmfit.Minimizer(self.rotate_UV,\
-			                fit_params, fcn_args=(self.stokes_data[2,i,:],self.stokes_data[3,i,:]),\
-                            fcn_kws={'I': self.stokes_data[0,i,:],'Umodel': Umodel, \
-                            'subtract_mean_leak':False},\
-                            nan_policy='omit')
-            
-                res2 = mini.minimize(method=method, **fit_kws)
-                red_chi=res2.redchi
-                if res2.nfev<10 or abs(res2.params['theta'].value-res2.init_vals[0])<1e-6:
+                    res2 = basinhopping(self.rotate_UV, x0=[0], minimizer_kwargs={'method': 'Nelder-Mead', 'bounds': bounds,\
+                                "args":(self.stokes_data[2,i,:],self.stokes_data[3,i,:],\
+                            self.stokes_data[0,i,:],Umodel,False),'tol':0.01},niter=max_nfev)
+                if res2.success:
+                    solved_theta=res2.x
+                
+                red_chi=res2.fun/(Umodel.size-1)
+
+                if red_chi>0.001 or not res2.success:
                     red_chi=1000
+                else:
+                    red_chi=1e-5
                 iter_num+=1
-                del fit_params
-            
+                
+                
             if res1.success and iter_num==0: ### iter_num was reinitialised to zero before the second round. It did not enter res2 mnimization
                 res=res1
             elif not res1.success and res2.success:
                 res=res2
             else:
-                Udata_corrected1,Vdata_corrected1=self.rotate_UV(res1.params['theta'].value,\
+                Udata_corrected1,Vdata_corrected1=self.rotate_UV(res1.x,\
                                                                 self.stokes_data[2,i,:],self.stokes_data[3,i,:],\
                                                                 self.stokes_data[0,i,:],Umodel,return_corrected=True)
                 mean_leak=np.nanmean((Udata_corrected1-Umodel)/self.stokes_data[0,i,:])
                 resU=Udata_corrected1-mean_leak*self.stokes_data[0,i,:]-Umodel
                 corr1=abs(np.corrcoef(resU,Vdata_corrected1)[0,1])
                     
-                Udata_corrected2,Vdata_corrected2=self.rotate_UV(res2.params['theta'].value,\
+                Udata_corrected2,Vdata_corrected2=self.rotate_UV(res2.x,\
                                                                 self.stokes_data[2,i,:],self.stokes_data[3,i,:],\
                                                                 self.stokes_data[0,i,:],Umodel,return_corrected=True)
                 mean_leak=np.nanmean((Udata_corrected2-Umodel)/self.stokes_data[0,i,:])
@@ -387,7 +371,7 @@ class beam_polcal():
 
                 else:
                     res=res1
-                solved_theta=res.params['theta'].value
+                solved_theta=res.x
                     
             solutions=np.zeros(2)
             residual=np.zeros(2)
@@ -702,7 +686,7 @@ class beam_polcal():
             
         return poly
     
-    def get_leakage_from_database(self,database=None):
+    def get_leakage_from_database(self,mean_subtracted=False,database=None):
         '''
         This reads the database and produces the leakage fractions for all
         stokes by doing a nearest neighbour interpolation in alt-az and linear
@@ -710,7 +694,7 @@ class beam_polcal():
         '''
         if database:
             self.leakage_database=database
-        self.determine_beam_leakage_fractions_from_db(max_pol_ind=3)
+        self.determine_beam_leakage_fractions_from_db(mean_subtracted=mean_subtracted,max_pol_ind=3)
         
     
         
@@ -719,7 +703,8 @@ class beam_polcal():
                                         polynomial_degree=1, \
                                         database=None,\
                                         QU_only=False,
-                                        write_to_database=False):
+                                        write_to_database=False,\
+                                        mean_subtracted=False):
         '''
         This function corrects the leakage from Stokes I. 
         :param stokes_data: The stokes data from the beam.
@@ -764,7 +749,7 @@ class beam_polcal():
             if write_to_database:
                 self.write_leakage_frac_to_database() ### this uses the default values in write_database if not 
                                             ### already available in class 
-            self.convert_polyfit_to_beam_leakage_fractions(subtract_mean=True)
+            self.convert_polyfit_to_beam_leakage_fractions(subtract_mean=mean_subtracted)
             
             
         stokes_corrected=np.zeros_like(stokes_data)
@@ -774,10 +759,12 @@ class beam_polcal():
         num_tims=shape[2]
         
         mean_leak=np.expand_dims(np.nanmean(frac_pol,axis=2),axis=2)
+
         stokes_corrected[1:max_pol_ind+1,:,:]=(frac_pol[1:max_pol_ind+1,:,:]-\
-                                                mean_leak[1:max_pol_ind+1,:,:]-\
                                                 self.beam_leakage_fractions[1:max_pol_ind+1,:,:]+\
                                                 self.primary_beam[1:max_pol_ind+1,:,:])
+        if mean_subtracted:
+            stokes_corrected[1:max_pol_ind+1,:,:]-=mean_leak[1:max_pol_ind+1,:,:]
         
         stokes_corrected[0,...]=stokes_data[0,...]
         stokes_corrected[1,...]*=stokes_data[0,...]
@@ -807,7 +794,7 @@ class beam_polcal():
         else:
             self.beam_leakage_fractions=leak_vals
         
-    def determine_beam_leakage_fractions_from_db(self,max_pol_ind):
+    def determine_beam_leakage_fractions_from_db(self,max_pol_ind,mean_subtracted=False):
         '''
         This function reads in the leakage database and then uses it to calculate the
         leakage fraction at all the data times
@@ -841,7 +828,7 @@ class beam_polcal():
             for j,pol in zip(range(1,max_pol_ind+1,1),['Q/I','U/I','V/I']):
                 
                 self.beam_leakage_fractions[j,i,:]=self.calculate_leakages_from_database(data_freq,freq1,freq2,\
-                                            pol,az,alt,database_az,database_alt)   
+                                            pol,az,alt,database_az,database_alt,mean_subtracted=mean_subtracted)   
 
     
     
@@ -867,8 +854,11 @@ class beam_polcal():
         return freqs_in_db[indices[0]],freqs_in_db[indices[1]]
         
 
-    def calculate_leakages_from_database(self,data_freq,freq1,freq2,pol,az,alt,database_az,database_alt):
-        columns=[pol+"_"+str(int(freq1))+"MHz_mean_sub",pol+"_"+str(int(freq2))+"MHz_mean_sub"]
+    def calculate_leakages_from_database(self,data_freq,freq1,freq2,pol,az,alt,database_az,database_alt,mean_subtracted=False):
+        if not mean_subtracted:
+            columns=[pol+"_"+str(int(freq1))+"MHz",pol+"_"+str(int(freq2))+"MHz"]
+        else:
+            columns=[pol+"_"+str(int(freq1))+"MHz_mean_sub",pol+"_"+str(int(freq2))+"MHz_mean_sub"]
 
         data=pd.read_hdf(self.leakage_database,key='I_leakage',columns=columns)
         
@@ -1014,7 +1004,7 @@ class image_polcal_astronomical_source():
         self.times=Time(tim_mjds,format='mjd',scale='utc')
         if database:
             self.crosshand_database=database
-        self.model_beam_file='/lustre/msurajit/beam_model_nivedita/OVRO-LWA_soil_pt.h5'
+        self.model_beam_file='/lustre/msurajit/beam_model_nivedita/OVRO-LWA_MROsoil_updatedheight.h5'
         self.record_crosshand_phase=False
         self.alt_bin=alt_bin
         self.fit_UV=True
@@ -1030,7 +1020,7 @@ class image_polcal_astronomical_source():
                 raise e
     
     @staticmethod
-    def rotate_UV(params,U,V,Umodel=None,Vmodel=None,fit_UV=True,return_corrected=False):
+    def rotate_UV(params,U,V,Umodel=None,Vmodel=None,fit_UV=False,return_corrected=False):
         '''
         This function rotates the Stokes vector in the UV plane by an angle theta. Theta, whe positive,
         implies rotation is in counterclockwise direction.
