@@ -813,7 +813,11 @@ def compress_fits_to_h5(fits_file, hdf5_file, beam_ratio=3.0, smaller_than_src =
 
     # to be more robust, if beam smaller than theoretical beam, use theoretical beam
     freqs =  hdul[1].data['cfreqs']
-    thresh_arr = np.copy( hdul[1].data['bmin']*3600)
+    head_tb=hdul[1].header
+    
+    bmin=head_tb['TTYPE4'] ### maybe bmin or cbmin
+    
+    thresh_arr = np.copy( hdul[1].data[bmin]*3600)
     if theoretical_beam_thresh:
         beam_size_thresh = (3e8 / freqs) / longest_baseline / np.pi * 180 * 3600 # arcsec
         for i in range(len(thresh_arr)):
