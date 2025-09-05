@@ -285,6 +285,7 @@ def determine_leakage_single_freq(stokes_data,frequency, background_factor, \
             leak_frac[j]=leak
     
     if doplot:
+        import matplotlib.pyplot as plt
         fig1=plot_stokes_images(stokes_data,[0,0,0,0],stokes_order)
         fig2=plot_stokes_images(stokes_data,leak_frac,stokes_order)
         plt.show()
@@ -369,8 +370,10 @@ def write_to_database(fname,leak_frac,database,low_freq=30,high_freq=90,freq_sep
         leak_frac_pol=leak_frac[:,i]
         pos=np.where(leak_frac_pol>-10)[0] ## searching for dummy number. Dummy number is -1000
         if pos.size>0:
+            
             leak_frac_func=interp1d(freqs[pos],leak_frac_pol[pos],bounds_error=False,fill_value=np.nan) ###out of bounds gives nan
             leak_frac_database[:,i]=leak_frac_func(database_freqs)
+            
         else:
             leak_frac_database[:,i]=np.nan
         pos=np.where(np.isnan(leak_frac_database)==True)
