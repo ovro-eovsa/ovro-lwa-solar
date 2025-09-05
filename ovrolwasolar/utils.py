@@ -588,6 +588,86 @@ def correct_primary_beam_self_terms(imagename, pol='I',fast_vis=False):
                 hdu.close()
     return
 
+def correct_primary_beam(imagename,pol='I,Q,U,V',\
+                        beam_file_path='/lustre/msurajit/beam_model_nivedita/OVRO-LWA_MROsoil_updatedheight.h5',\
+                        inverse=True, leakage_correction_terms=None,\
+                        muller_matrix = None):
+    '''
+    This function corrects for the full Muller Matrix
+    
+    Can handle multiple images in a list. If single image, we can add -image.fits
+    However, if a list is provided, supply full names.
+    If inverse is True, we multiply inverse
+    of Muller Matrix to the observed data. If inverse is False, we multiple the
+    Muller Matrix to the data. If leakage_correction_terms is a list or an array,
+    we add them to the M10, M20, M30. These correction terms are in fraction of
+    I. To ensure we do not compute repeatedly the same Muller Matrix, there is
+    a option to provide the Muller matrix.
+    '''
+    if type(imagename) is str:
+        if os.path.isfile(imagename+"-image.fits"):
+            imagename=[imagename+"-image.fits"]
+        elif os.path.isfile(imagename):
+            imagename=[imagename]
+        else:
+            raise RuntimeError("Image supplied is not found")
+    
+
+    if not type(muller_matrix)==np.ndarray:
+        muller_matrix=determine_muller_matrix_for_image(imagename[0],beam_file_path=beam_file_path)
+    
+    if type(leakage_correction_terms)==list or type(leakage_correction_terms)==np.ndarray:
+        leakage_correction_terms=np.array(leakage_correction_terms)
+        muller_matrix[1:,0]=leakage_correction_terms[1:]*muller_matrix[0,0]
+    
+    if not inverse:
+        inverse_muller=muller_matrix
+    else:
+        if pol!='I':
+            det_muller=np.linalg.det(muller_matrix)
+            if det_muller<1e-5:
+                inverse_muller=np.zeros_like(muller_matrix)
+                logging.warning("Muller matrix is not invertible. Setting inverse to 0.")
+            else:
+                inverse_muller=np.linalg.inv(muller_matrix)
+        else:
+            inverse_muller=muller_matrix
+            inverse_muller[0,0]=1/muller_matrix[0,0]  
+            ### only this term is used. No need to compute all terms
+    
+    
+    
+    muller_matrix_order={'I':0,'Q':1,'U':2,'V':3}
+    
+    for img in imagename:
+        with fits.open(img,mode='update') as hdu:
+            head=hdu[0].header
+            
+            if pol=='I':
+                hdu[0].data[j,...]*=inverse_muller[0,0]
+            else:
+                stokes_order=head['polorder']
+                
+                pols=stokes_order.split(',')
+                
+                
+                for j,pol in enumerate(pols):
+                    if j==0:
+                        shape=hdu[0].data[0,...].shape
+                        stokes_data={'I':np.zeros(shape),'Q':np.zeros(shape),'U':np.zeros(shape),\
+                                        'V':np.zeros(shape)}
+                    stokes_data[pol]=np.array(hdu[0].data[j,...])
+                    
+                for j,pol in enumerate(pols):
+                    inverse_muller_pol=inverse_muller[muller_matrix_order[pol]]                            
+                    hdu[0].data[j,...]=stokes_data['I']*inverse_muller_pol[0]+\
+                                        stokes_data['Q']*inverse_muller_pol[1]+\
+                                        stokes_data['U']*inverse_muller_pol[2]+\
+                                        stokes_data['V']*inverse_muller_pol[3]
+                hdu[0].header['CMMULL']=True  ### Correct_Model_MULLer
+             
+            hdu.flush()
+
 def get_solar_loc_pix(msfile, image="allsky"):
     """
     Get the x, y pixel location of the Sun from an all-sky image

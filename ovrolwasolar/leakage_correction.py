@@ -379,7 +379,7 @@ def write_to_database(fname,leak_frac,database,low_freq=30,high_freq=90,freq_sep
     db.write_leakage_frac_to_database(datetime.mjd,alt,az,database_freqs,leak_frac_database)
     return
     
-def do_leakage_correction(image_cube,primary_beam_database,outfile=None):
+def get_leakage_correction_terms(image_cube,primary_beam_database,outfile=None):
     if outfile is None:
         outfile = './' + os.path.basename(image_cube).replace('lev1.5','lev2.5')
         outfile = './' + os.path.basename(image_cube).replace('lev1','lev2')
@@ -410,8 +410,6 @@ def do_leakage_correction(image_cube,primary_beam_database,outfile=None):
     for freq_ind,frequency in enumerate(freq_MHz):
         for stokes_ind,stokes in enumerate(stokes_order):
             if stokes!='I':
-                data[stokes_ind,freq_ind,:,:]-=leak_frac[arrange_order[stokes],freq_ind]*\
-                                                data[I_ind,freq_ind,:,:]
                 if np.isnan(leak_frac[arrange_order[stokes],freq_ind]):
                     leak_frac[arrange_order[stokes],freq_ind]=-1000
                 leakage_to_write[freq_ind,stokes_ind]=leak_frac[arrange_order[stokes],freq_ind]
@@ -423,9 +421,8 @@ def do_leakage_correction(image_cube,primary_beam_database,outfile=None):
                     ## see https://docs.astropy.org/en/stable/io/fits/usage/table.html#column-creation
         cols.append(fitscol)
     header={}
-    header['leakcor']=True
     header['dumyleak']=-1000
-    ndfits.update(outfile,new_data=data,new_columns=cols, new_header_entries=header)
+    ndfits.update(outfile,new_columns=cols, new_header_entries=header)
     return outfile
     
 
