@@ -6,7 +6,7 @@ import sys, os, time
 import numpy as np
 import logging, glob
 from astropy.time import Time
-from . import utils,flagging
+from . import utils,flagging,config
 from .generate_calibrator_model import model_generation
 import timeit
 tb = table()
@@ -180,7 +180,7 @@ def make_fast_caltb_from_slow(calib_ms, solar_ms, caltb, \
     return caltb_fast
     
 def gen_calibration(msfile, modelcl=None, uvrange='>10lambda', bcaltb=None, logging_level='info', caltable_fold='caltables', 
-        refant='202', dobaselineflag=False,primary_beam_model='/lustre/msurajit/beam_model_nivedita/OVRO-LWA_MROsoil_updatedheight.h5'):
+        refant=None, dobaselineflag=False,primary_beam_model='/lustre/msurajit/beam_model_nivedita/OVRO-LWA_MROsoil_updatedheight.h5'):
     """
     This function is for doing initial self-calibrations using strong sources that are above the horizon
     It is recommended to use a dataset observed at night when the Sun is not in the field of view with the same attenuator settings
@@ -194,6 +194,9 @@ def gen_calibration(msfile, modelcl=None, uvrange='>10lambda', bcaltb=None, logg
                                 the code will switch to an analytic beam model. In that case, please
                                 check results carefully.
     """
+	
+    if refant is None:
+        refant = config.REFANT
 	
     time1=timeit.default_timer()
     if not modelcl or not (os.path.exists(modelcl)):
