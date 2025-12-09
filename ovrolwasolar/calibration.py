@@ -1,7 +1,6 @@
 from casatasks import clearcal, ft, bandpass, applycal, flagdata, tclean, flagmanager, uvsub, gaincal, split, imstat, \
     gencal
 from casatools import table, measures, componentlist, msmetadata
-import math
 import sys, os, time
 import numpy as np
 import logging, glob
@@ -39,7 +38,6 @@ def make_fast_caltb_from_slow(calib_ms, solar_ms, caltb, \
         return caltb_fast  #### No need to generate again if exists
         
     os.system('cp -r '+ caltb + ' ' + caltb_fast)
-
 
     # The following is to overwrite the antenna list from the ms visibility (if necessary)
     # fast_ants_inp = 'LWA-015, LWA-018, LWA-038, LWA-067, LWA-085, LWA-096, LWA-131, LWA-151, LWA-180, LWA-191, LWA-260, LWA-263, LWA-264, LWA-272, LWA-274, LWA-275, LWA-277, LWA-278, LWA-281, LWA-284, LWA-285, LWA-285, LWA-286, LWA-287, LWA-289, LWA-290, LWA-295, LWA-301, LWA-304, LWA-305, LWA-307, LWA-313, LWA-314, LWA-320, LWA-321, LWA-326, LWA-327, LWA-328, LWA-329, LWA-330, LWA-334, LWA-335, LWA-336, LWA-337, LWA-338, LWA-339, LWA-340, LWA-347'.split(', ')
