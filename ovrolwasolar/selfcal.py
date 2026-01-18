@@ -5,7 +5,7 @@ import math
 import sys, os, time
 import numpy as np
 from astropy.io import fits
-from . import utils,calibration,deconvolve
+from . import utils,calibration,deconvolve,config
 from . import flux_scaling
 import logging, glob
 from line_profiler import profile
@@ -18,9 +18,12 @@ msmd = msmetadata()
 
 @profile
 def do_selfcal(msfile, num_phase_cal=2, num_apcal=2, applymode='calflag', logging_level='info', caltable_folder='caltables/',
-               ms_keyword='di_selfcal_time',pol='I', refant='202', niter0=1000, 
+               ms_keyword='di_selfcal_time',pol='I', refant=None, niter0=1000, 
                niter_incr=500, auto_pix_fov=False, quiet=True,
                flagbackup=False):
+    
+    if refant is None:
+        refant = config.REFANT
     
     time1=timeit.default_timer()          
     logging.debug('The plan is to do ' + str(num_phase_cal) + " rounds of phase selfcal")
@@ -174,7 +177,7 @@ def do_selfcal(msfile, num_phase_cal=2, num_apcal=2, applymode='calflag', loggin
     return True, imagename
 
 
-def do_fresh_selfcal(solar_ms, num_phase_cal=3, num_apcal=5, logging_level='info',pol='I', refant='202', niter0=600, niter_incr=200):
+def do_fresh_selfcal(solar_ms, num_phase_cal=3, num_apcal=5, logging_level='info',pol='I', refant=None, niter0=600, niter_incr=200):
     """
     Do fresh self-calibration if no self-calibration tables are found
 
@@ -184,6 +187,9 @@ def do_fresh_selfcal(solar_ms, num_phase_cal=3, num_apcal=5, logging_level='info
     :param logging_level: type of logging, default to "info"
     :return: N/A
     """
+    if refant is None:
+        refant = config.REFANT
+    
     logging.debug('Starting to do direction independent Stokes I selfcal')
     success,*_ = do_selfcal(solar_ms, num_phase_cal=num_phase_cal, num_apcal=num_apcal, logging_level=logging_level, pol=pol, 
             refant=refant, niter0=niter0, niter_incr=niter_incr)
@@ -203,7 +209,7 @@ def convert_caltables_for_fast_vis(solar_ms,calib_ms,caltables):
     
 
 def DI_selfcal(solar_ms, solint_full_selfcal=14400, solint_partial_selfcal=3600, caltable_folder = 'caltables/', calib_ms=None,
-               full_di_selfcal_rounds=[1,1], partial_di_selfcal_rounds=[1, 1], logging_level='info', pol='I', refant='202',
+               full_di_selfcal_rounds=[1,1], partial_di_selfcal_rounds=[1, 1], logging_level='info', pol='I', refant=None,
                fast_vis=False, niter0=1000, niter_incr=500, do_fluxscaling=False):
     """
     Directional-independent self-calibration (full sky)
@@ -347,7 +353,7 @@ def DI_selfcal(solar_ms, solint_full_selfcal=14400, solint_partial_selfcal=3600,
 
 def DD_selfcal(solar_ms, solint_full_selfcal=1800, solint_partial_selfcal=600, caltable_folder='caltables/', calib_ms=None,
                full_dd_selfcal_rounds=[3, 5], partial_dd_selfcal_rounds=[1, 1],
-               logging_level='info', pol='I', refant='202', niter0=1000, niter_incr=500, fast_vis=False):
+               logging_level='info', pol='I', refant=None, niter0=1000, niter_incr=500, fast_vis=False):
     """
     Directional-dependent self-calibration on the Sun only
 
@@ -362,6 +368,9 @@ def DD_selfcal(solar_ms, solint_full_selfcal=1800, solint_partial_selfcal=600, c
     
     :return: N/A
     """
+    
+    if refant is None:
+        refant = config.REFANT
 
     solar_ms1 = solar_ms[:-3] + "_sun_selfcalibrated.ms"
     if os.path.isdir(solar_ms1):

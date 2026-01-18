@@ -17,7 +17,7 @@ import sys, os, time
 import numpy as np
 import astropy.units as u
 from astropy.io import fits
-from . import utils,flagging,calibration,selfcal,source_subtraction,deconvolve,flux_scaling
+from . import utils,flagging,calibration,selfcal,source_subtraction,deconvolve,flux_scaling,config
 import logging, glob
 from .file_handler import File_Handler
 import timeit
@@ -30,7 +30,7 @@ msmd = msmetadata()
 
 
 # version info:
-__version__ = '0.1.1'
+__version__ = '0.1.2'
 
 def correct_ms_bug(msfile):
     """
@@ -104,7 +104,7 @@ def image_ms(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagename='sun
              do_final_imaging=True, pol='I', 
              solint_full_DI_selfcal=14400, solint_partial_DI_selfcal=3600, solint_full_DD_selfcal=1800, solint_partial_DD_selfcal=600,
              fast_vis=False, fast_vis_image_model_subtraction=False, delete=True,
-             refant='202', overwrite=False, do_fluxscaling=False, do_polcal=False,apply_primary_beam=True,
+             refant=None, overwrite=False, do_fluxscaling=False, do_polcal=False,apply_primary_beam=True,
              delete_allsky=True,sky_image=None):
 
     """
@@ -263,7 +263,7 @@ def image_ms_quick(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagenam
              imsize=1024, cell='1arcmin', logfile='analysis.log', logging_level='info',
              caltable_folder='caltables/', num_phase_cal=1, num_apcal=1, freqbin=4,
              do_fluxscaling=False, do_final_imaging=True, pol='I', delete=True,
-             refant='202', niter0=600, niter_incr=200, overwrite=False,
+             refant=None, niter0=600, niter_incr=200, overwrite=False,
              auto_pix_fov=False, fast_vis=False, fast_vis_image_model_subtraction=False,
              delete_allsky=True, sky_image=None, quiet=True, remove_strong_sources_only=False,
              src_sb_sol_area=200., src_sb_src_area=200., shape_sun_mask='circ', include_edge_source=-1,
@@ -279,6 +279,9 @@ def image_ms_quick(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagenam
     :param full_di_selfcal_rounds: [rounds of phase-only selfcal, rounds of amp-phase selfcal]
             for directional independent (full sky) full selfcalibration runs
     """
+    
+    if refant is None:
+        refant = config.REFANT
     
     if logging_level.lower() == 'info':
         logging.basicConfig(filename=logfile,
@@ -412,7 +415,10 @@ def solar_pipeline(time_duration, calib_time_duration, freqstr, filepath, time_i
                    observation_integration=8,
                    calib_ms=None, bcal=None, selfcal=False, imagename='sun_only',
                    imsize=512, cell='1arcmin', logfile='analysis.log', logging_level='info',
-                   caltable_folder='caltables',pol='I',refant='202'):
+                   caltable_folder='caltables',pol='I',refant=None):
+    if refant is None:
+        refant = config.REFANT
+    
     if logging_level == 'info' or logging_level == 'INFO':
         logging.basicConfig(filename=logfile, level=logging.INFO)
     elif logging_level == 'warning' or logging_level == 'WARNING':
