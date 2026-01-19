@@ -137,8 +137,6 @@ def fitsj2000tohelio(in_fits, out_fits=None, reftime="", toK=True,
     rotated_data = np.zeros_like(data)
     P_deg = np.degrees(ephemSun['P'])
 
-    logging.debug(f'Rotating image by {P_deg:.2f} degrees')
-
     if len(data.shape) == 2:
         rotated_data = rotate(data.astype(np.float32), angle=P_deg, 
                             preserve_range=True, mode='constant', cval=np.nan)
@@ -191,14 +189,12 @@ def fitsj2000tohelio(in_fits, out_fits=None, reftime="", toK=True,
 
     # update beam angle 
     if 'BPA' in hdr:
-        bpa = hdr['BPA']
-        logging.debug(f'Original beam position angle: {bpa}')
-        if verbose:
-            print(f'Updating beam position angle: {bpa}')
-        bpa = (bpa - P_deg) % 360.0
+        bpa0 = hdr['BPA']
+        bpa = (bpa0 - P_deg) % 360.0
         hdr['BPA'] = bpa
-
-    logging.debug(f'Updated beam position angle: {bpa}')
+        logging.debug(f'Updating BPA: {bpa0} -> {bpa}, rotated by {P_deg:.2f} degrees')
+    else:
+        logging.debug(f'No BPA found in header, keeping original value')
 
     # Update header keywords
     header_updates = {

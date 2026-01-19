@@ -78,7 +78,7 @@ def slow_pipeline_default_plot(fname,
             freqs_plt = [34.1, 38.7, 43.2, 47.8, 52.4, 57.0, 61.6, 66.2, 70.8, 75.4, 80.0, 84.5],
             fov = 7998, add_logo=True, apply_refraction_param=False, 
             spec_fits=None, spec_dur=600., spec_cmap='viridis', spec_vmin=None, spec_vmax=None, spec_norm='log',
-            spec_frange=[30., 88.], apply_fiducial_primary_beam=False):
+            spec_frange=[30., 88.], apply_fiducial_primary_beam=False, badants_arr=None):
     """
     Function to plot the default pipeline output
 
@@ -151,6 +151,12 @@ def slow_pipeline_default_plot(fname,
 
 
     freqs_mhz = meta['ref_cfreqs']/1e6
+
+    if len(badants_arr) == len(freqs_mhz):
+        badants_arr = np.array(badants_arr)
+        do_badants_label = True
+
+
     axes = []
     for i in range(12):
         ax = fig.add_subplot(gs[i])
@@ -188,10 +194,11 @@ def slow_pipeline_default_plot(fname,
             rmap_plt.draw_limb(ls='-', color='w', alpha=0.5)
             ax.add_artist(beam0)
 
-            freq_mhz = meta['ref_cfreqs'][bd]/1e6
             ax.text(0.99, 0.02, r"$T_B^{\rm max}=$"+ str(np.round(vmaxplt,2))+'MK', color='w', ha='right', va='bottom',
                         fontsize=10, transform=ax.transAxes)
-            
+            if do_badants_label:
+                ax.text(0.99, 0.98, '$N_{ants}=$'+ str(352-badants_arr[bd]), color='w', ha='right', va='top',
+                        fontsize=10, transform=ax.transAxes)
         else:
             ax.text(0.5, 0.5, 'No Data', color='w', 
                     ha='center', va='center', fontsize=18, transform=ax.transAxes)

@@ -44,7 +44,7 @@ def get_antids(msfile):
 
 
 def gen_ant_flags_from_autocorr(msfile, antflagfile=None, datacolumn='DATA', tavg=False,
-                                thresh_core=3.0, thresh_exp=3.0, flag_exp_with_core_stat=True,
+                                thresh_core=3.0, thresh_exp=5.0, flag_exp_with_core_stat=True,
                                 flag_either_pol=True, doappend=False, debug=False, doplot=False):
     """
     Generates a text file containing the bad antennas.
@@ -172,7 +172,8 @@ def gen_ant_flags_from_autocorr(msfile, antflagfile=None, datacolumn='DATA', tav
                      ((autos_ampdb[inds_exp, 3] > medval_exp[3] + thresh_exp * stdval_exp[3]) |
                       (autos_ampdb[inds_exp, 3] < medval_exp[3] - thresh_exp * stdval_exp[3])))]
     flagsall = np.sort(np.append(flagscore, flagsexp))
-    print('{0:d} bad antennas found out of {1:d} antennas'.format(flagsall.size, Nants))
+    logging.debug('Bad ants: {0:d} out of {1:d} antennas'.format(flagsall.size, Nants))
+
     if flagsall.size > 0:
         if antflagfile is None:
             antflagfile = os.path.splitext(os.path.abspath(msfile))[0] + '.badants'
@@ -246,84 +247,9 @@ def gen_ant_flags_from_autocorr(msfile, antflagfile=None, datacolumn='DATA', tav
             return 0
 
 
-def gen_ant_flags_tst(msfile: str, debug: bool = False) -> str:
-    """Generates a text file containing the bad antennas.
-    DOES NOT ACTUALLY APPLY FLAGS.
-
-    Adapted from the flag_bad_ants() module in
-    https://github.com/ovro-lwa/distributed-pipeline/blob/main/orca/flagging/flag_bad_ants.py
-
-    Comment BC (April 7, 2023): Does not seem to work well with lots of antennas out
-    Args:
-        :param msfile: msfile to generate
-    Returns:
-        Path to the text file with list of antennas to flag.
-    """
-    nant, nspw, nchan = utils.get_msinfo(msfile)
-    tb.open(msfile)
-    tautos = tb.query('ANTENNA1=ANTENNA2')
-
-    # iterate over antenna, 1-->256
-    datacolxx = np.zeros((nchan * nspw, nant))
-    datacolyy = np.copy(datacolxx)
-    for i in range(nspw):
-        datacolxx[i * nchan:(i + 1) * nchan] = tb.getcol("DATA", nant * i, nant)[0]
-        datacolyy[i * nchan:(i + 1) * nchan] = tb.getcol("DATA", nant * i, nant)[3]
-
-    datacolxxamp = np.sqrt(np.real(datacolxx) ** 2. + np.imag(datacolxx) ** 2.)
-    datacolyyamp = np.sqrt(np.real(datacolyy) ** 2. + np.imag(datacolyy) ** 2.)
-
-    datacolxxampdb = 10 * np.log10(datacolxxamp / 1.e2)
-    datacolyyampdb = 10 * np.log10(datacolyyamp / 1.e2)
-
-    # median value for every antenna
-    medamp_perantx = np.median(datacolxxampdb, axis=1)
-    medamp_peranty = np.median(datacolyyampdb, axis=1)
-
-    # get flags based on deviation from median amp
-    xthresh_pos = np.median(medamp_perantx) + np.std(medamp_perantx)
-    xthresh_neg = np.median(medamp_perantx) - 2 * np.std(medamp_perantx)
-    ythresh_pos = np.median(medamp_peranty) + np.std(medamp_peranty)
-    ythresh_neg = np.median(medamp_peranty) - 2 * np.std(medamp_peranty)
-    flags = np.where((medamp_perantx > xthresh_pos) | (medamp_perantx < xthresh_neg) | \
-                     (medamp_peranty > ythresh_pos) | (medamp_peranty < ythresh_neg) | \
-                     np.isnan(medamp_perantx) | np.isnan(medamp_peranty))
-
-    # use unflagged antennas to generate median spectrum
-    flagmask = np.zeros((nchan * nspw, nant))
-    flagmask[:, flags[0]] = 1
-    datacolxxampdb_mask = np.ma.masked_array(datacolxxampdb, mask=flagmask, fill_value=np.nan)
-    datacolyyampdb_mask = np.ma.masked_array(datacolyyampdb, mask=flagmask, fill_value=np.nan)
-
-    medamp_allantsx = np.median(datacolxxampdb_mask, axis=1)
-    medamp_allantsy = np.median(datacolyyampdb_mask, axis=1)
-
-    stdarrayx = np.array([np.std(antarr / medamp_allantsx) for antarr in datacolxxampdb_mask.transpose()])
-    stdarrayy = np.array([np.std(antarr / medamp_allantsy) for antarr in datacolyyampdb_mask.transpose()])
-
-    # this threshold was manually selected...should be changed to something better at some point
-    if nant > 256:
-        thresh = 1
-    else:
-        thresh = 0.02
-    flags2 = np.where((stdarrayx > thresh) | (stdarrayy > thresh))
-
-    flagsall = np.sort(np.append(flags, flags2))
-    flagsallstr = [str(flag) for flag in flagsall]
-    flagsallstr2 = ",".join(flagsallstr)
-
-    antflagfile = os.path.dirname(os.path.abspath(msfile)) + '/flag_bad_ants.ants'
-    with open(antflagfile, 'w') as f:
-        f.write(flagsallstr2)
-
-    tb.close()
-    if debug:
-        return medamp_perantx, medamp_peranty, stdarrayx, stdarrayy
-    else:
-        return antflagfile
 
 
-def flag_bad_ants(msfile, antflagfile=None, datacolumn='DATA', thresh_core=3.0, thresh_exp=3.0, clearflags=True):
+def flag_bad_ants(msfile, antflagfile=None, datacolumn='DATA', thresh_core=3.0, thresh_exp=5.0, clearflags=True):
     """
     Read the text file that contains flags for bad antennas, and apply the flags
     
