@@ -209,12 +209,12 @@ def gen_calibration(msfile, modelcl=None, uvrange='>10lambda', bcaltb=None, logg
     return bcaltb
 
 @profile
-def apply_calibration(msfile, gaintable=None, doantflag=False, doflag=False, antflagfile=None, do_solar_imaging=True,
+def apply_calibration(msfile, gaintable=None, doantflag=False, dorflag=False, antflagfile=None, do_solar_imaging=True,
                       imagename='test'):
     '''
     doantflag: If True, flag antennas based on antflagfile
     antflagfile: filenames containing list of antennas to be flagged.
-    doflag: If true, run rflag on corrected data after applying the gaintable
+    dorflag: If true, run rflag on corrected data after applying the gaintable
     do_solar_imaging: use tclean to do solar imaging.
     '''
     if doantflag:
@@ -232,7 +232,7 @@ def apply_calibration(msfile, gaintable=None, doantflag=False, doflag=False, ant
     applycal(msfile, gaintable=gaintable, flagbackup=True, applymode='calflag')
     #time2=timeit.default_timer()
     #logging.debug("Time for applying bandpass table: "+str(time2-time1)+"seconds")
-    if doflag == True:
+    if dorflag == True:
         logging.debug("Running rflag on corrected data")
         flagdata(vis=msfile, mode='rflag', datacolumn='corrected')
     sunpos = utils.get_sun_pos(msfile)
@@ -325,7 +325,7 @@ def do_bandpass_correction(solar_ms, calib_ms=None, bcal=None, caltable_folder='
         bcal=temp
     
     print (bcal)
-    apply_calibration(solar_ms, gaintable=bcal, doantflag=doantflag, doflag=True, do_solar_imaging=False)
+    apply_calibration(solar_ms, gaintable=bcal, doantflag=doantflag, dorflag=True, do_solar_imaging=False)
     split(vis=solar_ms, outputvis=solar_ms[:-3] + "_calibrated.ms", width=int(freqbin))
 
     # remove the original MS folder (to reduce mem footprint)

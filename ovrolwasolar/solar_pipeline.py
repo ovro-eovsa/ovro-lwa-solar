@@ -476,7 +476,7 @@ def solar_pipeline(time_duration, calib_time_duration, freqstr, filepath, time_i
 
 def apply_solutions_and_image(msname, bcal, imagename):
     logging.info('Analysing ' + msname)
-    calibration.apply_calibration(msname, gaintable=bcal, doantflag=True, doflag=True, do_solar_imaging=False)
+    calibration.apply_calibration(msname, gaintable=bcal, doantflag=True, dorflag=False, do_solar_imaging=False)
     split(vis=msname, outputvis=msname[:-3] + "_calibrated.ms")
     msname = msname[:-3] + "_calibrated.ms"
     selfcal_time = utils.get_selfcal_time_to_apply(msname)

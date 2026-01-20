@@ -33,7 +33,6 @@ def get_solar_loc_pix(msfile, image="allsky"):
     ra = m['m0']['value']
     dec = m['m1']['value']
     coord = SkyCoord(ra * u.rad, dec * u.rad, frame='icrs')
-    logging.debug('RA, Dec of Sun is ' + str(ra) + ", " + str(dec) + ' rad')
     head=fits.getheader(image)
     w = WCS(head)
     pix = skycoord_to_pixel(coord, w)
@@ -42,7 +41,7 @@ def get_solar_loc_pix(msfile, image="allsky"):
         return None, None
     x = int(pix[0])
     y = int(pix[1])
-    logging.debug('Pixel location of Sun is ' + str(x) + " " + str(y) + " in imagename " + image)
+    logging.debug( 'RA, Dec of Sun: ra={}, dec={}, Pix Sun: x={}, y={}, imagename={}'.format(ra, dec, x, y, image))
     return x, y
 
 
