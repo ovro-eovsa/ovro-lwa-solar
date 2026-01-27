@@ -152,10 +152,12 @@ def slow_pipeline_default_plot(fname,
 
     freqs_mhz = meta['ref_cfreqs']/1e6
 
-    if len(badants_arr) == len(freqs_mhz):
-        badants_arr = np.array(badants_arr)
-        do_badants_label = True
-
+    if badants_arr is not None:
+        if len(badants_arr) == len(freqs_mhz):
+            badants_arr = np.array(badants_arr)
+            do_badants_label = True
+    else:
+        do_badants_label = False
 
     axes = []
     for i in range(12):
