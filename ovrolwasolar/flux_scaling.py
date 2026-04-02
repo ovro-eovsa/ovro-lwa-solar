@@ -11,7 +11,6 @@ from astropy.io import fits
 import matplotlib.pyplot as plt
 from .  import utils,flagging,calibration,selfcal,source_subtraction
 import logging, glob
-from .file_handler import File_Handler
 from .generate_calibrator_model import model_generation
 from . import generate_calibrator_model
 tb = table()
