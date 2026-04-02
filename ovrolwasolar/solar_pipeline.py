@@ -19,7 +19,6 @@ import astropy.units as u
 from astropy.io import fits
 from . import utils,flagging,calibration,selfcal,source_subtraction,deconvolve,flux_scaling,config
 import logging, glob
-from .file_handler import File_Handler
 import timeit
 from line_profiler import profile
 
@@ -410,70 +409,6 @@ def image_ms_quick(solar_ms, calib_ms=None, bcal=None, do_selfcal=True, imagenam
         return outms, None
         
    
-@profile
-def solar_pipeline(time_duration, calib_time_duration, freqstr, filepath, time_integration=8, time_cadence=100,
-                   observation_integration=8,
-                   calib_ms=None, bcal=None, selfcal=False, imagename='sun_only',
-                   imsize=512, cell='1arcmin', logfile='analysis.log', logging_level='info',
-                   caltable_folder='caltables',pol='I',refant=None):
-    if refant is None:
-        refant = config.REFANT
-    
-    if logging_level == 'info' or logging_level == 'INFO':
-        logging.basicConfig(filename=logfile, level=logging.INFO)
-    elif logging_level == 'warning' or logging_level == 'WARNING':
-        logging.basicConfig(filename=logfile, level=logging.WARNING)
-    elif logging_level == 'critical' or logging_level == 'CRITICAL':
-        logging.basicConfig(filename=logfile, level=logging.CRITICAL)
-    elif logging_level == 'error' or logging_level == 'ERROR':
-        logging.basicConfig(filename=logfile, level=logging.ERROR)
-    else:
-        logging.basicConfig(filename=logfile, level=logging.DEBUG)
-
-    fp = File_Handler(time_duration=time_duration, freqstr=freqstr, file_path=filepath, \
-                      time_integration=time_integration, time_cadence=time_cadence)
-
-    calib_fp = File_Handler(time_duration=calib_time_duration, freqstr=freqstr, file_path=filepath)
-
-    print_str = 'Start the pipeline for imaging {0:s}'.format(time_duration)
-    logging.info(print_str)
-    try:
-        print_str = 'Frequencies to be analysed: {0:s}'.format(','.join(freqstr))
-    except:
-        print_str = 'Frequencies to be analysed: {0:s}'.format(freqstr)
-
-    logging.info(print_str)
-    print_str = 'Chosen time integration and time cadence are {0:d} and {0:d}'.format(time_integration, time_cadence)
-
-    calib_fp.start = calib_fp.parse_duration()
-    calib_fp.end = calib_fp.parse_duration(get_end=True)
-    calib_fp.get_selfcal_times_paths()
-
-    calib_filename = calib_fp.get_current_file_for_selfcal(freqstr[0])
-
-    fp.start = fp.parse_duration()
-    fp.end = fp.parse_duration(get_end=True)
-
-    fp.get_selfcal_times_paths()
-
-    filename = fp.get_current_file_for_selfcal(freqstr[0])
-    while filename is not None:
-        calib_file = glob.glob(caltable_folder + '/*.bcal')
-        if len(calib_file) != 0:
-            bcal = calib_file[0]
-        imagename = "sun_only_" + filename[:-3]
-        outms, helio_image = image_ms(filename, calib_ms=calib_filename, bcal=bcal, selfcal=True,
-                                    imagename=imagename, do_final_imaging=True, pol=pol, refant=refant)
-        filename = fp.get_current_file_for_selfcal(freqstr[0])
-
-    filename = fp.get_current_file_for_selfcal(freqstr[0])
-    while filename is not None:
-        imagename = "sun_only_" + filename[:-3]
-        outms, helio_image = image_ms(filename, calib_ms=calib_ms, bcal=bcal, selfcal=True,
-                                    imagename=imagename, do_final_imaging=True, pol=pol, refant=refant)
-        filename = fp.get_current_file_for_imaging(freqstr[0])
-
-
 def apply_solutions_and_image(msname, bcal, imagename):
     logging.info('Analysing ' + msname)
     calibration.apply_calibration(msname, gaintable=bcal, doantflag=True, dorflag=False, do_solar_imaging=False)
