@@ -977,7 +977,8 @@ def compress_fits_to_h5(fits_file, hdf5_file, beam_ratio=3.0, smaller_than_src =
         # remove h5 if no data available
         os.system(f'rm -rf {hdf5_file}')
 
-def recover_fits_from_h5(hdf5_file, fits_out=None, return_data=False, return_meta_only=False):
+def recover_fits_from_h5(hdf5_file, fits_out=None, return_data=False, return_meta_only=False,
+                         ignore_corrupted=False, corrupted_fill_value=np.nan):
     """
     Recover a fits file from a compressed hdf5 file
 
@@ -985,6 +986,9 @@ def recover_fits_from_h5(hdf5_file, fits_out=None, return_data=False, return_met
     :param fits_out: the fits file to be recovered. If not given, default to '{filename}.fits' in current directory
     :param return_data: if True, return the fits data and header directly without creating the fits file
     :param return_meta_only: if True, return only the metadata without creating the fits file
+    :param ignore_corrupted: if True, unreadable HDF5 image datasets are filled with corrupted_fill_value.
+                             If False, raise an error naming the failed dataset.
+    :param corrupted_fill_value: value used for unreadable image planes when ignore_corrupted is True
 
     :return: If return_data is True, returns a tuple (header, data). If return_meta_only is True, returns the metadata. Otherwise, returns None.
     """
@@ -1010,7 +1014,17 @@ def recover_fits_from_h5(hdf5_file, fits_out=None, return_data=False, return_met
         recover_data = np.zeros(datashape)
         for pol in range(datashape[0]):
             for ch_idx, freq in enumerate(meta['cfreqs']):
-                tmp_small = f[f'FITS_pol{pol}ch{str(ch_idx).rjust(4, "0")}'][:]
+                dataset_name = f'FITS_pol{pol}ch{str(ch_idx).rjust(4, "0")}'
+                try:
+                    tmp_small = f[dataset_name][:]
+                except (KeyError, OSError) as exc:
+                    msg = (f'Could not read HDF5 dataset {dataset_name} in {hdf5_file}; '
+                           f'use ignore_corrupted=True to fill it with {corrupted_fill_value}.')
+                    if not ignore_corrupted:
+                        raise OSError(msg) from exc
+                    logging.warning(msg)
+                    recover_data[pol, ch_idx, :, :] = corrupted_fill_value
+                    continue
                 if tmp_small.shape[0] == 1:
                     recover_data[pol, ch_idx, :, :] = tmp_small[0, 0]
                 else:

@@ -5,6 +5,10 @@ casa*.log
 #data files
 *.hdf5
 *.h5
+*.hdf
+ovro-lwa-*.fits
+ovro-lwa-*.png
+.codex
 
 # profiling files
 *.pstats

@@ -78,7 +78,7 @@ def slow_pipeline_default_plot(fname,
             freqs_plt = [34.1, 38.7, 43.2, 47.8, 52.4, 57.0, 61.6, 66.2, 70.8, 75.4, 80.0, 84.5],
             fov = 7998, add_logo=True, apply_refraction_param=False, 
             spec_fits=None, spec_dur=600., spec_cmap='viridis', spec_vmin=None, spec_vmax=None, spec_norm='log',
-            spec_frange=[30., 88.], apply_fiducial_primary_beam=False, badants_arr=None):
+            spec_frange=[30., 88.], reverse_spec_yaxis=True, spec_yscale='linear', apply_fiducial_primary_beam=False, badants_arr=None):
     """
     Function to plot the default pipeline output
 
@@ -139,6 +139,12 @@ def slow_pipeline_default_plot(fname,
         ax_spec.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
         ax_spec.set_xlabel('Time UT')
         ax_spec.set_ylabel('Frequency [MHz]')
+        ax_spec.set_yscale(spec_yscale)
+        if reverse_spec_yaxis:
+            ax_spec.invert_yaxis()
+        if spec_yscale == 'log':
+            ax_spec.set_yticks([30, 40, 50, 60, 70, 80])
+            ax_spec.set_yticklabels(['30', '40', '', '60', '', '80'])
         #ax_spec.set_title('OVRO-LWA Spectrogram')
         ax_spec.axvspan(t_img.plot_date, (t_img+TimeDelta(10., format='sec')).plot_date, fill=False, ec='w') 
         # colorbar
